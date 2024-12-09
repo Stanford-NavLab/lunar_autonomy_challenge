@@ -4,10 +4,7 @@
 # For a copy, see <https://opensource.org/licenses/MIT>.
 
 """
-This agent demonstrates how to structure your code and visualize camera data in
-an OpenCV window and control the robot with keyboard commands with pynput
-https://pypi.org/project/opencv-python/
-https://pypi.org/project/pynput/
+Data collection agent
 
 """
 
@@ -15,43 +12,40 @@ import numpy as np
 import carla
 import cv2 as cv
 import random
+import os
 from math import radians
 from pynput import keyboard
-
-""" Import the AutonomousAgent from the Leaderboard. """
+import plotly.graph_objects as go
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-""" Define the entry point so that the Leaderboard can instantiate the agent class. """
+from plotting import pose_traces
+from util import transform_to_numpy, to_blender_convention
 
 
 def get_entry_point():
-    return "OpenCVagent"
+    return "DataCollectionAgent"
 
 
-""" Inherit the AutonomousAgent class. """
-
-
-class OpenCVagent(AutonomousAgent):
+class DataCollectionAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
-        """This method is executed once by the Leaderboard at mission initialization. We should add any attributes to the class using
-        the 'self' Python keyword that contain data or methods we might need throughout the simulation. If you are using machine learning
-        models for processing sensor data or control, you should load the models here. We encourage the use of class attributes in place
-        of using global variables which can cause conflicts."""
-
-        """ Set up a keyboard listener from pynput to capture the key commands for controlling the robot using the arrow keys. """
-
+        """Set up a keyboard listener from pynput to capture the key commands for controlling the robot using the arrow keys."""
         listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
 
         """ Add some attributes to store values for the target linear and angular velocity. """
-
         self.current_v = 0
         self.current_w = 0
 
         """ Initialize a counter to keep track of the number of simulation steps. """
-
         self.frame = 0
+        self.rate = 5  # Sub-sample rate. Max rate is 10Hz
+
+        self.poses = []
+
+        self.run_name = "data_collection"
+        if not os.path.exists("output/" + self.run_name):
+            os.makedirs("output/" + self.run_name + "/images")
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
@@ -70,7 +64,7 @@ class OpenCVagent(AutonomousAgent):
             },
             carla.SensorPosition.FrontLeft: {
                 "camera_active": True,
-                "light_intensity": 1.0,
+                "light_intensity": 0,
                 "width": "1280",
                 "height": "720",
                 "use_semantic": True,
@@ -123,61 +117,49 @@ class OpenCVagent(AutonomousAgent):
         grayscale_data = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
         semantic_data = input_data["Semantic"][carla.SensorPosition.FrontLeft]
 
-        current_pose = self.get_transform()
-        print("Robot pose ", current_pose)
-        camera_to_robot_pose = self.get_camera_position(carla.SensorPosition.FrontLeft)
-        print("Camera to robot pose ", camera_to_robot_pose)
+        current_pose = transform_to_numpy(self.get_transform())
+        camera_to_robot_pose = transform_to_numpy(
+            self.get_camera_position(carla.SensorPosition.FrontLeft)
+        )
+        camera_to_world_pose = current_pose @ camera_to_robot_pose
         imu_data = self.get_imu_data()
-        print("IMU data ", imu_data)
 
         """ We need to check that the sensor data is not None before we do anything with it. The data for each camera will be 
         None for every other simulation step, since the cameras operate at 10Hz while the simulator operates at 20Hz. """
         if grayscale_data is not None:
-            """ We use OpenCV's imshow method to render the image to screen, the first time this function is called
-            it will open a new OpenCV window. Subsequent calls will render to the same window. """
-
             cv.imshow("Left camera view", grayscale_data)
             cv.waitKey(1)
 
-            """ If we want to save camera data, we can use OpenCV to create a PNG file for each camera frame. Uncomment 
-            the following line and create a directory named "out" in the root folder of the simulator package """
-            # cv.imwrite("output/traverse_images/" + str(self.frame) + ".png", grayscale_data)
+            if self.frame % self.rate == 0:
+                cv.imwrite(
+                    "output/" + self.run_name + "/images/" + str(self.frame) + ".png",
+                    grayscale_data,
+                )
+                # self.poses.append(to_blender_convention(camera_to_world_pose))
+                self.poses.append(camera_to_world_pose)
 
-            """ Increment the frame counter. """
             self.frame += 1
 
-        """ Now we prepare the control instruction to return to the simulator, with our target linear and angular velocity. """
         control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
-        """ If the simulation has been going for more than 5000 frames, let's stop it. """
+        if self.frame % 100 == 0:
+            fig = go.Figure(data=pose_traces(self.poses))
+            fig.write_html("output/" + self.run_name + "/poses.html")
+
         if self.frame >= 5000:
             self.mission_complete()
 
         return control
 
     def finalize(self):
+        print("Running finalize")
+        # Plot poses
+        fig = go.Figure(data=pose_traces(self.poses))
+        fig.write_html("output/" + self.run_name + "/poses.html")
+
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""
-
         cv.destroyAllWindows()
-
-        """ We may also want to add any final updates we have from our mapping data before the mission ends. Let's add some random values 
-        to the geometric map to demonstrate how to use the geometric map API. The geometric map should also be updated during the mission
-        in the run_step() method, in case the mission is terminated unexpectedly. """
-
-        """ Retrieve a reference to the geometric map object. """
-
-        geometric_map = self.get_geometric_map()
-
-        """ Set some random height values and rock flags. """
-
-        for i in range(100):
-            x = 10 * random.random() - 5
-            y = 10 * random.random() - 5
-            geometric_map.set_height(x, y, random.random())
-
-            rock_flag = random.random() > 0.5
-            geometric_map.set_rock(x, y, rock_flag)
 
     def on_press(self, key):
         """This is the callback executed when a key is pressed. If the key pressed is either the up or down arrow, this method will add
