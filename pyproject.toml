@@ -1,0 +1,7 @@
+[project]
+name = "lac"
+description = "Lunar Autonomy Challenge code"
+version = "0.1.0"
+
+[tool.setuptools.packages.find]
+where = ["."]

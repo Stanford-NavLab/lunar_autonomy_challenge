@@ -22,8 +22,7 @@ import plotly.graph_objects as go
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from plotting import pose_traces
-from util import transform_to_numpy, to_blender_convention
+from lac.util import transform_to_numpy, to_blender_convention
 
 
 def get_entry_point():
