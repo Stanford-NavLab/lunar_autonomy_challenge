@@ -169,7 +169,7 @@ class DataCollectionAgent(AutonomousAgent):
                     "timestamp": time.time(),
                     "mission_time": self.get_mission_time(),
                     "current_power": self.get_current_power(),
-                    "pose": camera_to_world_pose.tolist(),
+                    "pose": current_pose.tolist(),
                     "imu": imu_data.tolist(),
                 }
                 self.frames.append(log_entry)
