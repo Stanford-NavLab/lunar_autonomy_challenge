@@ -134,10 +134,10 @@ class DataCollectionAgent(AutonomousAgent):
         FR_sem = input_data["Semantic"][carla.SensorPosition.FrontRight]
 
         current_pose = transform_to_numpy(self.get_transform())
-        camera_to_robot_pose = transform_to_numpy(
-            self.get_camera_position(carla.SensorPosition.FrontLeft)
-        )
-        camera_to_world_pose = current_pose @ camera_to_robot_pose
+        # camera_to_robot_pose = transform_to_numpy(
+        #     self.get_camera_position(carla.SensorPosition.FrontLeft)
+        # )
+        # camera_to_world_pose = current_pose @ camera_to_robot_pose
         imu_data = self.get_imu_data()
 
         """ We need to check that the sensor data is not None before we do anything with it. The data for each camera will be 
