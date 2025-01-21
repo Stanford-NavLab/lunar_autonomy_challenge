@@ -1,3 +1,10 @@
+# Mac
+*.DS_Store
+*/*.DS_Store
+
+# Data
+data_collection_1/*
+
 .vscode/
 checkpoints/
 
