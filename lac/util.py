@@ -34,3 +34,24 @@ def to_blender_convention(pose):
     rx, ry, rz = R[:, 0], R[:, 1], R[:, 2]
     R_blender = np.array([-ry, rz, -rx])
     return np.block([[R_blender, t[:, None]], [0, 0, 0, 1]])
+
+def pose_to_rpy_pos(pose):
+    """Convert a camera pose matrix to LAC convention.
+
+    The camera pose matrix is assumed to have above starting convention (+X forward, +Y left, +Z up)
+    The LAC convention has +X forward, +Y left, +Z up.
+
+    """
+    R = pose[:3, :3]
+    t = pose[:3, 3]
+    # Convert the rotation matrix to the LAC convention
+    rx, ry, rz = R[:, 0], R[:, 1], R[:, 2]
+
+    # Calculate yaw, pitch, roll using scipy Rotation
+    r = Rotation.from_matrix(R)
+    roll, pitch, yaw = r.as_euler("xyz")
+
+    pos = np.array([t[0], t[1], t[2]])
+    rpy = np.array([roll, pitch, yaw])
+
+    return rpy, pos
