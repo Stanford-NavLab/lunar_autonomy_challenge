@@ -12,8 +12,6 @@ def transform_to_numpy(transform):
     euler_angles = np.array(
         [transform.rotation.roll, transform.rotation.pitch, transform.rotation.yaw]
     )
-    print("euler_angles:", euler_angles)
-    # Negate the angles since they are for clockwise rotation
     R = Rotation.from_euler("xyz", euler_angles).as_matrix()
     T = np.eye(4)
     T[:3, :3] = R
