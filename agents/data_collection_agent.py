@@ -14,7 +14,6 @@ import cv2 as cv
 import random
 import os
 import json
-import jsonlines
 import time
 from math import radians
 from pynput import keyboard
@@ -171,6 +170,7 @@ class DataCollectionAgent(AutonomousAgent):
                     "current_power": self.get_current_power(),
                     "pose": current_pose.tolist(),
                     "imu": imu_data.tolist(),
+                    "control": {"v": self.current_v, "w": self.current_w},
                 }
                 self.frames.append(log_entry)
 
