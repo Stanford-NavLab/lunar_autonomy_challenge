@@ -73,12 +73,18 @@ def plot_path_3d(
     return fig
 
 
-def plot_3d_points(x, y, z, fig=None, color="blue", markersize=3):
+def plot_3d_points(points, fig=None, color="blue", markersize=3):
     """Plot 3D points."""
     if fig is None:
         fig = go.Figure()
     fig.add_trace(
-        go.Scatter3d(x=x, y=y, z=z, mode="markers", marker=dict(size=markersize, color=color))
+        go.Scatter3d(
+            x=points[:, 0],
+            y=points[:, 1],
+            z=points[:, 2],
+            mode="markers",
+            marker=dict(size=markersize, color=color),
+        )
     )
     fig.update_layout(width=1200, height=900, scene_aspectmode="data")
     return fig

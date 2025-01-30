@@ -53,6 +53,8 @@ class DataCollectionAgent(AutonomousAgent):
 
         self.frames = []
 
+        self.log_images = False
+
         if not os.path.exists("output/" + self.run_name):
             os.makedirs("output/" + self.run_name + "/front_left")
             os.makedirs("output/" + self.run_name + "/front_right")
@@ -146,22 +148,31 @@ class DataCollectionAgent(AutonomousAgent):
             cv.waitKey(1)
 
             if self.frame % self.rate == 0:
-                cv.imwrite(
-                    "output/" + self.run_name + "/front_left/" + str(self.frame) + ".png",
-                    FL_img,
-                )
-                cv.imwrite(
-                    "output/" + self.run_name + "/front_right/" + str(self.frame) + ".png",
-                    FR_img,
-                )
-                cv.imwrite(
-                    "output/" + self.run_name + "/front_left_semantic/" + str(self.frame) + ".png",
-                    FL_sem,
-                )
-                cv.imwrite(
-                    "output/" + self.run_name + "/front_right_semantic/" + str(self.frame) + ".png",
-                    FR_sem,
-                )
+                if self.log_images:
+                    cv.imwrite(
+                        "output/" + self.run_name + "/front_left/" + str(self.frame) + ".png",
+                        FL_img,
+                    )
+                    cv.imwrite(
+                        "output/" + self.run_name + "/front_right/" + str(self.frame) + ".png",
+                        FR_img,
+                    )
+                    cv.imwrite(
+                        "output/"
+                        + self.run_name
+                        + "/front_left_semantic/"
+                        + str(self.frame)
+                        + ".png",
+                        FL_sem,
+                    )
+                    cv.imwrite(
+                        "output/"
+                        + self.run_name
+                        + "/front_right_semantic/"
+                        + str(self.frame)
+                        + ".png",
+                        FR_sem,
+                    )
                 # self.poses.append(to_blender_convention(camera_to_world_pose))
                 log_entry = {
                     "frame": self.frame,
@@ -195,7 +206,7 @@ class DataCollectionAgent(AutonomousAgent):
         # self.writer.close()
 
         with open(self.log_file, "w") as f:
-            json.dump(self.log_entries, f, indent=4)
+            json.dump(self.out, f, indent=4)
 
         # Plot poses
         # fig = go.Figure(data=pose_traces(self.poses))
