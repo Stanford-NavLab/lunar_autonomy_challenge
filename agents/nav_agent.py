@@ -140,10 +140,6 @@ class DataCollectionAgent(AutonomousAgent):
         FR_sem = input_data["Semantic"][carla.SensorPosition.FrontRight]
 
         current_pose = transform_to_numpy(self.get_transform())
-        # camera_to_robot_pose = transform_to_numpy(
-        #     self.get_camera_position(carla.SensorPosition.FrontLeft)
-        # )
-        # camera_to_world_pose = current_pose @ camera_to_robot_pose
         imu_data = self.get_imu_data()
 
         log_entry = {
@@ -219,14 +215,9 @@ class DataCollectionAgent(AutonomousAgent):
 
     def finalize(self):
         print("Running finalize")
-        # self.writer.close()
 
         with open(self.log_file, "w") as f:
             json.dump(self.out, f, indent=4)
-
-        # Plot poses
-        # fig = go.Figure(data=pose_traces(self.poses))
-        # fig.write_html("output/" + self.run_name + "/poses.html")
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""
@@ -238,7 +229,7 @@ class DataCollectionAgent(AutonomousAgent):
         velocity of 0.6 radians per second."""
 
         if key == keyboard.Key.up:
-            self.current_v += self.speed_increment
+            self.current_v += 0.1
             self.current_v = np.clip(self.current_v, 0, 0.3)
         if key == keyboard.Key.down:
             self.current_v -= 0.1

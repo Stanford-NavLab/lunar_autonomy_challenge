@@ -66,3 +66,7 @@ def normalize_rotation_matrix(R):
     U, _, Vt = np.linalg.svd(R)  # Singular Value Decomposition
     R_normalized = U @ Vt  # Reconstruct a valid rotation matrix
     return R_normalized
+
+
+def rmse(predictions, targets):
+    return np.sqrt(((predictions - targets) ** 2).mean())
