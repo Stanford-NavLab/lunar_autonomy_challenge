@@ -33,6 +33,7 @@ def to_blender_convention(pose):
     R_blender = np.array([-ry, rz, -rx])
     return np.block([[R_blender, t[:, None]], [0, 0, 0, 1]])
 
+
 def pose_to_rpy_pos(pose):
     """Convert a camera pose matrix to LAC convention.
 
@@ -53,3 +54,15 @@ def pose_to_rpy_pos(pose):
     rpy = np.array([roll, pitch, yaw])
 
     return rpy, pos
+
+
+def skew_symmetric(v):
+    """Convert a 3D vector to a skew-symmetric matrix."""
+    return np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+
+
+def normalize_rotation_matrix(R):
+    """Normalizes a rotation matrix using SVD."""
+    U, _, Vt = np.linalg.svd(R)  # Singular Value Decomposition
+    R_normalized = U @ Vt  # Reconstruct a valid rotation matrix
+    return R_normalized
