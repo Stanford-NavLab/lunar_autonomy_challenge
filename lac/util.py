@@ -43,8 +43,6 @@ def pose_to_rpy_pos(pose):
     """
     R = pose[:3, :3]
     t = pose[:3, 3]
-    # Convert the rotation matrix to the LAC convention
-    rx, ry, rz = R[:, 0], R[:, 1], R[:, 2]
 
     # Calculate yaw, pitch, roll using scipy Rotation
     r = Rotation.from_matrix(R)
@@ -70,3 +68,8 @@ def normalize_rotation_matrix(R):
 
 def rmse(predictions, targets):
     return np.sqrt(((predictions - targets) ** 2).mean())
+
+
+def wrap_angle(angle):
+    """Wrap an angle in radians to [-pi, pi]."""
+    return (angle + np.pi) % (2 * np.pi) - np.pi

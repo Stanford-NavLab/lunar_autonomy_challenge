@@ -57,8 +57,7 @@ class DataCollectionAgent(AutonomousAgent):
         # TODO: add camera and lights config
 
         self.frames = []
-
-        self.log_images = False
+        self.log_images = True
 
         if not os.path.exists("output/" + self.run_name):
             os.makedirs("output/" + self.run_name + "/front_left")
@@ -140,22 +139,7 @@ class DataCollectionAgent(AutonomousAgent):
         FR_sem = input_data["Semantic"][carla.SensorPosition.FrontRight]
 
         current_pose = transform_to_numpy(self.get_transform())
-        # camera_to_robot_pose = transform_to_numpy(
-        #     self.get_camera_position(carla.SensorPosition.FrontLeft)
-        # )
-        # camera_to_world_pose = current_pose @ camera_to_robot_pose
         imu_data = self.get_imu_data()
-
-        log_entry = {
-            "frame": self.frame,
-            "timestamp": time.time(),
-            "mission_time": self.get_mission_time(),
-            "current_power": self.get_current_power(),
-            "pose": current_pose.tolist(),
-            "imu": imu_data.tolist(),
-            "control": {"v": self.current_v, "w": self.current_w},
-        }
-        self.frames.append(log_entry)
 
         """ We need to check that the sensor data is not None before we do anything with it. The data for each camera will be 
         None for every other simulation step, since the cameras operate at 10Hz while the simulator operates at 20Hz. """
@@ -189,19 +173,18 @@ class DataCollectionAgent(AutonomousAgent):
                         + ".png",
                         FR_sem,
                     )
-                # self.poses.append(to_blender_convention(camera_to_world_pose))
-                # log_entry = {
-                #     "frame": self.frame,
-                #     "timestamp": time.time(),
-                #     "mission_time": self.get_mission_time(),
-                #     "current_power": self.get_current_power(),
-                #     "pose": current_pose.tolist(),
-                #     "imu": imu_data.tolist(),
-                #     "control": {"v": self.current_v, "w": self.current_w},
-                # }
-                # self.frames.append(log_entry)
 
-            self.frame += 1
+        log_entry = {
+            "frame": self.frame,
+            "timestamp": time.time(),
+            "mission_time": self.get_mission_time(),
+            "current_power": self.get_current_power(),
+            "pose": current_pose.tolist(),
+            "imu": imu_data.tolist(),
+            "control": {"v": self.current_v, "w": self.current_w},
+        }
+        self.frames.append(log_entry)
+        self.frame += 1
 
         control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 

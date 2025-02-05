@@ -21,54 +21,32 @@ import plotly.graph_objects as go
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import transform_to_numpy, to_blender_convention
+from lac.util import transform_to_numpy, pose_to_rpy_pos, wrap_angle
 
 
 def get_entry_point():
-    return "DataCollectionAgent"
+    return "NavAgent"
 
 
-class DataCollectionAgent(AutonomousAgent):
+class NavAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
         """Set up a keyboard listener from pynput to capture the key commands for controlling the robot using the arrow keys."""
         listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
 
-        """ Add some attributes to store values for the target linear and angular velocity. """
-        self.current_v = 0
-        self.current_w = 0
-
-        """ Attributes for teleop sensitivity and max speed. """
-        self.max_speed = 0.3
-        self.speed_increment = 0.1
-        self.turn_rate = 0.6
+        """ Controller params """
+        self.KP_STEER = 0.3
+        self.KP_LINEAR = 0.1
+        self.TARGET_SPEED = 0.2  # m/s
 
         """ Initialize a counter to keep track of the number of simulation steps. """
         self.frame = 0
         self.rate = 1  # Sub-sample rate. Max rate is 10Hz
 
-        self.run_name = "data_collection"
-
-        self.log_file = "output/" + self.run_name + "/data_log.json"
-        self.out = {
-            "initial_pose": transform_to_numpy(self.get_initial_position()).tolist(),
-            "lander_pose": transform_to_numpy(self.get_initial_lander_position()).tolist(),
-        }
-        # TODO: add camera and lights config
-
-        self.frames = []
-
         self.waypoints = np.array(
             [[-9.0, -9.0], [-9.0, 9.0], [9.0, 9.0], [9.0, -9.0], [-9.0, -9.0]]
         )
-
-        self.log_images = False
-
-        if not os.path.exists("output/" + self.run_name):
-            os.makedirs("output/" + self.run_name + "/front_left")
-            os.makedirs("output/" + self.run_name + "/front_right")
-            os.makedirs("output/" + self.run_name + "/front_left_semantic")
-            os.makedirs("output/" + self.run_name + "/front_right_semantic")
+        self.waypoint_idx = 0
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
@@ -79,6 +57,12 @@ class DataCollectionAgent(AutonomousAgent):
         and also the initial activation state of each camera and light. Here we are activating the front left camera and light."""
 
         sensors = {
+            carla.SensorPosition.Front: {
+                "camera_active": False,
+                "light_intensity": 0,
+                "width": "1280",
+                "height": "720",
+            },
             carla.SensorPosition.FrontLeft: {
                 "camera_active": True,
                 "light_intensity": 1.0,
@@ -93,6 +77,36 @@ class DataCollectionAgent(AutonomousAgent):
                 "height": "720",
                 "use_semantic": True,
             },
+            carla.SensorPosition.Left: {
+                "camera_active": False,
+                "light_intensity": 0,
+                "width": "1280",
+                "height": "720",
+            },
+            carla.SensorPosition.Right: {
+                "camera_active": False,
+                "light_intensity": 0,
+                "width": "1280",
+                "height": "720",
+            },
+            carla.SensorPosition.BackLeft: {
+                "camera_active": False,
+                "light_intensity": 0,
+                "width": "1280",
+                "height": "720",
+            },
+            carla.SensorPosition.BackRight: {
+                "camera_active": False,
+                "light_intensity": 0,
+                "width": "1280",
+                "height": "720",
+            },
+            carla.SensorPosition.Back: {
+                "camera_active": False,
+                "light_intensity": 0,
+                "width": "1280",
+                "height": "720",
+            },
         }
         return sensors
 
@@ -102,79 +116,24 @@ class DataCollectionAgent(AutonomousAgent):
             self.set_front_arm_angle(radians(60))
             self.set_back_arm_angle(radians(60))
 
-        FL_img = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-        FR_img = input_data["Grayscale"][carla.SensorPosition.FrontRight]
-        FL_sem = input_data["Semantic"][carla.SensorPosition.FrontLeft]
-        FR_sem = input_data["Semantic"][carla.SensorPosition.FrontRight]
-
-        current_pose = transform_to_numpy(self.get_transform())
-        imu_data = self.get_imu_data()
-
-        log_entry = {
-            "frame": self.frame,
-            "timestamp": time.time(),
-            "mission_time": self.get_mission_time(),
-            "current_power": self.get_current_power(),
-            "pose": current_pose.tolist(),
-            "imu": imu_data.tolist(),
-            "control": {"v": self.current_v, "w": self.current_w},
-        }
-        self.frames.append(log_entry)
-
-        """ We need to check that the sensor data is not None before we do anything with it. The data for each camera will be 
-        None for every other simulation step, since the cameras operate at 10Hz while the simulator operates at 20Hz. """
-        if FL_img is not None:
-            cv.imshow("Left camera view", FL_img)
+        # Show camera POV
+        sensor_data = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+        if sensor_data is not None:
+            cv.imshow("Left camera view", sensor_data)
             cv.waitKey(1)
 
-            if self.frame % self.rate == 0:
-                if self.log_images:
-                    cv.imwrite(
-                        "output/" + self.run_name + "/front_left/" + str(self.frame) + ".png",
-                        FL_img,
-                    )
-                    cv.imwrite(
-                        "output/" + self.run_name + "/front_right/" + str(self.frame) + ".png",
-                        FR_img,
-                    )
-                    cv.imwrite(
-                        "output/"
-                        + self.run_name
-                        + "/front_left_semantic/"
-                        + str(self.frame)
-                        + ".png",
-                        FL_sem,
-                    )
-                    cv.imwrite(
-                        "output/"
-                        + self.run_name
-                        + "/front_right_semantic/"
-                        + str(self.frame)
-                        + ".png",
-                        FR_sem,
-                    )
-                # self.poses.append(to_blender_convention(camera_to_world_pose))
-                # log_entry = {
-                #     "frame": self.frame,
-                #     "timestamp": time.time(),
-                #     "mission_time": self.get_mission_time(),
-                #     "current_power": self.get_current_power(),
-                #     "pose": current_pose.tolist(),
-                #     "imu": imu_data.tolist(),
-                #     "control": {"v": self.current_v, "w": self.current_w},
-                # }
-                # self.frames.append(log_entry)
+        current_pose = transform_to_numpy(self.get_transform())
+        rpy, pos = pose_to_rpy_pos(current_pose)
+        heading = rpy[2]
 
-            self.frame += 1
+        # Navigate to the next waypoint
+        waypoint = self.waypoints[self.waypoint_idx]
 
-        control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        angle = np.arctan2(waypoint[1] - pos[1], waypoint[0] - pos[0])
+        angle_diff = wrap_angle(angle - heading)
+        steering = np.clip(self.KP_STEER * angle_diff, -1.0, 1.0)
 
-        if self.frame % 100 == 0:
-            # fig = go.Figure(data=pose_traces(self.poses))
-            # fig.write_html("output/" + self.run_name + "/poses.html")
-            with open(self.log_file, "w") as f:
-                self.out["frames"] = self.frames
-                json.dump(self.out, f, indent=4)
+        control = carla.VehicleVelocityControl(self.TARGET_SPEED, steering)
 
         if self.frame >= 5000:
             self.mission_complete()
