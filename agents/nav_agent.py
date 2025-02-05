@@ -58,6 +58,10 @@ class DataCollectionAgent(AutonomousAgent):
 
         self.frames = []
 
+        self.waypoints = np.array(
+            [[-9.0, -9.0], [-9.0, 9.0], [9.0, 9.0], [9.0, -9.0], [-9.0, -9.0]]
+        )
+
         self.log_images = False
 
         if not os.path.exists("output/" + self.run_name):
@@ -75,12 +79,6 @@ class DataCollectionAgent(AutonomousAgent):
         and also the initial activation state of each camera and light. Here we are activating the front left camera and light."""
 
         sensors = {
-            carla.SensorPosition.Front: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
             carla.SensorPosition.FrontLeft: {
                 "camera_active": True,
                 "light_intensity": 1.0,
@@ -94,36 +92,6 @@ class DataCollectionAgent(AutonomousAgent):
                 "width": "1280",
                 "height": "720",
                 "use_semantic": True,
-            },
-            carla.SensorPosition.Left: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.Right: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.BackLeft: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.BackRight: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.Back: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
             },
         }
         return sensors

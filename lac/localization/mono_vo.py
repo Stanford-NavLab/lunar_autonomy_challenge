@@ -36,9 +36,11 @@ class MonoVisualOdometry(object):
         self.focal = focal_length
         self.pp = pp
         self.R = np.zeros(shape=(3, 3))
-        self.t = np.zeros(shape=(3, 3))
+        # self.t = np.zeros(shape=(3, 3))
+        self.t = np.zeros(shape=(3, 1))
         self.id = 0
         self.n_features = 0
+        self.pose_initialized = False
 
         # Camera intrinsic matrix
         self.K = np.array([[self.focal, 0, self.pp[0]], [0, self.focal, self.pp[1]], [0, 0, 1]])
@@ -55,6 +57,12 @@ class MonoVisualOdometry(object):
         self.poses = poses
 
         self.process_frame()
+
+    def initialize_pose(self, R, t):
+        """Used to initialize pose from first two frames"""
+        self.R = R
+        self.t = t
+        self.pose_initialized = True
 
     def reset(self):
         """Resets the visual odometry object to the first frame"""
@@ -110,7 +118,7 @@ class MonoVisualOdometry(object):
 
         # If the frame is one of first two, we need to initalize
         # our t and R vectors so behavior is different
-        if self.id < 2:
+        if self.id < 2 and not self.pose_initialized:
             # E, _ = cv2.findEssentialMat(self.good_new, self.good_old, self.focal, self.pp, cv2.RANSAC, 0.999, 1.0, None)
             E, _ = cv2.findEssentialMat(
                 self.good_new, self.good_old, self.K, method=cv2.RANSAC, prob=0.999, threshold=1.0

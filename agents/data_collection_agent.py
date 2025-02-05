@@ -239,14 +239,14 @@ class DataCollectionAgent(AutonomousAgent):
 
         if key == keyboard.Key.up:
             self.current_v += self.speed_increment
-            self.current_v = np.clip(self.current_v, 0, 0.3)
+            self.current_v = np.clip(self.current_v, 0, self.max_speed)
         if key == keyboard.Key.down:
-            self.current_v -= 0.1
-            self.current_v = np.clip(self.current_v, -0.3, 0)
+            self.current_v -= self.speed_increment
+            self.current_v = np.clip(self.current_v, -self.max_speed, 0)
         if key == keyboard.Key.left:
-            self.current_w = 0.6
+            self.current_w = self.turn_rate
         if key == keyboard.Key.right:
-            self.current_w = -0.6
+            self.current_w = -self.turn_rate
 
     def on_release(self, key):
         """This method sets the angular or linear velocity to zero when the arrow key is released. Stopping the robot."""
