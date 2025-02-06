@@ -11,8 +11,8 @@ class Segmentation:
         text_prompt = "rock."
         results = self.model.predict([image], [text_prompt])
 
-        image_out = np.zeros_like(image)
+        full_mask = np.zeros_like(image).copy()
         for mask in results[0]["masks"]:
-            image_out[mask.astype(bool)] = 255
+            full_mask[mask.astype(bool)] = 255
 
-        return results[0], image_out
+        return results[0], full_mask

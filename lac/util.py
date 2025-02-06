@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.spatial.transform import Rotation
+from PIL import Image
 
 
 def transform_to_numpy(transform):
@@ -73,3 +74,19 @@ def rmse(predictions, targets):
 def wrap_angle(angle):
     """Wrap an angle in radians to [-pi, pi]."""
     return (angle + np.pi) % (2 * np.pi) - np.pi
+
+
+def np_img_to_PIL_rgb(img_array):
+    """Convert a numpy image array to a PIL image."""
+    return Image.fromarray(img_array).convert("RGB")
+
+
+def color_mask(mask: np.ndarray, color) -> np.ndarray:
+    """Color a mask with a given color.
+
+    mask : np.ndarray (H, W, 3) - Binary mask
+    color : tuple (3) - RGB color
+
+    """
+    mask = mask * np.array(color)
+    return mask

@@ -1,5 +1,19 @@
 import cv2
 import numpy as np
+from transformers import pipeline
+import torch
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+class DepthAnything:
+    def __init__(self):
+        checkpoint = "depth-anything/Depth-Anything-V2-base-hf"
+        self.pipe = pipeline("depth-estimation", model=checkpoint, device=device)
+
+    def predict_depth(self, image):
+        predictions = self.pipe(image)
+        return predictions["depth"]
 
 
 def compute_stereo_depth(

@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.spatial.transform import Rotation
-from scipy.spatial.transform import Rotation
 
 from lac.util import skew_symmetric, normalize_rotation_matrix
 

@@ -17,10 +17,14 @@ from math import radians
 import carla
 import cv2 as cv
 import numpy as np
-import plotly.graph_objects as go
-from lac.util import pose_to_rpy_pos, transform_to_numpy, wrap_angle
-from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 from pynput import keyboard
+from PIL import Image
+
+from leaderboard.autoagents.autonomous_agent import AutonomousAgent
+
+from lac.util import pose_to_rpy_pos, transform_to_numpy, wrap_angle, color_mask
+from lac.perception.segmentation import Segmentation
+from lac.perception.depth import DepthAnything
 
 
 def get_entry_point():
@@ -33,10 +37,19 @@ class NavAgent(AutonomousAgent):
         listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
 
+        # For teleop
+        self.current_v = 0
+        self.current_w = 0
+        self.TELEOP = True
+
         """ Controller params """
         self.KP_STEER = 0.3
         self.KP_LINEAR = 0.1
         self.TARGET_SPEED = 0.2  # m/s
+
+        """ Perception modules """
+        self.segmentation = Segmentation()
+        self.depth = DepthAnything()
 
         """ Initialize a counter to keep track of the number of simulation steps. """
         self.frame = 0
@@ -116,9 +129,24 @@ class NavAgent(AutonomousAgent):
             self.set_back_arm_angle(radians(60))
 
         # Show camera POV
-        sensor_data = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-        if sensor_data is not None:
-            cv.imshow("Left camera view", sensor_data)
+        FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+        FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
+        if FL_gray is not None:
+            # Run segmentation
+            results, mask = self.segmentation.segment_rocks(Image.fromarray(FL_gray).convert("RGB"))
+
+            FL_rgb = cv.cvtColor(FL_gray, cv.COLOR_GRAY2BGR)
+
+            mask_colored = color_mask(mask, (0, 0, 1)).astype(FL_rgb.dtype)
+            print("Mask colored shape: ", mask_colored.shape)
+            print("FL_rgb shape: ", FL_rgb.shape)
+            overlay = cv.addWeighted(FL_rgb, 1.0, mask_colored, beta=0.5, gamma=0)
+            print("ran segmentation")
+
+            # cv.imshow("Left camera view", FL_rgb)
+            cv.imshow("Rock segmentation", overlay)
+            # cv.imshow("Right camera view", FR_rgb)
+            # cv.imshow("Segmentation mask", mask * np.array([1, 0, 0]))
             cv.waitKey(1)
 
         current_pose = transform_to_numpy(self.get_transform())
@@ -132,7 +160,10 @@ class NavAgent(AutonomousAgent):
         angle_diff = wrap_angle(angle - heading)
         steering = np.clip(self.KP_STEER * angle_diff, -1.0, 1.0)
 
-        control = carla.VehicleVelocityControl(self.TARGET_SPEED, steering)
+        if self.TELEOP:
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        else:
+            control = carla.VehicleVelocityControl(self.TARGET_SPEED, steering)
 
         if self.frame >= 5000:
             self.mission_complete()
@@ -141,9 +172,6 @@ class NavAgent(AutonomousAgent):
 
     def finalize(self):
         print("Running finalize")
-
-        with open(self.log_file, "w") as f:
-            json.dump(self.out, f, indent=4)
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""
