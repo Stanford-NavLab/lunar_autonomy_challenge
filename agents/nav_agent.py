@@ -8,20 +8,19 @@ Data collection agent
 
 """
 
-import numpy as np
-import carla
-import cv2 as cv
-import random
-import os
 import json
+import os
+import random
 import time
 from math import radians
-from pynput import keyboard
+
+import carla
+import cv2 as cv
+import numpy as np
 import plotly.graph_objects as go
-
+from lac.util import pose_to_rpy_pos, transform_to_numpy, wrap_angle
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
-
-from lac.util import transform_to_numpy, pose_to_rpy_pos, wrap_angle
+from pynput import keyboard
 
 
 def get_entry_point():

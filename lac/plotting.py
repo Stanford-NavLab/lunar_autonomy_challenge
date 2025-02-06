@@ -1,8 +1,8 @@
 """Plotting functions"""
 
 import numpy as np
-import plotly.graph_objects as go
 import plotly.express as px
+import plotly.graph_objects as go
 
 ##### ------------------- 2D ------------------- #####
 
