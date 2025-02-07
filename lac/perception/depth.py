@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from transformers import pipeline
 import torch
+from PIL import Image
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -10,8 +11,12 @@ class DepthAnything:
     def __init__(self):
         checkpoint = "depth-anything/Depth-Anything-V2-base-hf"
         self.pipe = pipeline("depth-estimation", model=checkpoint, device=device)
+        self.pipe.model.to(torch.float32)
 
-    def predict_depth(self, image):
+    def predict_depth(self, image: Image):
+        """
+        image : RGB PIL Image
+        """
         predictions = self.pipe(image)
         return predictions["depth"]
 

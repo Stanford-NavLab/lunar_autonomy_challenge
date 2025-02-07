@@ -22,7 +22,7 @@ from PIL import Image
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import pose_to_rpy_pos, transform_to_numpy, wrap_angle, color_mask
+from lac.util import pose_to_rpy_pos, transform_to_numpy, wrap_angle, color_mask, draw_steering_arc
 from lac.perception.segmentation import Segmentation
 from lac.perception.depth import DepthAnything
 
@@ -40,7 +40,7 @@ class NavAgent(AutonomousAgent):
         # For teleop
         self.current_v = 0
         self.current_w = 0
-        self.TELEOP = True
+        self.TELEOP = False
 
         """ Controller params """
         self.KP_STEER = 0.3
@@ -55,10 +55,9 @@ class NavAgent(AutonomousAgent):
         self.frame = 0
         self.rate = 1  # Sub-sample rate. Max rate is 10Hz
 
-        self.waypoints = np.array(
-            [[-9.0, -9.0], [-9.0, 9.0], [9.0, 9.0], [9.0, -9.0], [-9.0, -9.0]]
-        )
+        self.waypoints = np.array([[-9.0, 9.0], [9.0, 9.0], [9.0, -9.0], [-9.0, -9.0]])
         self.waypoint_idx = 0
+        self.waypoint_threshold = 1.0  # meters
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
@@ -80,14 +79,14 @@ class NavAgent(AutonomousAgent):
                 "light_intensity": 1.0,
                 "width": "1280",
                 "height": "720",
-                "use_semantic": True,
+                "use_semantic": False,
             },
             carla.SensorPosition.FrontRight: {
                 "camera_active": True,
                 "light_intensity": 1.0,
                 "width": "1280",
                 "height": "720",
-                "use_semantic": True,
+                "use_semantic": False,
             },
             carla.SensorPosition.Left: {
                 "camera_active": False,
@@ -128,32 +127,17 @@ class NavAgent(AutonomousAgent):
             self.set_front_arm_angle(radians(60))
             self.set_back_arm_angle(radians(60))
 
-        # Show camera POV
-        FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-        FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
-        if FL_gray is not None:
-            # Run segmentation
-            results, mask = self.segmentation.segment_rocks(Image.fromarray(FL_gray).convert("RGB"))
-
-            FL_rgb = cv.cvtColor(FL_gray, cv.COLOR_GRAY2BGR)
-
-            mask_colored = color_mask(mask, (0, 0, 1)).astype(FL_rgb.dtype)
-            print("Mask colored shape: ", mask_colored.shape)
-            print("FL_rgb shape: ", FL_rgb.shape)
-            overlay = cv.addWeighted(FL_rgb, 1.0, mask_colored, beta=0.5, gamma=0)
-            print("ran segmentation")
-
-            # cv.imshow("Left camera view", FL_rgb)
-            cv.imshow("Rock segmentation", overlay)
-            # cv.imshow("Right camera view", FR_rgb)
-            # cv.imshow("Segmentation mask", mask * np.array([1, 0, 0]))
-            cv.waitKey(1)
-
         current_pose = transform_to_numpy(self.get_transform())
         rpy, pos = pose_to_rpy_pos(current_pose)
         heading = rpy[2]
 
+        print("Position: ", pos)
+
         # Navigate to the next waypoint
+        if np.linalg.norm(pos[:2] - self.waypoints[self.waypoint_idx]) < self.waypoint_threshold:
+            self.waypoint_idx += 1
+            if self.waypoint_idx >= len(self.waypoints):
+                self.waypoint_idx = 0
         waypoint = self.waypoints[self.waypoint_idx]
 
         angle = np.arctan2(waypoint[1] - pos[1], waypoint[0] - pos[0])
@@ -167,6 +151,21 @@ class NavAgent(AutonomousAgent):
 
         if self.frame >= 5000:
             self.mission_complete()
+
+        # Show camera POV
+        FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+        if FL_gray is not None:
+            # Run segmentation
+            results, mask = self.segmentation.segment_rocks(Image.fromarray(FL_gray).convert("RGB"))
+            FL_rgb = cv.cvtColor(FL_gray, cv.COLOR_GRAY2BGR)
+            mask_colored = color_mask(mask, (0, 0, 1)).astype(FL_rgb.dtype)
+            overlay = cv.addWeighted(FL_rgb, 1.0, mask_colored, beta=0.5, gamma=0)
+
+            overlay = draw_steering_arc(overlay, steering)
+
+            # cv.imshow("Left camera view", FL_gray)
+            cv.imshow("Rock segmentation", overlay)
+            cv.waitKey(1)
 
         return control
 

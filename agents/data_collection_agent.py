@@ -54,6 +54,18 @@ class DataCollectionAgent(AutonomousAgent):
             "initial_pose": transform_to_numpy(self.get_initial_position()).tolist(),
             "lander_pose": transform_to_numpy(self.get_initial_lander_position()).tolist(),
         }
+        # Initial rover pose in world frame
+        initial_rover_pose = transform_to_numpy(self.get_initial_position())
+        # Lander pose in rover frame at initialization
+        lander_pose_rover = transform_to_numpy(self.get_initial_lander_position())
+        # Lander pose in world frame (constant)
+        lander_pose_world = initial_rover_pose @ lander_pose_rover
+        print("Initial lander pose in world frame: ", lander_pose_world[:3, 3])
+        self.out = {
+            "initial_pose": initial_rover_pose.tolist(),
+            "lander_pose_rover": lander_pose_rover.tolist(),
+            "lander_pose_world": lander_pose_world.tolist(),
+        }
 
         self.frames = []
         self.log_images = True
