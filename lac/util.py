@@ -93,6 +93,14 @@ def color_mask(mask: np.ndarray, color) -> np.ndarray:
     return mask
 
 
+def mask_centroid(mask: np.ndarray) -> tuple:
+    """Compute the centroid of a binary mask."""
+    M = cv.moments(mask)
+    cx = int(M["m10"] / M["m00"])
+    cy = int(M["m01"] / M["m00"])
+    return cx, cy
+
+
 def draw_steering_arc(image, steering, l=0.4, color=(0, 0, 255), thickness=3):
     """
     Overlays an arc on the input image showing the predicted trajectory of a rover.
@@ -107,7 +115,8 @@ def draw_steering_arc(image, steering, l=0.4, color=(0, 0, 255), thickness=3):
     Returns:
       The image with the arc overlay.
     """
-    overlay = image.copy()
+    # overlay = image.copy()
+    overlay = np.zeros_like(image, dtype=np.uint8).copy()
     h, w = image.shape[:2]
     # Define the vehicle's (or camera's) location as the bottom-center of the image.
     cx, cy = w // 2, h

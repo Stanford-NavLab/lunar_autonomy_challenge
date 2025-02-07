@@ -121,6 +121,8 @@ class DataCollectionAgent(AutonomousAgent):
 
         current_pose = transform_to_numpy(self.get_transform())
         imu_data = self.get_imu_data()
+        linear_speed = self.get_linear_speed()
+        angular_speed = self.get_angular_speed()
 
         """ We need to check that the sensor data is not None before we do anything with it. The data for each camera will be 
         None for every other simulation step, since the cameras operate at 10Hz while the simulator operates at 20Hz. """
@@ -158,6 +160,8 @@ class DataCollectionAgent(AutonomousAgent):
             "pose": current_pose.tolist(),
             "imu": imu_data.tolist(),
             "control": {"v": self.current_v, "w": self.current_w},
+            "linear_speed": linear_speed,
+            "angular_speed": angular_speed,
         }
         self.frames.append(log_entry)
         self.frame += 1

@@ -13,7 +13,6 @@ import os
 import random
 import time
 from math import radians
-
 import carla
 import cv2 as cv
 import numpy as np
@@ -22,9 +21,24 @@ from PIL import Image
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import pose_to_rpy_pos, transform_to_numpy, wrap_angle, color_mask, draw_steering_arc
+from lac.util import (
+    pose_to_rpy_pos,
+    transform_to_numpy,
+    wrap_angle,
+    color_mask,
+    draw_steering_arc,
+    mask_centroid,
+)
 from lac.perception.segmentation import Segmentation
 from lac.perception.depth import DepthAnything
+
+
+def display_text(text):
+    """Clear the image and display new text."""
+    window_name = "Output Window"
+    img = np.zeros((300, 500, 3), dtype=np.uint8)
+    cv.putText(img, text, (50, 150), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    cv.imshow(window_name, img)
 
 
 def get_entry_point():
@@ -41,6 +55,11 @@ class NavAgent(AutonomousAgent):
         self.current_v = 0
         self.current_w = 0
         self.TELEOP = False
+
+        self.IMG_WIDTH = 1280
+        self.IMG_HEIGHT = 720
+        self.max_steer = 1.0  # rad/s
+        self.max_steer_delta = 0.6  # rad/s
 
         """ Controller params """
         self.KP_STEER = 0.3
@@ -142,12 +161,8 @@ class NavAgent(AutonomousAgent):
 
         angle = np.arctan2(waypoint[1] - pos[1], waypoint[0] - pos[0])
         angle_diff = wrap_angle(angle - heading)
-        steering = np.clip(self.KP_STEER * angle_diff, -1.0, 1.0)
-
-        if self.TELEOP:
-            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
-        else:
-            control = carla.VehicleVelocityControl(self.TARGET_SPEED, steering)
+        nominal_steering = np.clip(self.KP_STEER * angle_diff, -self.max_steer, self.max_steer)
+        steer_delta = 0
 
         if self.frame >= 5000:
             self.mission_complete()
@@ -156,16 +171,50 @@ class NavAgent(AutonomousAgent):
         FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
         if FL_gray is not None:
             # Run segmentation
-            results, mask = self.segmentation.segment_rocks(Image.fromarray(FL_gray).convert("RGB"))
+            results, full_mask = self.segmentation.segment_rocks(
+                Image.fromarray(FL_gray).convert("RGB")
+            )
             FL_rgb = cv.cvtColor(FL_gray, cv.COLOR_GRAY2BGR)
-            mask_colored = color_mask(mask, (0, 0, 1)).astype(FL_rgb.dtype)
+            mask_colored = color_mask(full_mask, (0, 0, 1)).astype(FL_rgb.dtype)
             overlay = cv.addWeighted(FL_rgb, 1.0, mask_colored, beta=0.5, gamma=0)
 
-            overlay = draw_steering_arc(overlay, steering)
+            overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
+
+            max_area = 0
+            max_mask = None
+            for mask in results["masks"]:
+                mask_area = np.sum(mask)
+                if mask_area > max_area and mask_area < 50000:  # Filter out outliers
+                    max_area = mask_area
+                    max_mask = mask
+            if max_mask is not None and max_area > 1000:
+                max_mask = max_mask.astype(np.uint8)
+                cx, cy = mask_centroid(max_mask)
+                print("Centroid: ", cx, cy)
+                x, y, w, h = cv.boundingRect(max_mask)
+                offset = self.IMG_WIDTH // 2 - cx
+                if offset > 0:
+                    print("Turn right")
+                    steer_delta = -min(
+                        self.max_steer_delta * ((x + w) - cx) / 100, self.max_steer_delta
+                    )
+                else:
+                    print("Turn left")
+                    steer_delta = min(self.max_steer_delta * (cx - x) / 100, self.max_steer_delta)
+
+            overlay = draw_steering_arc(overlay, nominal_steering + steer_delta, color=(0, 255, 0))
 
             # cv.imshow("Left camera view", FL_gray)
             cv.imshow("Rock segmentation", overlay)
+            display_text("Steer delta: " + str(steer_delta))
             cv.waitKey(1)
+
+        if self.TELEOP:
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        else:
+            control = carla.VehicleVelocityControl(
+                self.TARGET_SPEED, nominal_steering + steer_delta
+            )
 
         return control
 
