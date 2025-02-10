@@ -50,10 +50,7 @@ class DataCollectionAgent(AutonomousAgent):
         self.run_name = "data_collection"
 
         self.log_file = "output/" + self.run_name + "/data_log.json"
-        self.out = {
-            "initial_pose": transform_to_numpy(self.get_initial_position()).tolist(),
-            "lander_pose": transform_to_numpy(self.get_initial_lander_position()).tolist(),
-        }
+
         # Initial rover pose in world frame
         initial_rover_pose = transform_to_numpy(self.get_initial_position())
         # Lander pose in rover frame at initialization
@@ -79,11 +76,15 @@ class DataCollectionAgent(AutonomousAgent):
             "Front",
             "Back",
         ]
-        # self.cameras_active = [True, False, False, False, False, False, False, False]
-        self.cameras_active = [True, True, True, True, True, True, True, True]
+        self.cameras_active = [True, False, False, False, True, False, False, False]
+        # self.cameras_active = [True, True, True, True, True, True, True, True]
         self.light_intensities = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         self.semantic_active = [False, False, False, False, False, False, False, False]
-        # TODO: add camera and lights config
+
+        self.out["cameras_active"] = self.cameras_active
+        self.out["light_intensities"] = self.light_intensities
+        self.out["semantic_active"] = self.semantic_active
+        self.out["use_fiducials"] = self.use_fiducials()
 
         if not os.path.exists("output/" + self.run_name):
             for i, cam in enumerate(self.cameras):
@@ -94,7 +95,7 @@ class DataCollectionAgent(AutonomousAgent):
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
-        return True
+        return False
 
     def sensors(self):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
@@ -127,7 +128,9 @@ class DataCollectionAgent(AutonomousAgent):
         """ We need to check that the sensor data is not None before we do anything with it. The data for each camera will be 
         None for every other simulation step, since the cameras operate at 10Hz while the simulator operates at 20Hz. """
         if FL_img is not None:
-            cv.imshow("Left camera view", FL_img)
+            cv.imshow("Front left", FL_img)
+            L_img = input_data["Grayscale"][carla.SensorPosition.Left]
+            cv.imshow("Left", L_img)
             cv.waitKey(1)
 
             if self.frame % self.rate == 0:
@@ -175,21 +178,13 @@ class DataCollectionAgent(AutonomousAgent):
                 self.out["frames"] = self.frames
                 json.dump(self.out, f, indent=4)
 
-        if self.frame >= 5000:
-            self.mission_complete()
-
         return control
 
     def finalize(self):
         print("Running finalize")
-        # self.writer.close()
 
         with open(self.log_file, "w") as f:
             json.dump(self.out, f, indent=4)
-
-        # Plot poses
-        # fig = go.Figure(data=pose_traces(self.poses))
-        # fig.write_html("output/" + self.run_name + "/poses.html")
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""

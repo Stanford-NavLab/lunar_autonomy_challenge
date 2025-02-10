@@ -44,9 +44,9 @@ class MappingAgent(AutonomousAgent):
         # For teleop
         self.current_v = 0
         self.current_w = 0
-        self.max_speed = 0.3
-        self.speed_increment = 0.1
-        self.turn_rate = 0.6
+        self.max_speed = 0.2
+        self.speed_increment = 0.05
+        self.turn_rate = 0.3
 
         self.wheel_rig = np.array(
             [
@@ -137,6 +137,10 @@ class MappingAgent(AutonomousAgent):
         wheel_contact_points = wheel_contact_points[:3, :].T
 
         g_map = self.get_geometric_map()
+        for point in wheel_contact_points:
+            current_height = g_map.get_height(point[0], point[1])
+            if (current_height == -np.inf) or (current_height > point[2]):
+                g_map.set_height(point[0], point[1], point[2])
 
         # Show camera POV
         FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
