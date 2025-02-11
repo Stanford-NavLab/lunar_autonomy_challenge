@@ -133,6 +133,7 @@ class MappingAgent(AutonomousAgent):
         # Cheat with perfect localization
         current_pose = transform_to_numpy(self.get_transform())
 
+        # Wheel contact mapping
         wheel_contact_points = current_pose @ self.wheel_rig_coords
         wheel_contact_points = wheel_contact_points[:3, :].T
 

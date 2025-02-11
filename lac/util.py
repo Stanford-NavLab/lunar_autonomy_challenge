@@ -101,6 +101,31 @@ def mask_centroid(mask: np.ndarray) -> tuple:
     return cx, cy
 
 
+def gen_square_spiral(max_val, min_val, step):
+    """
+    Generate an Nx2 numpy array of 2D coordinates following a square spiral.
+
+    Parameters:
+      max_val (float): The half-side length of the outermost square.
+      min_val (float): The half-side length of the innermost square.
+      step (float): The decrement between successive squares.
+
+    Returns:
+      np.array: An (N x 2) numpy array containing the 2D coordinates.
+    """
+    points = []
+    r = max_val
+    # Use a small tolerance to account for floating point comparisons.
+    while r >= min_val - 1e-8:
+        # Order: top-left, top-right, bottom-right, bottom-left.
+        points.append([-r, r])  # top-left
+        points.append([r, r])  # top-right
+        points.append([r, -r])  # bottom-right
+        points.append([-r, -r])  # bottom-left
+        r -= step
+    return np.array(points)
+
+
 def draw_steering_arc(image, steering, l=0.4, color=(0, 0, 255), thickness=3):
     """
     Overlays an arc on the input image showing the predicted trajectory of a rover.

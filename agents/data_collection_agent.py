@@ -48,7 +48,6 @@ class DataCollectionAgent(AutonomousAgent):
         self.rate = 1  # Sub-sample rate. Max rate is 10Hz
 
         self.run_name = "data_collection"
-
         self.log_file = "output/" + self.run_name + "/data_log.json"
 
         # Initial rover pose in world frame
@@ -172,8 +171,6 @@ class DataCollectionAgent(AutonomousAgent):
         control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         if self.frame % 100 == 0:
-            # fig = go.Figure(data=pose_traces(self.poses))
-            # fig.write_html("output/" + self.run_name + "/poses.html")
             with open(self.log_file, "w") as f:
                 self.out["frames"] = self.frames
                 json.dump(self.out, f, indent=4)

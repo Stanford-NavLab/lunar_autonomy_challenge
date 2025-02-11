@@ -28,6 +28,7 @@ from lac.util import (
     color_mask,
     draw_steering_arc,
     mask_centroid,
+    gen_square_spiral,
 )
 from lac.perception.segmentation import Segmentation
 from lac.perception.depth import DepthAnything
@@ -51,13 +52,14 @@ class NavAgent(AutonomousAgent):
         listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
 
-        # For teleop
+        """ For teleop """
         self.current_v = 0
         self.current_w = 0
         self.TELEOP = False
 
         self.IMG_WIDTH = 1280
         self.IMG_HEIGHT = 720
+        self.DISPLAY = False
         self.max_steer = 1.0  # rad/s
         self.max_steer_delta = 0.6  # rad/s
 
@@ -74,13 +76,34 @@ class NavAgent(AutonomousAgent):
         self.frame = 0
         self.rate = 1  # Sub-sample rate. Max rate is 10Hz
 
-        self.waypoints = np.array([[-9.0, 9.0], [9.0, 9.0], [9.0, -9.0], [-9.0, -9.0]])
+        """ Wheel contact mapping """
+        self.wheel_rig = np.array(
+            [
+                [0.222, 0.203, -0.134],
+                [0.222, -0.203, -0.134],
+                [-0.222, 0.203, -0.134],
+                [-0.222, 0.203, -0.134],
+            ]
+        )
+        self.wheel_rig_coords = np.concatenate((self.wheel_rig.T, np.ones((1, 4))), axis=0)
+
+        """ Waypoints """
+        self.waypoints = gen_square_spiral(max_val=4.5, min_val=2.0, step=0.5)
+        print(self.waypoints)
         self.waypoint_idx = 0
         self.waypoint_threshold = 1.0  # meters
 
+        """ Data logging """
+        self.run_name = "nav_agent"
+        self.log_file = "output/" + self.run_name + "/data_log.json"
+        self.out = {}
+        self.frames = []
+        if not os.path.exists("output/" + self.run_name):
+            os.makedirs("output/" + self.run_name)
+
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
-        return True
+        return False
 
     def sensors(self):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
@@ -149,14 +172,27 @@ class NavAgent(AutonomousAgent):
         current_pose = transform_to_numpy(self.get_transform())
         rpy, pos = pose_to_rpy_pos(current_pose)
         heading = rpy[2]
+        print("Current pose: ", current_pose)
 
-        print("Position: ", pos)
+        # Wheel contact mapping
+        wheel_contact_points = current_pose @ self.wheel_rig_coords
+        wheel_contact_points = wheel_contact_points[:3, :].T
+
+        g_map = self.get_geometric_map()
+        for point in wheel_contact_points:
+            current_height = g_map.get_height(point[0], point[1])
+            if current_height is None:  # Out of bounds
+                continue
+            if (current_height == -np.inf) or (current_height > point[2]):
+                g_map.set_height(point[0], point[1], point[2])
 
         # Navigate to the next waypoint
         if np.linalg.norm(pos[:2] - self.waypoints[self.waypoint_idx]) < self.waypoint_threshold:
             self.waypoint_idx += 1
             if self.waypoint_idx >= len(self.waypoints):
+                self.mission_complete()
                 self.waypoint_idx = 0
+        print(f"Waypoint {self.waypoint_idx + 1} / {len(self.waypoints)}")
         waypoint = self.waypoints[self.waypoint_idx]
 
         angle = np.arctan2(waypoint[1] - pos[1], waypoint[0] - pos[0])
@@ -164,16 +200,16 @@ class NavAgent(AutonomousAgent):
         nominal_steering = np.clip(self.KP_STEER * angle_diff, -self.max_steer, self.max_steer)
         steer_delta = 0
 
-        if self.frame >= 5000:
-            self.mission_complete()
-
-        # Show camera POV
+        # Perception
         FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
         if FL_gray is not None:
+            img_PIL = Image.fromarray(FL_gray).convert("RGB")
+
+            # # Estimate depth
+            # depth = self.depth.predict_depth(img_PIL)
+
             # Run segmentation
-            results, full_mask = self.segmentation.segment_rocks(
-                Image.fromarray(FL_gray).convert("RGB")
-            )
+            results, full_mask = self.segmentation.segment_rocks(img_PIL)
             FL_rgb = cv.cvtColor(FL_gray, cv.COLOR_GRAY2BGR)
             mask_colored = color_mask(full_mask, (0, 0, 1)).astype(FL_rgb.dtype)
             overlay = cv.addWeighted(FL_rgb, 1.0, mask_colored, beta=0.5, gamma=0)
@@ -190,24 +226,22 @@ class NavAgent(AutonomousAgent):
             if max_mask is not None and max_area > 1000:
                 max_mask = max_mask.astype(np.uint8)
                 cx, cy = mask_centroid(max_mask)
-                print("Centroid: ", cx, cy)
                 x, y, w, h = cv.boundingRect(max_mask)
                 offset = self.IMG_WIDTH // 2 - cx
-                if offset > 0:
-                    print("Turn right")
+                if offset > 0:  # Turn right
                     steer_delta = -min(
                         self.max_steer_delta * ((x + w) - cx) / 100, self.max_steer_delta
                     )
-                else:
-                    print("Turn left")
+                else:  # Turn left
                     steer_delta = min(self.max_steer_delta * (cx - x) / 100, self.max_steer_delta)
 
             overlay = draw_steering_arc(overlay, nominal_steering + steer_delta, color=(0, 255, 0))
 
-            # cv.imshow("Left camera view", FL_gray)
-            cv.imshow("Rock segmentation", overlay)
-            display_text("Steer delta: " + str(steer_delta))
-            cv.waitKey(1)
+            if self.DISPLAY:
+                # cv.imshow("Left camera view", FL_gray)
+                cv.imshow("Rock segmentation", overlay)
+                display_text("Steer delta: " + str(steer_delta))
+                cv.waitKey(1)
 
         if self.TELEOP:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
@@ -215,6 +249,28 @@ class NavAgent(AutonomousAgent):
             control = carla.VehicleVelocityControl(
                 self.TARGET_SPEED, nominal_steering + steer_delta
             )
+
+        # Data logging
+        imu_data = self.get_imu_data()
+        linear_speed = self.get_linear_speed()
+        angular_speed = self.get_angular_speed()
+        log_entry = {
+            "frame": self.frame,
+            "timestamp": time.time(),
+            "mission_time": self.get_mission_time(),
+            "current_power": self.get_current_power(),
+            "pose": current_pose.tolist(),
+            "imu": imu_data.tolist(),
+            "control": {"v": self.current_v, "w": self.current_w},
+            "linear_speed": linear_speed,
+            "angular_speed": angular_speed,
+        }
+        self.frames.append(log_entry)
+        self.frame += 1
+        if self.frame % 100 == 0:
+            with open(self.log_file, "w") as f:
+                self.out["frames"] = self.frames
+                json.dump(self.out, f, indent=4)
 
         return control
 

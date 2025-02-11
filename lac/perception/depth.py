@@ -10,7 +10,12 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 class DepthAnything:
     def __init__(self):
         checkpoint = "depth-anything/Depth-Anything-V2-base-hf"
-        self.pipe = pipeline("depth-estimation", model=checkpoint, device=device)
+        self.pipe = pipeline(
+            "depth-estimation",
+            model=checkpoint,
+            device=device,
+            model_kwargs={"torch_dtype": torch.float32},
+        )
         self.pipe.model.to(torch.float32)
 
     def predict_depth(self, image: Image):
