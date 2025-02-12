@@ -73,7 +73,7 @@ def plot_path_3d(
     return fig
 
 
-def plot_3d_points(points, fig=None, color="blue", markersize=3):
+def plot_3d_points(points, fig=None, color="blue", markersize=3, name=None):
     """Plot 3D points."""
     if fig is None:
         fig = go.Figure()
@@ -84,6 +84,7 @@ def plot_3d_points(points, fig=None, color="blue", markersize=3):
             z=points[:, 2],
             mode="markers",
             marker=dict(size=markersize, color=color),
+            name=name,
         )
     )
     fig.update_layout(width=1200, height=900, scene_aspectmode="data")
@@ -163,3 +164,45 @@ def pose_traces(pose_list):
         all_traces.extend(traces)
 
     return all_traces
+
+
+def vector_trace(
+    start: np.ndarray, end: np.ndarray, color: str = "blue", name: str = "", head_size: float = 0.1
+) -> go.Scatter3d:
+    """
+    Create an arrow trace for a vector
+    Input:
+        start - start point of the vector
+        end - end point of the vector
+        color - color of the vector
+        name - name of the vector
+        head_size - size of the arrow head
+    Output:
+        list of traces for the vector (tail and head)
+    """
+    rel_vec = end - start
+    rel_vec_unit = rel_vec / np.linalg.norm(rel_vec)
+    head_base = end - head_size * rel_vec_unit
+
+    tail_trace = go.Scatter3d(
+        x=[start[0], end[0]],
+        y=[start[1], end[1]],
+        z=[start[2], end[2]],
+        mode="lines+markers",
+        marker=dict(size=5, color=color),
+        name=name,
+    )
+    head_trace = go.Cone(
+        x=[head_base[0]],
+        y=[head_base[1]],
+        z=[head_base[2]],
+        u=[rel_vec_unit[0]],
+        v=[rel_vec_unit[1]],
+        w=[rel_vec_unit[2]],
+        showscale=False,
+        colorscale=[[0, color], [1, color]],
+        sizemode="absolute",
+        sizeref=head_size,  # Adjust size of the arrow head
+    )
+
+    return [tail_trace, head_trace]

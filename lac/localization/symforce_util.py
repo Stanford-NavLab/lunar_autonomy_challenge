@@ -29,6 +29,27 @@ def odometry_residual(
     return T.cast(sf.V6, sf.M.diag(diagonal_sigmas.to_flat_list()).inv() * sf.V6(tangent_error))
 
 
+def bearing_residual(
+    robot_pose: sf.Pose3,
+    landmark_pose: sf.Pose3,
+    los_vector: sf.Vector3,
+    sigma: sf.Scalar,
+    epsilon: sf.Scalar,
+) -> sf.V1:
+    """
+    Residual on the bearing measurement between the robot and a landmark.
+    Args:
+        robot_pose: Pose of the robot in the world frame
+        landmark_pose: Pose of the landmark in the world frame
+        los_vector: Unit vector pointing from the robot to the landmark
+        sigma: Standard deviation of the bearing measurement
+        epsilon: Small number for singularity handling
+    """
+    robot_to_landmark = (landmark_pose.t - robot_pose.t).normalized(epsilon=epsilon)
+    angle_error = sf.acos_safe(robot_to_landmark.dot(los_vector), epsilon=epsilon)
+    return sf.V1(angle_error / sigma)
+
+
 def make_pose(T):
     """
     Utility for creating a symforce Pose3 object from a 4x4 pose matrix
@@ -55,6 +76,7 @@ def odometry_lander_fgo(
     lander_measurements,
     odometry_sigma,
     lander_sigma,
+    fix_first_pose=True,
     debug=False,
 ):
     """
@@ -80,10 +102,14 @@ def odometry_lander_fgo(
     values["poses"] = [make_pose(T) for T in init_poses]
     values["lander_pose"] = make_pose(lander_pose)
     values["odometry"] = [make_pose(T) for T in odometry_measurements]
-    values["lander_relative_poses"] = [make_pose(T) for T in lander_measurements]
+    # values["lander_relative_poses"] = [make_pose(T) for T in lander_measurements]
+    values["lander_los_measurements"] = [sf.V3(m) for m in lander_measurements]
     values["odometry_sigma"] = sf.V6(odometry_sigma)
-    values["lander_sigma"] = sf.V6(lander_sigma)
+    # values["lander_sigma"] = sf.V6(lander_sigma)
+    values["lander_sigma"] = lander_sigma
     values["epsilon"] = sf.numeric_epsilon
+
+    start_idx = 1 if fix_first_pose else 0
 
     # Build factors
     factors = []
@@ -100,31 +126,31 @@ def odometry_lander_fgo(
                 ],
             )
         )
-    for i in range(len(lander_measurements)):
+    for i in range(start_idx, len(lander_measurements)):
         factors.append(
             Factor(
-                residual=odometry_residual,
+                residual=bearing_residual,
                 keys=[
                     f"poses[{i}]",
                     "lander_pose",
-                    f"lander_relative_poses[{i}]",
+                    f"lander_los_measurements[{i}]",
                     "lander_sigma",
                     "epsilon",
                 ],
             )
         )
 
-    optimized_keys = [f"poses[{i}]" for i in range(len(init_poses))]
+    optimized_keys = [f"poses[{i}]" for i in range(start_idx, len(init_poses))]
     optimizer = Optimizer(
         factors=factors,
         optimized_keys=optimized_keys,
         # Return problem stats for every iteration
         debug_stats=debug,
         # Customize optimizer behavior
-        params=Optimizer.Params(
-            verbose=debug, initial_lambda=1e4, iterations=100, lambda_down_factor=0.5
-        ),
+        # params=Optimizer.Params(
+        #     verbose=debug, initial_lambda=1e4, iterations=100, lambda_down_factor=0.5
+        # ),
     )
     result = optimizer.optimize(values)
     optimized_poses = result.optimized_values["poses"]
-    return [to_np_pose(pose) for pose in optimized_poses]
+    return [to_np_pose(pose) for pose in optimized_poses], result
