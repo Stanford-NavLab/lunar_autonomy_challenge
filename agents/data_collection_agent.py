@@ -65,31 +65,31 @@ class DataCollectionAgent(AutonomousAgent):
 
         self.frames = []
         self.log_images = True
-        self.cameras = [
-            "FrontLeft",
-            "FrontRight",
-            "BackLeft",
-            "BackRight",
-            "Left",
-            "Right",
-            "Front",
-            "Back",
-        ]
-        self.cameras_active = [True, False, False, False, False, False, False, False]
-        # self.cameras_active = [True, True, True, True, True, True, True, True]
-        self.light_intensities = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        self.semantic_active = [False, False, False, False, False, False, False, False]
+        self.cameras = {
+            "FrontLeft": {"active": True, "light": 1.0, "semantic": False},
+            "FrontRight": {"active": False, "light": 0.0, "semantic": False},
+            "BackLeft": {"active": False, "light": 0.0, "semantic": False},
+            "BackRight": {"active": False, "light": 0.0, "semantic": False},
+            "Left": {"active": False, "light": 0.0, "semantic": False},
+            "Right": {"active": False, "light": 0.0, "semantic": False},
+            "Front": {"active": False, "light": 0.0, "semantic": False},
+            "Back": {"active": False, "light": 0.0, "semantic": False},
+        }
+        # self.cameras_active = [True, False, False, False, False, False, False, False]
+        # # self.cameras_active = [True, True, True, True, True, True, True, True]
+        # self.light_intensities = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        # self.semantic_active = [False, False, False, False, False, False, False, False]
 
-        self.out["cameras_active"] = self.cameras_active
-        self.out["light_intensities"] = self.light_intensities
-        self.out["semantic_active"] = self.semantic_active
+        self.out["cameras_config"] = self.cameras
+        # self.out["light_intensities"] = self.light_intensities
+        # self.out["semantic_active"] = self.semantic_active
         self.out["use_fiducials"] = self.use_fiducials()
 
         if not os.path.exists("output/" + self.run_name):
-            for i, cam in enumerate(self.cameras):
-                if self.cameras_active[i]:
+            for cam, config in self.cameras.items():
+                if config["active"]:
                     os.makedirs("output/" + self.run_name + "/" + cam)
-                    if self.semantic_active[i]:
+                    if config["semantic"]:
                         os.makedirs("output/" + self.run_name + "/" + cam + "_semantic")
 
     def use_fiducials(self):
@@ -101,21 +101,21 @@ class DataCollectionAgent(AutonomousAgent):
         and also the initial activation state of each camera and light. Here we are activating the front left camera and light."""
 
         sensors = {}
-        for i, cam in enumerate(self.cameras):
+        for cam, config in self.cameras.items():
             sensors[getattr(carla.SensorPosition, cam)] = {
-                "camera_active": self.cameras_active[i],
-                "light_intensity": self.light_intensities[i],
+                "camera_active": config["active"],
+                "light_intensity": config["light"],
                 "width": "1280",
                 "height": "720",
-                "use_semantic": self.semantic_active[i],
+                "use_semantic": config["semantic"],
             }
         return sensors
 
     def run_step(self, input_data):
         # Move the arms out of the way
-        if self.frame == 20:
-            self.set_front_arm_angle(radians(60))
-            self.set_back_arm_angle(radians(60))
+        # if self.frame == 20:
+        #     self.set_front_arm_angle(radians(60))
+        #     self.set_back_arm_angle(radians(60))
 
         FL_img = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
 
@@ -134,14 +134,14 @@ class DataCollectionAgent(AutonomousAgent):
 
             if self.frame % self.rate == 0:
                 if self.log_images:
-                    for i, cam in enumerate(self.cameras):
-                        if self.cameras_active[i]:
+                    for cam, config in self.cameras.items():
+                        if config["active"]:
                             img = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
                             cv.imwrite(
                                 "output/" + self.run_name + f"/{cam}/" + str(self.frame) + ".png",
                                 img,
                             )
-                            if self.semantic_active[i]:
+                            if config["semantic"]:
                                 semantic_img = input_data["Semantic"][
                                     getattr(carla.SensorPosition, cam)
                                 ]

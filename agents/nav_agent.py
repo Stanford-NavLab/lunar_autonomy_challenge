@@ -104,9 +104,26 @@ class NavAgent(AutonomousAgent):
             "lander_pose_rover": lander_pose_rover.tolist(),
             "lander_pose_world": lander_pose_world.tolist(),
         }
+        self.cameras = [
+            "FrontLeft",
+            "FrontRight",
+            "BackLeft",
+            "BackRight",
+            "Left",
+            "Right",
+            "Front",
+            "Back",
+        ]
+        self.cameras_active = [True, False, False, False, False, False, False, False]
+        self.light_intensities = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        self.semantic_active = [False, False, False, False, False, False, False, False]
         self.frames = []
         if not os.path.exists("output/" + self.run_name):
-            os.makedirs("output/" + self.run_name)
+            for i, cam in enumerate(self.cameras):
+                if self.cameras_active[i]:
+                    os.makedirs("output/" + self.run_name + "/" + cam)
+                    if self.semantic_active[i]:
+                        os.makedirs("output/" + self.run_name + "/" + cam + "_semantic")
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
@@ -116,58 +133,15 @@ class NavAgent(AutonomousAgent):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
         and also the initial activation state of each camera and light. Here we are activating the front left camera and light."""
 
-        sensors = {
-            carla.SensorPosition.Front: {
-                "camera_active": False,
-                "light_intensity": 0,
+        sensors = {}
+        for i, cam in enumerate(self.cameras):
+            sensors[getattr(carla.SensorPosition, cam)] = {
+                "camera_active": self.cameras_active[i],
+                "light_intensity": self.light_intensities[i],
                 "width": "1280",
                 "height": "720",
-            },
-            carla.SensorPosition.FrontLeft: {
-                "camera_active": True,
-                "light_intensity": 1.0,
-                "width": "1280",
-                "height": "720",
-                "use_semantic": False,
-            },
-            carla.SensorPosition.FrontRight: {
-                "camera_active": True,
-                "light_intensity": 1.0,
-                "width": "1280",
-                "height": "720",
-                "use_semantic": False,
-            },
-            carla.SensorPosition.Left: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.Right: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.BackLeft: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.BackRight: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.Back: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-        }
+                "use_semantic": self.semantic_active[i],
+            }
         return sensors
 
     def run_step(self, input_data):
