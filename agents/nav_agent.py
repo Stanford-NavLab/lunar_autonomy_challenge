@@ -29,17 +29,11 @@ from lac.util import (
     draw_steering_arc,
     mask_centroid,
     gen_square_spiral,
+    cv_display_text,
 )
 from lac.perception.segmentation import Segmentation
 from lac.perception.depth import DepthAnything
-
-
-def display_text(text):
-    """Clear the image and display new text."""
-    window_name = "Output Window"
-    img = np.zeros((300, 500, 3), dtype=np.uint8)
-    cv.putText(img, text, (50, 150), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-    cv.imshow(window_name, img)
+from lac.localization.imu_recovery import ImuEstimator
 
 
 def get_entry_point():
@@ -89,14 +83,27 @@ class NavAgent(AutonomousAgent):
 
         """ Waypoints """
         self.waypoints = gen_square_spiral(max_val=4.5, min_val=2.0, step=0.5)
-        print(self.waypoints)
         self.waypoint_idx = 0
         self.waypoint_threshold = 1.0  # meters
+
+        """ IMU localization """
+        self.imu_estimator = ImuEstimator(
+            initial_pose=transform_to_numpy(self.get_initial_position()), dt=0.05
+        )
+        self.imu_start_frame = 50
 
         """ Data logging """
         self.run_name = "nav_agent"
         self.log_file = "output/" + self.run_name + "/data_log.json"
-        self.out = {}
+        initial_rover_pose = transform_to_numpy(self.get_initial_position())
+        lander_pose_rover = transform_to_numpy(self.get_initial_lander_position())
+        lander_pose_world = initial_rover_pose @ lander_pose_rover
+        print("Initial lander pose in world frame: ", lander_pose_world[:3, 3])
+        self.out = {
+            "initial_pose": initial_rover_pose.tolist(),
+            "lander_pose_rover": lander_pose_rover.tolist(),
+            "lander_pose_world": lander_pose_world.tolist(),
+        }
         self.frames = []
         if not os.path.exists("output/" + self.run_name):
             os.makedirs("output/" + self.run_name)
@@ -169,10 +176,17 @@ class NavAgent(AutonomousAgent):
             self.set_front_arm_angle(radians(60))
             self.set_back_arm_angle(radians(60))
 
+        # # Wait 50 frames for IMU to stabilize and motion to go to zero
+        # while self.frame < self.imu_start_frame:
+        #     control = carla.VehicleVelocityControl(0.0, 0.0)
+        #     return control
+
+        # if self.frame == self.imu_start_frame:
+        #     self.imu_estimator.reset(transform_to_numpy(self.get_initial_position()))
+
         current_pose = transform_to_numpy(self.get_transform())
         rpy, pos = pose_to_rpy_pos(current_pose)
         heading = rpy[2]
-        print("Current pose: ", current_pose)
 
         # Wheel contact mapping
         wheel_contact_points = current_pose @ self.wheel_rig_coords
@@ -240,7 +254,7 @@ class NavAgent(AutonomousAgent):
             if self.DISPLAY:
                 # cv.imshow("Left camera view", FL_gray)
                 cv.imshow("Rock segmentation", overlay)
-                display_text("Steer delta: " + str(steer_delta))
+                cv_display_text("Steer delta: " + str(steer_delta))
                 cv.waitKey(1)
 
         if self.TELEOP:

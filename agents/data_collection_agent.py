@@ -21,7 +21,7 @@ import plotly.graph_objects as go
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import transform_to_numpy, to_blender_convention
+from lac.util import transform_to_numpy, cv_display_text
 
 
 def get_entry_point():
@@ -75,7 +75,7 @@ class DataCollectionAgent(AutonomousAgent):
             "Front",
             "Back",
         ]
-        self.cameras_active = [True, False, False, False, True, False, False, False]
+        self.cameras_active = [True, False, False, False, False, False, False, False]
         # self.cameras_active = [True, True, True, True, True, True, True, True]
         self.light_intensities = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         self.semantic_active = [False, False, False, False, False, False, False, False]
@@ -113,7 +113,7 @@ class DataCollectionAgent(AutonomousAgent):
 
     def run_step(self, input_data):
         # Move the arms out of the way
-        if self.frame == 0:
+        if self.frame == 20:
             self.set_front_arm_angle(radians(60))
             self.set_back_arm_angle(radians(60))
 
@@ -128,8 +128,8 @@ class DataCollectionAgent(AutonomousAgent):
         None for every other simulation step, since the cameras operate at 10Hz while the simulator operates at 20Hz. """
         if FL_img is not None:
             cv.imshow("Front left", FL_img)
-            L_img = input_data["Grayscale"][carla.SensorPosition.Left]
-            cv.imshow("Left", L_img)
+            # L_img = input_data["Grayscale"][carla.SensorPosition.Left]
+            # cv.imshow("Left", L_img)
             cv.waitKey(1)
 
             if self.frame % self.rate == 0:

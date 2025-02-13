@@ -126,6 +126,14 @@ def gen_square_spiral(max_val, min_val, step):
     return np.array(points)
 
 
+def cv_display_text(text, height=300, width=500, font_scale=1, color=(255, 255, 255), thickness=2):
+    """Clear the image and display new text."""
+    window_name = "Output Window"
+    img = np.zeros((height, width, 3), dtype=np.uint8)
+    cv.putText(img, text, (50, 150), cv.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness)
+    cv.imshow(window_name, img)
+
+
 def draw_steering_arc(image, steering, l=0.4, color=(0, 0, 255), thickness=3):
     """
     Overlays an arc on the input image showing the predicted trajectory of a rover.
