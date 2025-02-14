@@ -26,18 +26,39 @@ class DepthAnything:
         return predictions["depth"]
 
 
+def depth_from_stereo_segmentation(left_centroids, right_centroids):
+    """
+    left_centroids : np.ndarray (N, 2) - Centroids from the left image
+    right_centroids : np.ndarray (N, 2) - Centroids from the right image
+    """
+    # Sort the centroids by y-coordinate
+    left_centroids = left_centroids[np.argsort(left_centroids[:, 1])]
+    right_centroids = right_centroids[np.argsort(right_centroids[:, 1])]
+
+    # Compute the disparity between the centroids
+    disparities = right_centroids - left_centroids
+
+    # Compute the depth from the disparity
+    baseline = 0.1  # meters
+    focal_length_x = 500  # pixels
+    disparities[disparities == 0] = 0.1  # Avoid division by zero
+    depths = (focal_length_x * baseline) / disparities
+
+    return depths
+
+
 def compute_stereo_depth(
     img_left: np.ndarray,
     img_right: np.ndarray,
     baseline: float,
-    focal_length_y: float,
+    focal_length_x: float,
     semi_global: bool = False,
 ):
     """
     img_left: np.ndarray (H, W) - Grayscale left image
     img_right: np.ndarray (H, W) - Grayscale right image
     baseline: float - Stereo baseline in meters
-    focal_length_y: float - Horizontal focal length in pixels
+    focal_length_x: float - Horizontal focal length in pixels
     """
     # Create a StereoBM object (you can also use StereoSGBM for better results)
     min_disparity = 0
@@ -71,6 +92,6 @@ def compute_stereo_depth(
     # Convert disparity to depth (requires camera calibration parameters)
     # Assuming known focal length (f) and baseline (b) of the stereo setup
     disparity[disparity == 0] = 0.1  # Avoid division by zero
-    depth = (focal_length_y * baseline) / disparity
+    depth = (focal_length_x * baseline) / disparity
 
     return disparity, depth

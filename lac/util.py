@@ -32,7 +32,7 @@ def to_blender_convention(pose):
     t = pose[:3, 3]
     # Convert the rotation matrix to the Blender convention
     rx, ry, rz = R[:, 0], R[:, 1], R[:, 2]
-    R_blender = np.array([-ry, rz, -rx])
+    R_blender = np.array([-ry, rz, -rx]).T
     return np.block([[R_blender, t[:, None]], [0, 0, 0, 1]])
 
 

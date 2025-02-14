@@ -75,14 +75,7 @@ class DataCollectionAgent(AutonomousAgent):
             "Front": {"active": False, "light": 0.0, "semantic": False},
             "Back": {"active": False, "light": 0.0, "semantic": False},
         }
-        # self.cameras_active = [True, False, False, False, False, False, False, False]
-        # # self.cameras_active = [True, True, True, True, True, True, True, True]
-        # self.light_intensities = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        # self.semantic_active = [False, False, False, False, False, False, False, False]
-
         self.out["cameras_config"] = self.cameras
-        # self.out["light_intensities"] = self.light_intensities
-        # self.out["semantic_active"] = self.semantic_active
         self.out["use_fiducials"] = self.use_fiducials()
 
         if not os.path.exists("output/" + self.run_name):
@@ -93,8 +86,7 @@ class DataCollectionAgent(AutonomousAgent):
                         os.makedirs("output/" + self.run_name + "/" + cam + "_semantic")
 
     def use_fiducials(self):
-        """We want to use the fiducials, so we return True."""
-        return False
+        return True
 
     def sensors(self):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
@@ -113,9 +105,9 @@ class DataCollectionAgent(AutonomousAgent):
 
     def run_step(self, input_data):
         # Move the arms out of the way
-        # if self.frame == 20:
-        #     self.set_front_arm_angle(radians(60))
-        #     self.set_back_arm_angle(radians(60))
+        if self.frame == 20:
+            self.set_front_arm_angle(radians(60))
+            self.set_back_arm_angle(radians(60))
 
         FL_img = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
 

@@ -10,6 +10,7 @@ Data collection agent
 
 import json
 import os
+import shutil
 import random
 import time
 from math import radians
@@ -31,7 +32,7 @@ from lac.util import (
     gen_square_spiral,
     cv_display_text,
 )
-from lac.perception.segmentation import Segmentation
+from lac.perception.segmentation import Segmentation, overlay_mask
 from lac.perception.depth import DepthAnything
 from lac.localization.imu_recovery import ImuEstimator
 
@@ -53,7 +54,7 @@ class NavAgent(AutonomousAgent):
 
         self.IMG_WIDTH = 1280
         self.IMG_HEIGHT = 720
-        self.DISPLAY = False
+        self.DISPLAY = True
         self.max_steer = 1.0  # rad/s
         self.max_steer_delta = 0.6  # rad/s
 
@@ -61,6 +62,7 @@ class NavAgent(AutonomousAgent):
         self.KP_STEER = 0.3
         self.KP_LINEAR = 0.1
         self.TARGET_SPEED = 0.2  # m/s
+        self.steer_delta = 0.0
 
         """ Perception modules """
         self.segmentation = Segmentation()
@@ -104,26 +106,27 @@ class NavAgent(AutonomousAgent):
             "lander_pose_rover": lander_pose_rover.tolist(),
             "lander_pose_world": lander_pose_world.tolist(),
         }
-        self.cameras = [
-            "FrontLeft",
-            "FrontRight",
-            "BackLeft",
-            "BackRight",
-            "Left",
-            "Right",
-            "Front",
-            "Back",
-        ]
-        self.cameras_active = [True, False, False, False, False, False, False, False]
-        self.light_intensities = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        self.semantic_active = [False, False, False, False, False, False, False, False]
+        self.cameras = {
+            "FrontLeft": {"active": True, "light": 1.0, "semantic": False},
+            "FrontRight": {"active": True, "light": 0.0, "semantic": False},
+            "BackLeft": {"active": False, "light": 0.0, "semantic": False},
+            "BackRight": {"active": False, "light": 0.0, "semantic": False},
+            "Left": {"active": False, "light": 0.0, "semantic": False},
+            "Right": {"active": True, "light": 0.0, "semantic": False},
+            "Front": {"active": False, "light": 0.0, "semantic": False},
+            "Back": {"active": False, "light": 0.0, "semantic": False},
+        }
+        self.out["cameras_config"] = self.cameras
+        self.out["use_fiducials"] = self.use_fiducials()
         self.frames = []
-        if not os.path.exists("output/" + self.run_name):
-            for i, cam in enumerate(self.cameras):
-                if self.cameras_active[i]:
-                    os.makedirs("output/" + self.run_name + "/" + cam)
-                    if self.semantic_active[i]:
-                        os.makedirs("output/" + self.run_name + "/" + cam + "_semantic")
+
+        if os.path.exists("output/" + self.run_name):
+            shutil.rmtree("output/" + self.run_name)
+        for cam, config in self.cameras.items():
+            if config["active"]:
+                os.makedirs("output/" + self.run_name + "/" + cam)
+                if config["semantic"]:
+                    os.makedirs("output/" + self.run_name + "/" + cam + "_semantic")
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
@@ -134,15 +137,38 @@ class NavAgent(AutonomousAgent):
         and also the initial activation state of each camera and light. Here we are activating the front left camera and light."""
 
         sensors = {}
-        for i, cam in enumerate(self.cameras):
+        for cam, config in self.cameras.items():
             sensors[getattr(carla.SensorPosition, cam)] = {
-                "camera_active": self.cameras_active[i],
-                "light_intensity": self.light_intensities[i],
+                "camera_active": config["active"],
+                "light_intensity": config["light"],
                 "width": "1280",
                 "height": "720",
-                "use_semantic": self.semantic_active[i],
+                "use_semantic": config["semantic"],
             }
         return sensors
+
+    def segmentation_steering(self, seg_results):
+        """Compute a steering delta based on segmentation results to avoid rocks."""
+        max_area = 0
+        max_mask = None
+        for mask in seg_results["masks"]:
+            mask_area = np.sum(mask)
+            if mask_area > max_area and mask_area < 50000:  # Filter out outliers
+                max_area = mask_area
+                max_mask = mask
+        steer_delta = 0
+        if max_mask is not None and max_area > 1000:
+            max_mask = max_mask.astype(np.uint8)
+            cx, cy = mask_centroid(max_mask)
+            x, y, w, h = cv.boundingRect(max_mask)
+            offset = self.IMG_WIDTH // 2 - cx
+            if offset > 0:  # Turn right
+                steer_delta = -min(
+                    self.max_steer_delta * ((x + w) - cx) / 100, self.max_steer_delta
+                )
+            else:  # Turn left
+                steer_delta = min(self.max_steer_delta * (cx - x) / 100, self.max_steer_delta)
+        return steer_delta
 
     def run_step(self, input_data):
         # Move the arms out of the way
@@ -186,56 +212,42 @@ class NavAgent(AutonomousAgent):
         angle = np.arctan2(waypoint[1] - pos[1], waypoint[0] - pos[0])
         angle_diff = wrap_angle(angle - heading)
         nominal_steering = np.clip(self.KP_STEER * angle_diff, -self.max_steer, self.max_steer)
-        steer_delta = 0
 
         # Perception
         FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+        FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
         if FL_gray is not None:
-            img_PIL = Image.fromarray(FL_gray).convert("RGB")
-
-            # # Estimate depth
-            # depth = self.depth.predict_depth(img_PIL)
+            FL_rgb_PIL = Image.fromarray(FL_gray).convert("RGB")
+            FR_rgb_PIL = Image.fromarray(FR_gray).convert("RGB")
 
             # Run segmentation
-            results, full_mask = self.segmentation.segment_rocks(img_PIL)
-            FL_rgb = cv.cvtColor(FL_gray, cv.COLOR_GRAY2BGR)
-            mask_colored = color_mask(full_mask, (0, 0, 1)).astype(FL_rgb.dtype)
-            overlay = cv.addWeighted(FL_rgb, 1.0, mask_colored, beta=0.5, gamma=0)
+            results, full_mask = self.segmentation.segment_rocks(FL_rgb_PIL)
+            overlay = overlay_mask(FL_gray, full_mask)
 
             overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
 
-            max_area = 0
-            max_mask = None
-            for mask in results["masks"]:
-                mask_area = np.sum(mask)
-                if mask_area > max_area and mask_area < 50000:  # Filter out outliers
-                    max_area = mask_area
-                    max_mask = mask
-            if max_mask is not None and max_area > 1000:
-                max_mask = max_mask.astype(np.uint8)
-                cx, cy = mask_centroid(max_mask)
-                x, y, w, h = cv.boundingRect(max_mask)
-                offset = self.IMG_WIDTH // 2 - cx
-                if offset > 0:  # Turn right
-                    steer_delta = -min(
-                        self.max_steer_delta * ((x + w) - cx) / 100, self.max_steer_delta
-                    )
-                else:  # Turn left
-                    steer_delta = min(self.max_steer_delta * (cx - x) / 100, self.max_steer_delta)
+            self.steer_delta = self.segmentation_steering(results)
 
-            overlay = draw_steering_arc(overlay, nominal_steering + steer_delta, color=(0, 255, 0))
+            overlay = draw_steering_arc(
+                overlay, nominal_steering + self.steer_delta, color=(0, 255, 0)
+            )
 
             if self.DISPLAY:
                 # cv.imshow("Left camera view", FL_gray)
                 cv.imshow("Rock segmentation", overlay)
-                cv_display_text("Steer delta: " + str(steer_delta))
                 cv.waitKey(1)
+
+            R_img = input_data["Grayscale"][carla.SensorPosition.Right]
+            cv.imwrite(
+                "output/" + self.run_name + "/Right/" + str(self.frame) + ".png",
+                R_img,
+            )
 
         if self.TELEOP:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         else:
             control = carla.VehicleVelocityControl(
-                self.TARGET_SPEED, nominal_steering + steer_delta
+                self.TARGET_SPEED, nominal_steering + self.steer_delta
             )
 
         # Data logging

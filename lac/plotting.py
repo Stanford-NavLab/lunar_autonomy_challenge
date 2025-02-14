@@ -91,15 +91,14 @@ def plot_3d_points(points, fig=None, color="blue", markersize=3, name=None):
     return fig
 
 
-def pose_trace(pose):
+def pose_trace(pose, name: str = "", line_style: str = "solid", line_width: int = 5):
     """Create a plotly trace to visualize a pose
 
     RGB vectors are used to represent the X, Y, Z axes of the rotation matrix
 
     Parameters
     ----------
-    pose : tuple
-        Pose tuple (R, t) where R is a 3x3 rotation matrix and t is a translation
+    pose : 4x4 np.ndarray or tuple
 
     Returns
     -------
@@ -129,15 +128,28 @@ def pose_trace(pose):
         arrow_end = t + vec  # Arrow points in the direction of the column of R
 
         # Create an arrow trace for the axis
-        trace = go.Scatter3d(
-            x=[arrow_start[0], arrow_end[0]],
-            y=[arrow_start[1], arrow_end[1]],
-            z=[arrow_start[2], arrow_end[2]],
-            mode="lines+markers",
-            marker=dict(size=4),
-            line=dict(color=colors[i], width=5),
-            showlegend=False,
-        )
+        if name == "":
+            trace = go.Scatter3d(
+                x=[arrow_start[0], arrow_end[0]],
+                y=[arrow_start[1], arrow_end[1]],
+                z=[arrow_start[2], arrow_end[2]],
+                mode="lines+markers",
+                marker=dict(size=4),
+                line=dict(color=colors[i], width=5),
+                showlegend=False,
+            )
+        else:
+            AXES_NAMES = ["X", "Y", "Z"]
+            trace = go.Scatter3d(
+                x=[arrow_start[0], arrow_end[0]],
+                y=[arrow_start[1], arrow_end[1]],
+                z=[arrow_start[2], arrow_end[2]],
+                mode="lines+markers",
+                marker=dict(size=4),
+                line=dict(color=colors[i], width=line_width, dash=line_style),
+                name=name + f"_{AXES_NAMES[i]}",
+                showlegend=True,    
+            )
         traces.append(trace)
 
     return traces
