@@ -1,3 +1,5 @@
+"""Depth Estimation"""
+
 import cv2
 import numpy as np
 from transformers import pipeline
@@ -24,27 +26,6 @@ class DepthAnything:
         """
         predictions = self.pipe(image)
         return predictions["depth"]
-
-
-def depth_from_stereo_segmentation(left_centroids, right_centroids):
-    """
-    left_centroids : np.ndarray (N, 2) - Centroids from the left image
-    right_centroids : np.ndarray (N, 2) - Centroids from the right image
-    """
-    # Sort the centroids by y-coordinate
-    left_centroids = left_centroids[np.argsort(left_centroids[:, 1])]
-    right_centroids = right_centroids[np.argsort(right_centroids[:, 1])]
-
-    # Compute the disparity between the centroids
-    disparities = right_centroids - left_centroids
-
-    # Compute the depth from the disparity
-    baseline = 0.1  # meters
-    focal_length_x = 500  # pixels
-    disparities[disparities == 0] = 0.1  # Avoid division by zero
-    depths = (focal_length_x * baseline) / disparities
-
-    return depths
 
 
 def compute_stereo_depth(
