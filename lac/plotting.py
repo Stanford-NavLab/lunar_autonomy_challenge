@@ -1,5 +1,7 @@
 """Plotting functions"""
 
+import typing as T
+
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
@@ -148,7 +150,7 @@ def pose_trace(pose, name: str = "", line_style: str = "solid", line_width: int 
                 marker=dict(size=4),
                 line=dict(color=colors[i], width=line_width, dash=line_style),
                 name=name + f"_{AXES_NAMES[i]}",
-                showlegend=True,    
+                showlegend=True,
             )
         traces.append(trace)
 
@@ -218,3 +220,16 @@ def vector_trace(
     )
 
     return [tail_trace, head_trace]
+
+
+def plot_reference_frames(poses: T.List[np.ndarray], pose_names: T.List[str]) -> go.Figure:
+    """Generate a figure of the various frames of reference."""
+
+    fig_poses = go.Figure()
+    for i, pose in enumerate(poses):
+        pose_traces = pose_trace((pose[:3, :3], pose[:3, 3]), name=pose_names[i])
+        for trace in pose_traces:
+            fig_poses.add_trace(trace)
+
+    fig_poses.update_layout(height=700, width=1200, scene_aspectmode="data")
+    return fig_poses

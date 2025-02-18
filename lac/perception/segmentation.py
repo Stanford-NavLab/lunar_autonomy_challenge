@@ -62,53 +62,30 @@ def get_mask_centroids(seg_results):
     return mask_centroids
 
 
-# def centroid_matching(left_centroids, right_centroids):
-#     """
-#     Matches each left centroid to the closest right centroid based on the y-coordinate difference.
-#     Ensures that each right centroid is matched only once.
-
-#     left_centroids : np.ndarray (N, 2) - Centroids from the left image
-#     right_centroids : np.ndarray (M, 2) - Centroids from the right image
-#     """
-#     matched_pairs = []
-#     used_right_indices = set()
-
-#     for left_centroid in left_centroids:
-#         # Compute absolute y-coordinate differences
-#         y_diff = np.abs(right_centroids[:, 1] - left_centroid[1])
-
-#         # Mask out already matched right centroids
-#         valid_indices = [i for i in range(len(right_centroids)) if i not in used_right_indices]
-#         if not valid_indices:
-#             continue  # No available centroids to match
-
-#         # Find the closest right centroid among available ones
-#         closest_idx = min(valid_indices, key=lambda i: y_diff[i])
-
-#         # If the y-coordinate difference is less than 5 pixels, consider it a match
-#         if y_diff[closest_idx] < 5:
-#             matched_pairs.append((left_centroid, right_centroids[closest_idx]))
-#             used_right_indices.add(closest_idx)  # Mark as used
-
-#     return matched_pairs
-
-
-def centroid_matching(left_centroids, right_centroids):
+def centroid_matching(left_centroids, right_centroids, max_y_diff=5, max_x_diff=300):
     """
     Matches left centroids to right centroids based on the closest y-coordinate difference.
     Ensures that each right centroid is matched only once, optimizing globally.
 
     left_centroids : np.ndarray (N, 2) - Centroids from the left image
     right_centroids : np.ndarray (M, 2) - Centroids from the right image
+    max_y_diff : int - Maximum allowed y-coordinate difference for a valid match
+    max_x_diff : int - Maximum allowed x-coordinate difference for a valid match
+
+    TODO: the max_y_diff should depend on roll of the camera
+    TODO: the max_x_diff should depend on size of the mask and on y-value. Large rocks can have a
+    large x_diff when close up, but small rocks should not have large x_diff when far away
+
     """
     matches = []
 
-    # Compute all pairwise y-coordinate differences
+    # Compute all pairwise differences
     y_diffs = np.abs(left_centroids[:, None, 1] - right_centroids[None, :, 1])
+    x_diffs = np.abs(left_centroids[:, None, 0] - right_centroids[None, :, 0])
 
-    # Create a list of candidate matches (left_idx, right_idx, y_diff)
+    # Create a list of candidate matches (left_idx, right_idx, y_diff, x_diff)
     candidates = [
-        (i, j, y_diffs[i, j])
+        (i, j, y_diffs[i, j], x_diffs[i, j])
         for i in range(len(left_centroids))
         for j in range(len(right_centroids))
     ]
@@ -119,8 +96,13 @@ def centroid_matching(left_centroids, right_centroids):
     used_left = set()
     used_right = set()
 
-    for left_idx, right_idx, diff in candidates:
-        if diff < 5 and left_idx not in used_left and right_idx not in used_right:
+    for left_idx, right_idx, y_diff, x_diff in candidates:
+        if (
+            y_diff < max_y_diff
+            and x_diff < max_x_diff
+            and left_idx not in used_left
+            and right_idx not in used_right
+        ):
             matches.append((left_centroids[left_idx], right_centroids[right_idx]))
             used_left.add(left_idx)
             used_right.add(right_idx)
