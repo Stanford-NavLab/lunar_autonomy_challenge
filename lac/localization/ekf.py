@@ -48,7 +48,7 @@ class EKF:
         self.z_store = []       # this has size one smaller than x, P store
         self.xhat_store_smooth = []
         self.Phat_store_smooth = []
-        self.lent = 1
+        self.lent = 0
 
     def predict(self, dyn_func, Q):
         """
@@ -62,6 +62,7 @@ class EKF:
         self.x = x_new
 
         if self.store:
+            self.lent += 1
             self.dyn_funcs.append(dyn_func)
             self.Phi_store.append(F)
             self.xbar_store.append(x_new)
@@ -90,8 +91,6 @@ class EKF:
             self.Phat_store.append(self.P)
             self.meas_funcs.append(meas_func)
             self.z_store.append(z)
-
-        self.lent += 1
 
     def smooth(self, n_iter=1):
         """
