@@ -50,6 +50,9 @@ class EKF:
         self.Phat_store_smooth = []
         self.lent = 0
 
+        self.Phi_stack_pred = np.eye(P0.shape[0])
+        self.dyn_func_preds = []
+
     def predict(self, dyn_func, Q):
         """
         Perform the prediction step of the EKF
@@ -62,11 +65,8 @@ class EKF:
         self.x = x_new
 
         if self.store:
-            self.lent += 1
-            self.dyn_funcs.append(dyn_func)
-            self.Phi_store.append(F)
-            self.xbar_store.append(x_new)
-            self.Pbar_store.append(self.P)
+            self.dyn_func_preds.append(dyn_func)
+            self.Phi_stack_pred = F @ self.Phi_stack_pred
 
     def update(self, z, meas_func):
         """
@@ -76,6 +76,26 @@ class EKF:
         z: measurement
         meas_func: measurement function
         """
+        # add to storage here
+        if self.store:
+            self.lent += 1
+
+            def dyn_func_stack(x):
+                stm = np.eye(self.P.shape[0])
+                for dyn_func in self.dyn_func_preds:
+                    x, F_tmp = dyn_func(x)
+                    stm = F_tmp @ stm
+                return x, stm  
+
+            self.dyn_funcs.append(dyn_func_stack)
+            self.Phi_store.append(self.Phi_stack_pred)
+            self.xbar_store.append(self.x)
+            self.Pbar_store.append(self.P)
+
+            self.dyn_func_preds = []
+            self.Phi_stack_pred = np.eye(self.P.shape[0])
+        
+        # measurement update
         z_hat, H, R = meas_func(self.x)
         S = H @ self.P @ H.T + R
         K = self.P @ H.T @ np.linalg.inv(S)
