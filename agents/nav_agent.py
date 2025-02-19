@@ -26,15 +26,14 @@ from lac.util import (
     pose_to_rpy_pos,
     transform_to_numpy,
     wrap_angle,
-    color_mask,
-    draw_steering_arc,
     mask_centroid,
     gen_square_spiral,
-    cv_display_text,
 )
-from lac.perception.segmentation import Segmentation, overlay_mask
-from lac.perception.depth import DepthAnything
+from lac.perception.segmentation import Segmentation
+from lac.perception.depth import DepthAnything, stereo_depth_from_segmentation
 from lac.localization.imu_recovery import ImuEstimator
+from lac.utils.visualization import overlay_mask, draw_steering_arc, overlay_stereo_rock_depths
+import lac.params as params
 
 
 def get_entry_point():
@@ -82,6 +81,9 @@ class NavAgent(AutonomousAgent):
             ]
         )
         self.wheel_rig_coords = np.concatenate((self.wheel_rig.T, np.ones((1, 4))), axis=0)
+
+        """ Rock mapping """
+        self.all_rock_detections = []
 
         """ Waypoints """
         self.waypoints = gen_square_spiral(max_val=4.5, min_val=2.0, step=0.5)
@@ -147,21 +149,24 @@ class NavAgent(AutonomousAgent):
             }
         return sensors
 
-    def segmentation_steering(self, seg_results):
-        """Compute a steering delta based on segmentation results to avoid rocks."""
+    def segmentation_steering(self, masks):
+        """Compute a steering delta based on segmentation results to avoid rocks.
+
+        TODO: account for offset due to operating on left camera
+        """
         max_area = 0
         max_mask = None
-        for mask in seg_results["masks"]:
+        for mask in masks:
             mask_area = np.sum(mask)
-            if mask_area > max_area and mask_area < 50000:  # Filter out outliers
+            if mask_area > max_area:
                 max_area = mask_area
                 max_mask = mask
         steer_delta = 0
-        if max_mask is not None and max_area > 1000:
+        if max_mask is not None and max_area > params.ROCK_MASK_AVOID_MIN_AREA:
             max_mask = max_mask.astype(np.uint8)
             cx, cy = mask_centroid(max_mask)
             x, y, w, h = cv.boundingRect(max_mask)
-            offset = self.IMG_WIDTH // 2 - cx
+            offset = params.IMG_WIDTH // 2 - cx
             if offset > 0:  # Turn right
                 steer_delta = -min(
                     self.max_steer_delta * ((x + w) - cx) / 100, self.max_steer_delta
@@ -189,7 +194,7 @@ class NavAgent(AutonomousAgent):
         heading = rpy[2]
 
         # Wheel contact mapping
-        wheel_contact_points = current_pose @ self.wheel_rig_coords
+        wheel_contact_points = current_pose @ params.WHEEL_RIG_COORDS
         wheel_contact_points = wheel_contact_points[:3, :].T
 
         g_map = self.get_geometric_map()
@@ -221,12 +226,19 @@ class NavAgent(AutonomousAgent):
             FR_rgb_PIL = Image.fromarray(FR_gray).convert("RGB")
 
             # Run segmentation
-            results, full_mask = self.segmentation.segment_rocks(FL_rgb_PIL)
-            overlay = overlay_mask(FL_gray, full_mask)
+            left_seg_masks, left_seg_full_mask = self.segmentation.segment_rocks(FL_rgb_PIL)
+            right_seg_masks, right_seg_full_mask = self.segmentation.segment_rocks(FR_rgb_PIL)
 
+            # Stereo rock depth
+            stereo_depth_results = stereo_depth_from_segmentation(
+                left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
+            )
+
+            overlay = overlay_mask(FL_gray, left_seg_full_mask)
             overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
+            overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
 
-            self.steer_delta = self.segmentation_steering(results)
+            self.steer_delta = self.segmentation_steering(left_seg_masks)
 
             overlay = draw_steering_arc(
                 overlay, nominal_steering + self.steer_delta, color=(0, 255, 0)

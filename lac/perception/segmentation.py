@@ -6,7 +6,8 @@ from lang_sam import LangSAM
 import torch
 import cv2 as cv
 
-from lac.util import mask_centroid, color_mask
+from lac.util import mask_centroid
+from lac.params import ROCK_MASK_MAX_AREA
 
 
 class Segmentation:
@@ -21,44 +22,27 @@ class Segmentation:
         results = self.model.predict([image], [text_prompt])
 
         full_mask = np.zeros_like(image, dtype=np.uint8).copy()
+        masks = []
         for mask in results[0]["masks"]:
-            full_mask[mask.astype(bool)] = 255
+            if mask.sum() < ROCK_MASK_MAX_AREA:
+                masks.append(mask)
+                full_mask[mask.astype(bool)] = 255
 
-        return results[0], full_mask
-
-    def stereo_segment_and_depth(self, left_image: Image, right_image: Image):
-        """
-        left_image : RGB PIL Image
-        right_image : RGB PIL Image
-        """
-        left_results, left_mask = self.segment_rocks(left_image)
-        right_results, right_mask = self.segment_rocks(right_image)
-
-        return left_results, right_results, left_mask, right_mask
+        return masks, full_mask
 
 
-def overlay_mask(image_gray, mask, color=(1, 0, 0)):
-    """
-    image_gray : np.ndarray (H, W) - grayscale image
-    mask : np.ndarray (H, W) - Binary mask
-    color : tuple (3) - RGB color
-    """
-    image_rgb = cv.cvtColor(image_gray, cv.COLOR_GRAY2BGR)
-    mask_colored = color_mask(mask, color).astype(image_rgb.dtype)
-    return cv.addWeighted(image_rgb, 1.0, mask_colored, beta=0.5, gamma=0)
-
-
-def get_mask_centroids(seg_results):
+def get_mask_centroids(masks):
     """
     seg_results : dict - Results from the segmentation model
     """
     mask_centroids = []
-    for mask in seg_results["masks"]:
+    for mask in masks:
         mask = mask.astype(np.uint8)
         mask_centroids.append(mask_centroid(mask))
     mask_centroids = np.array(mask_centroids)
     # Sort by y-coordinate
-    mask_centroids = mask_centroids[np.argsort(mask_centroids[:, 1])]
+    if len(mask_centroids) > 1:
+        mask_centroids = mask_centroids[np.argsort(mask_centroids[:, 1])]
     return mask_centroids
 
 
@@ -78,6 +62,9 @@ def centroid_matching(left_centroids, right_centroids, max_y_diff=5, max_x_diff=
 
     """
     matches = []
+
+    assert left_centroids.shape[1] == 2, "Left centroids should have shape (N, 2)"
+    assert right_centroids.shape[1] == 2, "Right centroids should have shape (M, 2)"
 
     # Compute all pairwise differences
     y_diffs = np.abs(left_centroids[:, None, 1] - right_centroids[None, :, 1])
