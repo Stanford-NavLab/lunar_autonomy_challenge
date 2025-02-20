@@ -1,5 +1,5 @@
 import numpy as np
-
+import copy
 
 class EKF:
     def __init__(self, x0, P0, store=False):
@@ -15,45 +15,21 @@ class EKF:
 
         if store:
             self.store = True
-            self.Phi_store = [np.eye(P0.shape[0])]
-            self.xbar_store = [x0]
-            self.xhat_store = [x0]
-            self.Pbar_store = [P0]
-            self.Phat_store = [P0]
-            self.dyn_funcs = [None]
-            self.meas_funcs = [None]
-            self.z_store = [None]
-            self.xhat_store_smooth = []
-            self.Phat_store_smooth = []
+            self.Phi_store  = {0: np.eye(P0.shape[0])}
+            self.xbar_store = {0: x0}
+            self.xhat_store = {0: x0}
+            self.Pbar_store = {0: P0}
+            self.Phat_store = {0: P0}
+            self.z_store = {}
+            self.xhat_store_smooth = {}
+            self.Phat_store_smooth = {}
             self.lent = 1
+            self.tidx = 0
+            self.prev_meas_tidx = 0
+            self.smoothed = False
 
-    def reset_for_next_iter(self):
-        """
-        Reset the EKF filter
-        """
-        x0 = self.xhat_store_smooth[0]
-        P0 = self.Pbar_store[0]
 
-        self.x = x0
-        self.P = P0   # use the original P0
-
-        self.Phi_store = [np.eye(P0.shape[0])]
-        self.xbar_store = [x0]
-        self.xhat_store = [x0]
-        self.Pbar_store = [P0]
-        self.Phat_store = [P0]
-        self.Q_store = []       # this has size one smaller than x, P store
-        self.dyn_funcs = []     # this has size one smaller than x, P store
-        self.meas_funcs = []    # this has size one smaller than x, P store
-        self.z_store = []       # this has size one smaller than x, P store
-        self.xhat_store_smooth = []
-        self.Phat_store_smooth = []
-        self.lent = 0
-
-        self.Phi_stack_pred = np.eye(P0.shape[0])
-        self.dyn_func_preds = []
-
-    def predict(self, dyn_func, Q):
+    def predict(self, tidx, dyn_func, Q):
         """
         Perform the prediction step of the EKF
 
@@ -65,10 +41,12 @@ class EKF:
         self.x = x_new
 
         if self.store:
-            self.dyn_func_preds.append(dyn_func)
-            self.Phi_stack_pred = F @ self.Phi_stack_pred
+            self.xbar_store[tidx] = self.x
+            self.Pbar_store[tidx] = self.P
+            self.Phi_store[tidx] = F
+            self.tidx = tidx
 
-    def update(self, z, meas_func):
+    def update(self, tidx, z, meas_func, called_from_smooth=False):
         """
         Perform the update step of the EKF
         (Alwas)
@@ -77,23 +55,6 @@ class EKF:
         meas_func: measurement function
         """
         # add to storage here
-        if self.store:
-            self.lent += 1
-
-            def dyn_func_stack(x):
-                stm = np.eye(self.P.shape[0])
-                for dyn_func in self.dyn_func_preds:
-                    x, F_tmp = dyn_func(x)
-                    stm = F_tmp @ stm
-                return x, stm  
-
-            self.dyn_funcs.append(dyn_func_stack)
-            self.Phi_store.append(self.Phi_stack_pred)
-            self.xbar_store.append(self.x)
-            self.Pbar_store.append(self.P)
-
-            self.dyn_func_preds = []
-            self.Phi_stack_pred = np.eye(self.P.shape[0])
         
         # measurement update
         z_hat, H, R = meas_func(self.x)
@@ -105,29 +66,38 @@ class EKF:
         # Joseph form update
         I = np.eye(self.P.shape[0])
         self.P = (I - K @ H) @ self.P @ (I - K @ H).T + K @ R @ K.T
+        self.z_store[tidx] = z
 
-        if self.store:
-            self.xhat_store.append(self.x)
-            self.Phat_store.append(self.P)
-            self.meas_funcs.append(meas_func)
-            self.z_store.append(z)
+        for k in range(self.prev_meas_tidx+1, tidx):
+            self.xhat_store[k] = copy.deepcopy(self.xbar_store[k])
+            self.Phat_store[k] = copy.deepcopy(self.Pbar_store[k])
 
-    def smooth(self, n_iter=1):
+        self.xhat_store[tidx] = self.x
+        self.Phat_store[tidx] = self.P
+
+        self.prev_meas_tidx = tidx
+        self.tidx = tidx
+
+    def smooth(self):
         """
         Fixed-interval smoothing
 
         n_iter: number of iterations
         """
-        self.xhat_store_smooth = [None] * self.lent
-        self.Phat_store_smooth = [None] * self.lent
+        self.xhat_store_smooth = {}
+        self.Phat_store_smooth = {}
+        self.lent = self.tidx
 
         # initialize
-        self.Phat_store_smooth[-1] = self.P
-        self.xhat_store_smooth[-1] = self.x
+        self.Phat_store_smooth[self.lent] = self.P
+        self.xhat_store_smooth[self.lent] = self.x
         
         # backward pass
-        for tj in range(self.lent-1):   # 0, 1, ..., lent-2
-            k = (self.lent - 2) - tj  # lent-2, lent-3, ..., 0
+        Phat = self.P
+        xhat = self.x
+
+        for tj in range(self.lent):   # 0, 1, ..., lent-1
+            k = (self.lent - 1) - tj  # lent-1, lent-3, ..., 0
             Phi_k_k1 = self.Phi_store[k+1]
             Phat_k = self.Phat_store[k]
             Pbar_k1 = self.Pbar_store[k+1]
@@ -135,24 +105,31 @@ class EKF:
             
             # update
             # S = Phat_k * Phi_k_k1.T * pinv(Pbar_k1)
-            S = Phat_k * Phi_k_k1.T * np.inv(Pbar_k1);  
-            Phat= Phat_k + S * (Phat - Pbar_k1) * S.T
+            S = Phat_k @ Phi_k_k1.T @ np.linalg.inv(Pbar_k1);  
+            Phat= Phat_k + S @ (Phat - Pbar_k1) @ S.T
            
-            xhat = self.xhat_store[k] + S * (xhat - xbar_k1)
+            xhat = self.xhat_store[k] + S @ (xhat - xbar_k1)
             self.Phat_store_smooth[k] = Phat
             self.xhat_store_smooth[k] = xhat
 
-        if n_iter >=2:
-            # reset the log
-            lent = self.lent   # store the original lent
-            self.reset_for_next_iter()
+        self.smoothed = True
 
-            # re-run the filter
-            for k in range(lent-1):  # lent includes the intial state
-                self.predict(self.dyn_funcs[k], self.Q_store[k])
-                self.update(self.z_store[k], self.meas_funcs[k])
+    def get_array(self):
+        """
+        Convert the dictionary to array
+        """
+        result = {
+            "xhat": np.zeros((self.lent +1, self.x.shape[0])),
+            "Phat": np.zeros((self.lent +1, self.P.shape[0], self.P.shape[1])),
+            "xhat_smooth": np.zeros((self.lent +1, self.x.shape[0])),
+            "Phat_smooth": np.zeros((self.lent+1, self.P.shape[0], self.P.shape[1])),
+        }
+        
+        for k in range(self.lent + 1):
+            result["xhat"][k] = self.xhat_store[k]
+            result["Phat"][k] = self.Phat_store[k]
+            if self.smoothed:
+                result["xhat_smooth"][k] = self.xhat_store_smooth[k]
+                result["Phat_smooth"][k] = self.Phat_store_smooth[k]
 
-            # re-run the smoother
-            self.smooth(n_iter-1)
-
-
+        return result
