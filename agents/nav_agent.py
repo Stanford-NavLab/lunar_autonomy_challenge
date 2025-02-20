@@ -30,7 +30,11 @@ from lac.util import (
     gen_square_spiral,
 )
 from lac.perception.segmentation import Segmentation
-from lac.perception.depth import DepthAnything, stereo_depth_from_segmentation
+from lac.perception.depth import (
+    DepthAnything,
+    stereo_depth_from_segmentation,
+    project_depths_to_world,
+)
 from lac.localization.imu_recovery import ImuEstimator
 from lac.utils.visualization import overlay_mask, draw_steering_arc, overlay_stereo_rock_depths
 import lac.params as params
@@ -66,10 +70,11 @@ class NavAgent(AutonomousAgent):
         """ Perception modules """
         self.segmentation = Segmentation()
         self.depth = DepthAnything()
+        self.frame = 0
+        self.image_process_rate = 1  # Hz
 
         """ Initialize a counter to keep track of the number of simulation steps. """
-        self.frame = 0
-        self.rate = 1  # Sub-sample rate. Max rate is 10Hz
+        self.step = 0
 
         """ Wheel contact mapping """
         self.wheel_rig = np.array(
@@ -90,7 +95,7 @@ class NavAgent(AutonomousAgent):
         self.waypoint_idx = 0
         self.waypoint_threshold = 1.0  # meters
 
-        """ IMU localization """
+        """ Localization """
         self.imu_estimator = ImuEstimator(
             initial_pose=transform_to_numpy(self.get_initial_position()), dt=0.05
         )
@@ -99,10 +104,10 @@ class NavAgent(AutonomousAgent):
         """ Data logging """
         self.run_name = "nav_agent"
         self.log_file = "output/" + self.run_name + "/data_log.json"
+        self.rock_points_file = "output/" + self.run_name + "/rock_points.npy"
         initial_rover_pose = transform_to_numpy(self.get_initial_position())
         lander_pose_rover = transform_to_numpy(self.get_initial_lander_position())
         lander_pose_world = initial_rover_pose @ lander_pose_rover
-        print("Initial lander pose in world frame: ", lander_pose_world[:3, 3])
         self.out = {
             "initial_pose": initial_rover_pose.tolist(),
             "lander_pose_rover": lander_pose_rover.tolist(),
@@ -132,7 +137,7 @@ class NavAgent(AutonomousAgent):
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
-        return False
+        return True
 
     def sensors(self):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
@@ -177,17 +182,9 @@ class NavAgent(AutonomousAgent):
 
     def run_step(self, input_data):
         # Move the arms out of the way
-        if self.frame == 0:
+        if self.step == 0:
             self.set_front_arm_angle(radians(60))
             self.set_back_arm_angle(radians(60))
-
-        # # Wait 50 frames for IMU to stabilize and motion to go to zero
-        # while self.frame < self.imu_start_frame:
-        #     control = carla.VehicleVelocityControl(0.0, 0.0)
-        #     return control
-
-        # if self.frame == self.imu_start_frame:
-        #     self.imu_estimator.reset(transform_to_numpy(self.get_initial_position()))
 
         current_pose = transform_to_numpy(self.get_transform())
         rpy, pos = pose_to_rpy_pos(current_pose)
@@ -221,7 +218,10 @@ class NavAgent(AutonomousAgent):
         # Perception
         FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
         FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
-        if FL_gray is not None:
+        if (
+            FL_gray is not None
+            and (self.step - 1) % (params.FRAME_RATE // self.image_process_rate) == 0
+        ):
             FL_rgb_PIL = Image.fromarray(FL_gray).convert("RGB")
             FR_rgb_PIL = Image.fromarray(FR_gray).convert("RGB")
 
@@ -233,25 +233,30 @@ class NavAgent(AutonomousAgent):
             stereo_depth_results = stereo_depth_from_segmentation(
                 left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
             )
+            rock_points_world = project_depths_to_world(
+                stereo_depth_results, params.CAMERA_INTRINSICS, current_pose
+            )
+            for point in rock_points_world:
+                g_map.set_rock(point[0], point[1], True)
+                self.all_rock_detections.append(point)
 
-            overlay = overlay_mask(FL_gray, left_seg_full_mask)
-            overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
-            overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
-
+            # Hazard avoidance
             self.steer_delta = self.segmentation_steering(left_seg_masks)
 
-            overlay = draw_steering_arc(
-                overlay, nominal_steering + self.steer_delta, color=(0, 255, 0)
-            )
-
             if self.DISPLAY:
+                overlay = overlay_mask(FL_gray, left_seg_full_mask)
+                overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
+                overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
+                overlay = draw_steering_arc(
+                    overlay, nominal_steering + self.steer_delta, color=(0, 255, 0)
+                )
                 # cv.imshow("Left camera view", FL_gray)
                 cv.imshow("Rock segmentation", overlay)
                 cv.waitKey(1)
 
             R_img = input_data["Grayscale"][carla.SensorPosition.Right]
             cv.imwrite(
-                "output/" + self.run_name + "/Right/" + str(self.frame) + ".png",
+                "output/" + self.run_name + "/Right/" + str(self.step) + ".png",
                 R_img,
             )
 
@@ -267,7 +272,7 @@ class NavAgent(AutonomousAgent):
         linear_speed = self.get_linear_speed()
         angular_speed = self.get_angular_speed()
         log_entry = {
-            "frame": self.frame,
+            "step": self.step,
             "timestamp": time.time(),
             "mission_time": self.get_mission_time(),
             "current_power": self.get_current_power(),
@@ -278,11 +283,12 @@ class NavAgent(AutonomousAgent):
             "angular_speed": angular_speed,
         }
         self.frames.append(log_entry)
-        self.frame += 1
-        if self.frame % 100 == 0:
+        self.step += 1
+        if self.step % 100 == 0:
             with open(self.log_file, "w") as f:
                 self.out["frames"] = self.frames
                 json.dump(self.out, f, indent=4)
+            np.save(self.rock_points_file, self.all_rock_detections)
 
         return control
 

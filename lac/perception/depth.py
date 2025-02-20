@@ -7,6 +7,9 @@ import torch
 from PIL import Image
 
 from lac.perception.segmentation import get_mask_centroids, centroid_matching
+from lac.perception.vision import project_pixel_to_3D
+from lac.utils.frames import opencv_to_rover
+import lac.params as params
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -49,15 +52,37 @@ def stereo_depth_from_segmentation(left_seg_masks, right_seg_masks, baseline, fo
 
     results = []
     for i, match in enumerate(matches):
-        results.append(
-            {
-                "left_centroid": match[0],
-                "right_centroid": match[1],
-                "disparity": disparities[i],
-                "depth": depths[i],
-            }
-        )
+        if depths[i] > 0 and depths[i] < params.MAX_DEPTH:
+            results.append(
+                {
+                    "left_centroid": match[0],
+                    "right_centroid": match[1],
+                    "disparity": disparities[i],
+                    "depth": depths[i],
+                }
+            )
     return results
+
+
+def project_depths_to_world(depth_results, K, rover_pose):
+    """
+    depth_results : list - List of dictionaries containing depth results
+    K : np.ndarray (3, 3) - Camera intrinsics matrix
+    rover_pose : np.ndarray (4, 4) - Rover pose in the world frame
+    """
+    world_points = []
+    # offset from rover origin to front left camera in rover frame (TODO: load this)
+    FL_OFFSET = np.array([0.28, 0.081, 0.131])
+    for result in depth_results:
+        rock_point_cam = project_pixel_to_3D(result["left_centroid"], result["depth"], K)
+        # OpenCV to rover frame conversion
+        rock_point_rover = opencv_to_rover(rock_point_cam)
+        # Apply camera to rover offset
+        rock_point_rover = rock_point_rover + FL_OFFSET
+        # Rover to world frame conversion
+        rock_point_world = (rover_pose @ np.concatenate((rock_point_rover, [1])))[:3]
+        world_points.append(rock_point_world)
+    return world_points
 
 
 def compute_stereo_depth(

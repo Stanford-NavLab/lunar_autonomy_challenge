@@ -23,7 +23,7 @@ import plotly.graph_objects as go
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.util import transform_to_numpy, to_blender_convention
-from lac.plotting import pose_traces
+from lac.utils.plotting import pose_traces
 
 
 def get_entry_point():

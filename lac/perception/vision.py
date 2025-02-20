@@ -2,6 +2,7 @@
 
 import cv2 as cv
 import numpy as np
+import apriltag
 
 
 def project_pixel_to_3D(pixel, depth, K):
@@ -22,3 +23,7 @@ def project_pixel_to_3D(pixel, depth, K):
     Y = (y - cy) * depth / fy
     Z = depth
     return np.array([X, Y, Z])
+
+
+def detect_fiducials(image, detector):
+    pass
