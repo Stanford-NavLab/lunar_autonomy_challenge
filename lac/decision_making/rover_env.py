@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from lac.plotting import plot_surface
+from lac.utils.plotting import plot_surface
 
 ###################################
 # Environment Definition
