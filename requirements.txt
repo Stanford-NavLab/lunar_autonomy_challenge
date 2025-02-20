@@ -8,3 +8,5 @@ nbformat
 plotly
 pandas
 ipykernel
+symforce
+apriltag

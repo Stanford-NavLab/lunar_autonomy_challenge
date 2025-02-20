@@ -86,5 +86,6 @@ def opencv_to_rover(point):
     return np.array([point[2], -point[0], -point[1]])
 
 
-def get_tag_group_pose_world(tag_group: str):
-    """ """
+def apply_transform(T, points):
+    """Apply a 4x4 transformation matrix to an Nx3 set of points"""
+    return points @ T[:3, :3].T + T[:3, 3]

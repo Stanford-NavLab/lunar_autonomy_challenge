@@ -1,40 +1,38 @@
 import cv2
 import numpy as np
+from scipy.spatial.transform import Rotation
+
+from lac.params import TAG_LOCATIONS, TAG_CORNERS_LOCAL
+from lac.utils.frames import apply_transform
 
 
-def get_tag_corners_world(tag_center: np.ndarray, tag_size: float=0.339):
+def get_tag_corners_world(id: int, lander_pose: np.ndarray):
     """
     Prepares the corner points of the tag in the world frame.
-    
+
     Inputs:
     -------
-    tag_center: np.ndarray
-        3D coordinates of the tag center on the lander.
-    tag_size: float
-        Size of the tag. (Assumed to be square)
+    tag_id : int
+        ID of the tag.
+    lander_pose : np.ndarray
+        Pose of the lander in the world frame.
 
     Returns:
     --------
-    world_points: np.ndarray
-        3D coordinates of the tag corners in the world frame. Ordering: 
+    tag_corners_world : np.ndarray
+        3D coordinates of the tag corners in the world frame. Ordering:
         [center, top-left, top-right, bottom-right, bottom-left]
 
     """
-    half_size = tag_size / 2
-    world_points = np.array(
-        [
-            tag_center,
-            tag_center + np.array([-half_size, half_size, 0]),
-            tag_center + np.array([half_size, half_size, 0]),
-            tag_center + np.array([half_size, -half_size, 0]),
-            tag_center + np.array([-half_size, -half_size, 0]),
-        ],
-        dtype=np.float32,
-    )
-    return world_points
+    tag_center = TAG_LOCATIONS[id]["center"]
+    tag_bearing = TAG_LOCATIONS[id]["bearing"]
+    R_bearing = Rotation.from_euler("z", -tag_bearing, degrees=True)
+    tag_corners_lander = R_bearing.apply(TAG_CORNERS_LOCAL) + tag_center
+    tag_corners_world = apply_transform(lander_pose, tag_corners_lander)
+    return tag_corners_world
 
 
-def solve_pnp(
+def solve_tag_pnp(
     tag_corners_world: np.ndarray,
     detected_tag_corners: np.ndarray,
     tag_size: float,
@@ -54,7 +52,7 @@ def solve_pnp(
     tag_size: float
         Size of the tag. (Assumed to be square)
     tag_center: np.ndarray
-        3D coordinates of the tag center on the lander. 
+        3D coordinates of the tag center on the lander.
     cam_intrinsics: np.ndarray
         Camera intrinsics matrix.
     rot_init: np.ndarray
@@ -71,9 +69,7 @@ def solve_pnp(
 
     """
 
-    rvec_init, _ = (
-        cv2.Rodrigues(rot_init) if rot_init is not None else (None, None)
-    )
+    rvec_init, _ = cv2.Rodrigues(rot_init) if rot_init is not None else (None, None)
     success, rvec, tvec = cv2.solvePnP(
         objectPoints=tag_corners_world,
         imagePoints=detected_tag_corners,
@@ -85,7 +81,7 @@ def solve_pnp(
     )
 
     if not success:
-        raise RuntimeError(f"PnP Solution failed for frame {i}")
+        raise RuntimeError("PnP Solution failed")
 
     # Convert rotation vector to rotation matrix
     cam_rot_world, _ = cv2.Rodrigues(rvec)

@@ -37,6 +37,7 @@ from lac.perception.depth import (
 )
 from lac.localization.imu_recovery import ImuEstimator
 from lac.utils.visualization import overlay_mask, draw_steering_arc, overlay_stereo_rock_depths
+from lac.utils.frames import apply_transform
 import lac.params as params
 
 
@@ -191,8 +192,7 @@ class NavAgent(AutonomousAgent):
         heading = rpy[2]
 
         # Wheel contact mapping
-        wheel_contact_points = current_pose @ params.WHEEL_RIG_COORDS
-        wheel_contact_points = wheel_contact_points[:3, :].T
+        wheel_contact_points = apply_transform(current_pose, params.WHEEL_RIG_POINTS)
 
         g_map = self.get_geometric_map()
         for point in wheel_contact_points:

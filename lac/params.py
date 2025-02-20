@@ -1,6 +1,8 @@
 """Shared constants and parameters"""
 
 import numpy as np
+import json
+import os
 from dataclasses import dataclass
 
 
@@ -18,6 +20,31 @@ FL_Y = FL_X  # Vertical focal length  (square pixels)
 CAMERA_INTRINSICS = np.array([[FL_X, 0, IMG_WIDTH / 2], [0, FL_Y, IMG_HEIGHT / 2], [0, 0, 1]])
 
 TAG_SIZE = 0.339  # meters
+TAG_CORNERS_LOCAL = np.array(
+    [
+        [TAG_SIZE / 2, 0.0, TAG_SIZE / 2],
+        [-TAG_SIZE / 2, 0.0, TAG_SIZE / 2],
+        [-TAG_SIZE / 2, 0.0, -TAG_SIZE / 2],
+        [TAG_SIZE / 2, 0.0, -TAG_SIZE / 2],
+    ]
+)
+
+GEOMETRY_DICT = json.load(open(os.path.expanduser("~/LunarAutonomyChallenge/docs/geometry.json")))
+
+# These angles are listed clockwise (starting with 0 at lander +Y-axis)
+TAG_GROUP_BEARING_ANGLES = {
+    "a": 135,
+    "b": 45,
+    "c": 315,
+    "d": 225,
+}
+TAG_LOCATIONS = {}
+for group, group_vals in GEOMETRY_DICT["lander"]["fiducials"].items():
+    for tag, tag_vals in group_vals.items():
+        TAG_LOCATIONS[tag_vals["id"]] = {
+            "center": np.array([tag_vals["x"], tag_vals["y"], tag_vals["z"]]),
+            "bearing": TAG_GROUP_BEARING_ANGLES[group],
+        }
 
 # Bottom of wheel points in robot frame
 WHEEL_RIG_POINTS = np.array(
@@ -28,7 +55,6 @@ WHEEL_RIG_POINTS = np.array(
         [-0.222, 0.203, -0.134],
     ]
 )
-WHEEL_RIG_COORDS = np.concatenate((WHEEL_RIG_POINTS.T, np.ones((1, 4))), axis=0)
 
 
 """ Parameters """
