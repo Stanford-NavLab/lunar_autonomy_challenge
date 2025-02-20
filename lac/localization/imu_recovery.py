@@ -13,9 +13,7 @@ from symforce.opt.factor import Factor
 from symforce.opt.optimizer import Optimizer
 
 from lac.util import skew_symmetric, normalize_rotation_matrix
-
-
-LUNAR_GRAVITY = np.array([0.0, 0.0, 1.6220])  # m/s^2
+from lac.params import LUNAR_GRAVITY
 
 
 def recover_rotation(R_prev, omega, dt):
