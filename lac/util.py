@@ -68,13 +68,32 @@ def normalize_rotation_matrix(R):
     return R_normalized
 
 
+def wrap_angle(angle):
+    """Wrap an angle in radians to [-pi, pi]."""
+    return (angle + np.pi) % (2 * np.pi) - np.pi
+
+
 def rmse(predictions, targets):
     return np.sqrt(((predictions - targets) ** 2).mean())
 
 
-def wrap_angle(angle):
-    """Wrap an angle in radians to [-pi, pi]."""
-    return (angle + np.pi) % (2 * np.pi) - np.pi
+def rotation_matrix_error(R1, R2):
+    R_error = R1 @ R2.T  # Compute relative rotation matrix
+    trace_value = np.trace(R_error)
+
+    # Ensure the input to arccos is within the valid range [-1, 1]
+    cos_theta = np.clip((trace_value - 1) / 2, -1.0, 1.0)
+
+    theta = np.arccos(cos_theta)  # Rotation angle in radians
+    return np.degrees(theta)  # Convert to degrees
+
+
+def rotations_rmse(R1, R2):
+    """Compute the RMSE between two sets of rotation matrices."""
+    errors = np.zeros(len(R1))
+    for i in range(len(R1)):
+        errors[i] = rotation_matrix_error(R1[i], R2[i])
+    return np.sqrt(np.mean(errors**2))
 
 
 def np_img_to_PIL_rgb(img_array):

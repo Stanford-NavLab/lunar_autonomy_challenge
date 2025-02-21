@@ -10,3 +10,9 @@ Clone this repo inside the unzipped LunarAutonomyChallenge folder provided by th
 ```
 
 Create an `outputs/` folder to store generated data, and a `data/` folder to store other data (heightmaps, etc.).
+
+## Conventions
+
+### Transformations
+
+`a_T_b` denotes the transformation from frame `b` to frame `a`.

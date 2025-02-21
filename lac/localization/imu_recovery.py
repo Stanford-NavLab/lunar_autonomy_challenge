@@ -1,3 +1,9 @@
+"""Recover poses and pose deltas from IMU data.
+
+Delta at step k is defined as the change in pose from k-1 to k.
+
+"""
+
 import numpy as np
 import symforce
 
@@ -13,6 +19,7 @@ from symforce.opt.factor import Factor
 from symforce.opt.optimizer import Optimizer
 
 from lac.util import skew_symmetric, normalize_rotation_matrix
+from lac.utils.frames import invert_transform_mat
 from lac.params import LUNAR_GRAVITY
 
 
@@ -20,6 +27,11 @@ def recover_rotation(R_prev, omega, dt):
     Omega = skew_symmetric(omega)
     R_curr = (np.eye(3) - Omega * dt).T @ R_prev
     return normalize_rotation_matrix(R_curr)
+
+
+def recover_rotation_delta(omega, dt):
+    Omega = skew_symmetric(omega)
+    return (np.eye(3) - Omega * dt).T
 
 
 def rotation_residual(R_prev: sf.Rot3, R_curr: sf.Rot3, omega: sf.V3, dt: float) -> sf.V3:
@@ -66,10 +78,14 @@ def recover_translation(t_prev_prev, t_prev, R_curr, a, dt):
     return t_curr
 
 
+def recover_translation_delta(a, dt):
+    pass
+
+
 class ImuEstimator:
     def __init__(self, initial_pose, dt=0.05):
         self.dt = dt
-        self.R_prev = initial_pose[:3, :3]
+        self.R_curr = initial_pose[:3, :3]
         self.t_prev_prev = initial_pose[:3, 3]
         self.t_prev = initial_pose[:3, 3]
 
@@ -82,11 +98,12 @@ class ImuEstimator:
         a = imu_data[:3]
         omega = imu_data[3:]
 
-        R_curr = recover_rotation_exact(self.R_prev, omega, self.dt)
+        self.R_curr = recover_rotation_exact(self.R_curr, omega, self.dt)
         t_curr = recover_translation(self.t_prev_prev, self.t_prev, R_curr, a, self.dt)
 
         self.R_prev = R_curr
         self.t_prev_prev = self.t_prev
         self.t_prev = t_curr
 
-        return np.block([[R_curr, t_curr[:, None]], [0, 0, 0, 1]])
+    def get_pose_delta(self):
+        return np.block([[self.R_prev, self.t_prev[:, None]], [0, 0, 0, 1]])

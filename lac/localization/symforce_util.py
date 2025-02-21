@@ -29,6 +29,22 @@ def odometry_residual(
     return T.cast(sf.V6, sf.M.diag(diagonal_sigmas.to_flat_list()).inv() * sf.V6(tangent_error))
 
 
+def local_odometry_residual(
+    world_T_a: sf.Pose3,
+    world_T_b: sf.Pose3,
+    R_a_b: sf.Rot3,
+    t_a_b: sf.Vector3,
+    diagonal_sigmas: sf.V6,
+    epsilon: sf.Scalar,
+) -> sf.V6:
+    """
+    Residual on the relative pose between two timesteps of the robot.
+    Rotation and translation are in the local robot frame.
+    """
+    a_T_b_predicted = world_T_a.inverse() * world_T_b
+    a_T_b = sf.Pose3(R=R_a_b, t=t_a_b)
+
+
 def bearing_residual(
     robot_pose: sf.Pose3,
     landmark_pose: sf.Pose3,

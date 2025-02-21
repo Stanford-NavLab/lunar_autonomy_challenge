@@ -8,64 +8,89 @@ Data collection agent
 
 """
 
-import numpy as np
-import carla
-import cv2 as cv
-import random
+import json
 import os
 import shutil
-import json
+import random
 import time
 from math import radians
+import carla
+import cv2 as cv
+import numpy as np
 from pynput import keyboard
-import plotly.graph_objects as go
+from PIL import Image
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import transform_to_numpy
+from lac.util import (
+    pose_to_rpy_pos,
+    transform_to_numpy,
+    wrap_angle,
+    mask_centroid,
+    gen_square_spiral,
+)
+from lac.perception.vision import FiducialLocalizer
+from lac.utils.visualization import overlay_tag_detections
+from lac.utils.frames import apply_transform
+import lac.params as params
 
 
 def get_entry_point():
-    return "DataCollectionAgent"
+    return "LocalizationAgent"
 
 
-class DataCollectionAgent(AutonomousAgent):
+class LocalizationAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
         """Set up a keyboard listener from pynput to capture the key commands for controlling the robot using the arrow keys."""
         listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
 
-        """ Add some attributes to store values for the target linear and angular velocity. """
+        """ For teleop """
         self.current_v = 0
         self.current_w = 0
+        self.TELEOP = True
 
-        """ Attributes for teleop sensitivity and max speed. """
-        self.max_speed = 0.3
-        self.speed_increment = 0.1
-        self.turn_rate = 0.6
+        self.IMG_WIDTH = 1280
+        self.IMG_HEIGHT = 720
+        self.DISPLAY = True
+        self.max_steer = 1.0  # rad/s
+        self.max_steer_delta = 0.6  # rad/s
+
+        """ Controller params """
+        self.KP_STEER = 0.3
+        self.KP_LINEAR = 0.1
+        self.TARGET_SPEED = 0.2  # m/s
+        self.steer_delta = 0.0
+
+        """ Perception modules """
+        self.frame = 0
+        self.image_process_rate = 1  # Hz
 
         """ Initialize a counter to keep track of the number of simulation steps. """
-        self.frame = 0
-        self.rate = 1  # Sub-sample rate. Max rate is 10Hz
+        self.step = 0
 
-        self.run_name = "data_collection"
+        """ Waypoints """
+        self.waypoints = gen_square_spiral(max_val=4.5, min_val=2.0, step=0.5)
+        self.waypoint_idx = 0
+        self.waypoint_threshold = 1.0  # meters
+
+        """ Localization """
+        self.fid_localizer = FiducialLocalizer()
+        self.measurement_history = []
+        self.odometry_history = []
+
+        """ Data logging """
+        self.run_name = "localization_agent"
         self.log_file = "output/" + self.run_name + "/data_log.json"
-
-        # Initial rover pose in world frame
+        self.rock_points_file = "output/" + self.run_name + "/rock_points.npy"
         initial_rover_pose = transform_to_numpy(self.get_initial_position())
-        # Lander pose in rover frame at initialization
         lander_pose_rover = transform_to_numpy(self.get_initial_lander_position())
-        # Lander pose in world frame (constant)
         lander_pose_world = initial_rover_pose @ lander_pose_rover
-        print("Initial lander pose in world frame: ", lander_pose_world[:3, 3])
         self.out = {
             "initial_pose": initial_rover_pose.tolist(),
             "lander_pose_rover": lander_pose_rover.tolist(),
             "lander_pose_world": lander_pose_world.tolist(),
         }
-
-        self.frames = []
-        self.log_images = True
         self.cameras = {
             "FrontLeft": {"active": True, "light": 1.0, "semantic": False},
             "FrontRight": {"active": False, "light": 0.0, "semantic": False},
@@ -78,6 +103,7 @@ class DataCollectionAgent(AutonomousAgent):
         }
         self.out["cameras_config"] = self.cameras
         self.out["use_fiducials"] = self.use_fiducials()
+        self.frames = []
 
         if os.path.exists("output/" + self.run_name):
             shutil.rmtree("output/" + self.run_name)
@@ -88,6 +114,7 @@ class DataCollectionAgent(AutonomousAgent):
                     os.makedirs("output/" + self.run_name + "/" + cam + "_semantic")
 
     def use_fiducials(self):
+        """We want to use the fiducials, so we return True."""
         return True
 
     def sensors(self):
@@ -105,51 +132,45 @@ class DataCollectionAgent(AutonomousAgent):
             }
         return sensors
 
-    def run_step(self, input_data):
+    def initialize(self):
         # Move the arms out of the way
-        if self.frame == 0:
-            self.set_front_arm_angle(radians(60))
-            self.set_back_arm_angle(radians(60))
+        self.set_front_arm_angle(radians(60))
+        self.set_back_arm_angle(radians(60))
 
-        FL_img = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+    def run_step(self, input_data):
+        if self.step == 0:
+            self.initialize()
 
         current_pose = transform_to_numpy(self.get_transform())
         imu_data = self.get_imu_data()
         linear_speed = self.get_linear_speed()
         angular_speed = self.get_angular_speed()
 
-        """ We need to check that the sensor data is not None before we do anything with it. The data for each camera will be 
-        None for every other simulation step, since the cameras operate at 10Hz while the simulator operates at 20Hz. """
-        if FL_img is not None:
-            cv.imshow("Front left", FL_img)
-            R_img = input_data["Grayscale"][carla.SensorPosition.Right]
-            cv.imshow("Right", R_img)
-            cv.waitKey(1)
+        # Perception
+        FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+        if FL_gray is not None:
+            R_gray = input_data["Grayscale"][carla.SensorPosition.Right]
+            tag_detections = self.fid_localizer.detect(FL_gray)
 
-            if self.frame % self.rate == 0:
-                if self.log_images:
-                    for cam, config in self.cameras.items():
-                        if config["active"]:
-                            img = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
-                            cv.imwrite(
-                                "output/" + self.run_name + f"/{cam}/" + str(self.frame) + ".png",
-                                img,
-                            )
-                            if config["semantic"]:
-                                semantic_img = input_data["Semantic"][
-                                    getattr(carla.SensorPosition, cam)
-                                ]
-                                cv.imwrite(
-                                    "output/"
-                                    + self.run_name
-                                    + f"/{cam}_semantic/"
-                                    + str(self.frame)
-                                    + ".png",
-                                    semantic_img,
-                                )
+            if self.DISPLAY:
+                # FL_rgb_PIL = Image.fromarray(FL_gray).convert("RGB")
+                overlay = overlay_tag_detections(FL_gray, tag_detections)
+                cv.imshow("Tag detections", overlay)
+                cv.waitKey(1)
+
+            R_img = input_data["Grayscale"][carla.SensorPosition.Right]
+            cv.imwrite(
+                "output/" + self.run_name + "/Right/" + str(self.step) + ".png",
+                R_img,
+            )
+
+        if self.TELEOP:
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+
+        # Data logging
 
         log_entry = {
-            "frame": self.frame,
+            "step": self.step,
             "timestamp": time.time(),
             "mission_time": self.get_mission_time(),
             "current_power": self.get_current_power(),
@@ -160,11 +181,8 @@ class DataCollectionAgent(AutonomousAgent):
             "angular_speed": angular_speed,
         }
         self.frames.append(log_entry)
-        self.frame += 1
-
-        control = carla.VehicleVelocityControl(self.current_v, self.current_w)
-
-        if self.frame % 100 == 0:
+        self.step += 1
+        if self.step % 100 == 0:
             with open(self.log_file, "w") as f:
                 self.out["frames"] = self.frames
                 json.dump(self.out, f, indent=4)
@@ -173,9 +191,6 @@ class DataCollectionAgent(AutonomousAgent):
 
     def finalize(self):
         print("Running finalize")
-
-        with open(self.log_file, "w") as f:
-            json.dump(self.out, f, indent=4)
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""
@@ -187,15 +202,15 @@ class DataCollectionAgent(AutonomousAgent):
         velocity of 0.6 radians per second."""
 
         if key == keyboard.Key.up:
-            self.current_v += self.speed_increment
-            self.current_v = np.clip(self.current_v, 0, self.max_speed)
+            self.current_v += 0.1
+            self.current_v = np.clip(self.current_v, 0, 0.3)
         if key == keyboard.Key.down:
-            self.current_v -= self.speed_increment
-            self.current_v = np.clip(self.current_v, -self.max_speed, 0)
+            self.current_v -= 0.1
+            self.current_v = np.clip(self.current_v, -0.3, 0)
         if key == keyboard.Key.left:
-            self.current_w = self.turn_rate
+            self.current_w = 0.6
         if key == keyboard.Key.right:
-            self.current_w = -self.turn_rate
+            self.current_w = -0.6
 
     def on_release(self, key):
         """This method sets the angular or linear velocity to zero when the arrow key is released. Stopping the robot."""

@@ -57,6 +57,19 @@ def overlay_stereo_rock_depths(left_image, depth_results):
     return overlay
 
 
+def overlay_tag_detections(image_gray, detections):
+    """
+    image_gray : np.ndarray (H, W) - grayscale image
+    detections : list of apriltag.Detection - AprilTag detections
+    """
+    image_rgb = cv.cvtColor(image_gray, cv.COLOR_GRAY2BGR)
+    overlay = image_rgb.copy()
+    for detection in detections:
+        for pt in detection.corners:
+            cv.circle(overlay, tuple(pt.astype(int)), 5, (0, 255, 0), -1)
+    return overlay
+
+
 def draw_steering_arc(image, steering, l=0.4, color=(0, 0, 255), thickness=3):
     """
     Overlays an arc on the input image showing the predicted trajectory of a rover.
