@@ -79,6 +79,14 @@ def make_pose(T):
     return sf.Pose3(R=sf.Rot3.from_rotation_matrix(T[:3, :3]), t=sf.Vector3(T[:3, 3]))
 
 
+def copy_pose(pose: sf.Pose3):
+    return sf.Pose3(R=pose.R, t=pose.t)
+
+
+def flatten_list(nested_list):
+    return [item for sublist in nested_list for item in sublist]
+
+
 def to_np_pose(pose: sf.Pose3):
     R = pose.R.to_rotation_matrix()
     t = pose.t

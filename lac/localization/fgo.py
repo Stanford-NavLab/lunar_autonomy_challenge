@@ -1,4 +1,9 @@
-"""Utility functions for Factor Graph Optimization with SymForce"""
+"""Factor Graph Optimization with SymForce
+
+Step -1 is initialization. Poses start at index -1
+The first run_step call starts at step 0. Odometry and measurements start at index 0.
+
+"""
 
 import numpy as np
 import symforce.symbolic as sf
@@ -7,7 +12,106 @@ from symforce.values import Values
 from symforce.opt.factor import Factor
 from symforce.opt.optimizer import Optimizer
 
-from lac.localization.symforce_util import odometry_residual, make_pose, to_np_pose
+from lac.localization.symforce_util import (
+    odometry_residual,
+    make_pose,
+    to_np_pose,
+    copy_pose,
+    flatten_list,
+)
+
+
+def get_poses_from_values(values):
+    poses = []
+    for key in values.keys():
+        if key.startswith("pose_"):
+            poses.append(values[key])
+    return poses
+
+
+class FactorGraph:
+    def __init__(self, initial_pose, odometry_sigma, fiducial_sigma):
+        self.values = Values()
+        self.values["identity_pose"] = sf.Pose3()
+        self.values["odometry_sigma"] = sf.V6(odometry_sigma)
+        self.values["fiducial_sigma"] = sf.V6(fiducial_sigma)
+        self.values["epsilon"] = sf.numeric_epsilon
+
+        self.values["pose_0"] = make_pose(initial_pose)
+        self.num_poses = 1
+
+        self.factors = {}
+        self.factors[0] = []
+
+    def get_poses(self):
+        return [to_np_pose(pose) for pose in get_poses_from_values(self.values)]
+
+    def add_pose(self, i: int, pose: np.ndarray = None):
+        """Add pose for step i"""
+        self.factors[i] = []
+        if pose is not None:
+            self.values[f"pose_{i}"] = make_pose(pose)
+        else:
+            self.values[f"pose_{i}"] = copy_pose(self.values[f"pose_{i - 1}"])
+        self.num_poses += 1
+
+    def add_odometry_factor(self, i: int, odometry: np.ndarray):
+        self.values[f"odometry_{i}"] = make_pose(odometry)
+        self.factors[i].append(
+            Factor(
+                residual=odometry_residual,
+                keys=[
+                    f"pose_{i - 1}",
+                    f"pose_{i}",
+                    f"odometry_{i}",
+                    "odometry_sigma",
+                    "epsilon",
+                ],
+            )
+        )
+
+    def add_pose_measurement_factor(self, i: int, pose_measurement: np.ndarray):
+        self.values[f"pose_measurement_{i}"] = make_pose(pose_measurement)
+        self.factors[i].append(
+            Factor(
+                residual=odometry_residual,
+                keys=[
+                    "identity_pose",
+                    f"pose_{i}",
+                    f"pose_measurement_{i}",
+                    "fiducial_sigma",
+                    "epsilon",
+                ],
+            )
+        )
+
+    def optimize(self, window: T.Tuple[int] = None):
+        """
+
+        window : tuple
+            Start and end pose indices (inclusive) of the window to optimize
+
+        """
+        if window is None:
+            idxs = list(range(1, self.num_poses))
+        else:
+            idxs = list(range(window[0], window[1] + 1))
+        optimized_keys = [f"pose_{i}" for i in idxs]
+        factors_to_optimize = flatten_list([self.factors[i] for i in idxs])
+
+        optimizer = Optimizer(
+            factors=factors_to_optimize,
+            optimized_keys=optimized_keys,
+            params=Optimizer.Params(
+                verbose=False, initial_lambda=1e4, iterations=100, lambda_down_factor=0.5
+            ),
+        )
+        result = optimizer.optimize(self.values)
+
+        self.values = result.optimized_values
+
+        optimized_poses = get_poses_from_values(result.optimized_values)
+        return [to_np_pose(pose) for pose in optimized_poses], result
 
 
 def odometry_fiducial_fgo(

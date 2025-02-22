@@ -132,3 +132,23 @@ def gen_square_spiral(max_val, min_val, step):
         points.append([-r, -r])  # bottom-left
         r -= step
     return np.array(points)
+
+
+def get_positions_from_poses(poses):
+    return np.array([pose[:3, 3] for pose in poses])
+
+
+def get_rotations_from_poses(poses):
+    return np.array([pose[:3, :3] for pose in poses])
+
+
+def positions_rmse_from_poses(poses_a, poses_b):
+    pos_a = get_positions_from_poses(poses_a)
+    pos_b = get_positions_from_poses(poses_b)
+    return np.sqrt(np.mean(np.linalg.norm(pos_a - pos_b, axis=1) ** 2))
+
+
+def rotations_rmse_from_poses(poses_a, poses_b):
+    rots_a = get_rotations_from_poses(poses_a)
+    rots_b = get_rotations_from_poses(poses_b)
+    return rotations_rmse(rots_a, rots_b)
