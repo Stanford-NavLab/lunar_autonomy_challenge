@@ -1,7 +1,24 @@
 import numpy as np
+import json
 from scipy.spatial.transform import Rotation
 from PIL import Image
 import cv2 as cv
+
+
+def load_data(data_path):
+    """Load data from data log file."""
+    json_data = json.load(open(f"{data_path}/data_log.json"))
+    initial_pose = np.array(json_data["initial_pose"])
+    lander_pose = np.array(json_data["lander_pose_world"])
+
+    poses = [initial_pose]
+    imu_data = []
+    for frame in json_data["frames"]:
+        poses.append(np.array(frame["pose"]))
+        imu_data.append(np.array(frame["imu"]))
+    imu_data = np.array(imu_data)
+
+    return initial_pose, lander_pose, poses, imu_data
 
 
 def transform_to_numpy(transform):

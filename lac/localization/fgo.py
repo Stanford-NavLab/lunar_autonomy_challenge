@@ -6,6 +6,7 @@ The first run_step call starts at step 0. Odometry and measurements start at ind
 """
 
 import numpy as np
+from tqdm import tqdm
 import symforce.symbolic as sf
 import symforce.typing as T
 from symforce.values import Values
@@ -18,6 +19,7 @@ from lac.localization.symforce_util import (
     to_np_pose,
     copy_pose,
     flatten_list,
+    odometry_lander_relpose_fgo,
 )
 
 
@@ -119,6 +121,45 @@ class FactorGraph:
 
         optimized_poses = get_poses_from_values(result.optimized_values)
         return [to_np_pose(pose) for pose in optimized_poses], result
+
+
+def sliding_window_fgo(
+    params, initial_poses, odometry_measurements, pose_measurements, lander_pose_world
+):
+    N = params["N"]
+    N_WINDOW = params["N_WINDOW"]
+    N_SHIFT = params["N_SHIFT"]
+    ODOM_SIGMA = params["ODOM_SIGMA"]
+    LANDER_RELPOSE_SIGMA = params["LANDER_RELPOSE_SIGMA"]
+
+    init_poses = initial_poses[:N_WINDOW]
+    fgo_poses = [None] * N
+    k_max = (N - N_WINDOW) // N_SHIFT
+
+    for k in tqdm(range(k_max)):
+        window = slice(N_SHIFT * k, N_SHIFT * k + N_WINDOW)
+        odometry = odometry_measurements[window][:-1]
+        lander_measurements = pose_measurements[window]
+
+        opt_poses, result = odometry_lander_relpose_fgo(
+            init_poses,
+            lander_pose_world,
+            odometry,
+            lander_measurements,
+            ODOM_SIGMA,
+            LANDER_RELPOSE_SIGMA,
+            debug=False,
+        )
+        fgo_poses[N_SHIFT * k : N_SHIFT * (k + 1)] = opt_poses[:N_SHIFT]
+
+        init_poses[:-N_SHIFT] = opt_poses[N_SHIFT:]
+        if k != k_max - 1:
+            pose = opt_poses[-1]
+            for i in range(N_SHIFT):
+                init_poses[-N_SHIFT + i] = pose @ odometry_measurements[window][-1]
+                pose = init_poses[-N_SHIFT + i]
+
+    return fgo_poses
 
 
 def odometry_fiducial_fgo(
