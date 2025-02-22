@@ -15,6 +15,16 @@ OPENCV_TO_CAMERA_PASSIVE = OPENCV_TO_CAMERA_ACTIVE.T
 CAMERA_TO_OPENCV_PASSIVE = OPENCV_TO_CAMERA_ACTIVE
 
 
+def make_transform_mat(R: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """
+    Create a 4x4 transformation matrix from a translation vector and a rotation matrix.
+    """
+    transf = np.eye(4)
+    transf[:3, :3] = R
+    transf[:3, 3] = t
+    return transf
+
+
 def invert_transform_mat(t_mat: np.ndarray) -> np.ndarray:
     """
     Invert a 4x4 transformation matrix.
@@ -38,7 +48,7 @@ def get_cam_pose_rover(cam_name: str) -> np.ndarray:
 
     Returns:
     --------
-    cam_pose: np.ndarray
+    rover_T_cam: np.ndarray
         4x4 transformation matrix representing the camera pose relative to the rover body-fixed frame. (Active transformation)
 
     """
@@ -49,10 +59,10 @@ def get_cam_pose_rover(cam_name: str) -> np.ndarray:
     rover_t_cam = np.array([cam[key] for key in CAM_POS_KEYS])
     rover_R_cam = R.from_euler("xyz", [cam[key] for key in CAM_ANG_KEYS], degrees=False).as_matrix()
     rover_T_cam = np.eye(4)
-    cam_pose[:3, :3] = rover_R_cam
-    cam_pose[:3, 3] = rover_t_cam
+    rover_T_cam[:3, :3] = rover_R_cam
+    rover_T_cam[:3, 3] = rover_t_cam
 
-    return cam_pose
+    return rover_T_cam
 
 
 def get_opencv_pose_rover(camera_name: str, cam_geoms: T.Dict[str, T.Any]) -> np.ndarray:
@@ -77,13 +87,11 @@ def get_opencv_pose_rover(camera_name: str, cam_geoms: T.Dict[str, T.Any]) -> np
         4x4 transformation matrix representing the camera pose in OpenCV convention relative to the frame of the specified rover camera. (Active transformation)
 
     """
-    cam_T_opencv = np.eye(4) # Transformation Camera to OpenCV
+    cam_T_opencv = np.eye(4)  # Transformation Camera to OpenCV
     cam_T_opencv[:3, :3] = np.array([[0, -1, 0], [0, 0, -1], [1, 0, 0]]).T
 
     rover_T_cam = get_cam_pose_rover(camera_name)
-    rover_T_opencv = (
-        rover_T_cam @ cam_T_opencv
-    )  # Active transformation, intrinsic rotation
+    rover_T_opencv = rover_T_cam @ cam_T_opencv  # Active transformation, intrinsic rotation
 
     return rover_T_opencv
 
@@ -97,3 +105,26 @@ def opencv_to_rover(points):
 def apply_transform(T, points):
     """Apply a 4x4 transformation matrix to an Nx3 set of points"""
     return points @ T[:3, :3].T + T[:3, 3]
+
+
+class Trajectory:
+    """Sequence of poses with timestamps"""
+
+    def __init__(self):
+        self.poses = []
+        self.timestamps = []
+
+    def get_positions(self):
+        return np.array([pose[:3, 3] for pose in self.poses])
+
+    def get_orientations(self):
+        return np.array([pose[:3, :3] for pose in self.poses])
+
+
+def positions_rmse(traj_a: Trajectory, traj_b: Trajectory):
+    """
+    Compute the root mean squared error (RMSE) between two trajectories.
+    """
+    pos_a = traj_a.get_positions()
+    pos_b = traj_b.get_positions()
+    return np.sqrt(np.mean(np.linalg.norm(pos_a - pos_b, axis=1) ** 2))

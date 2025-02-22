@@ -19,7 +19,7 @@ from symforce.opt.factor import Factor
 from symforce.opt.optimizer import Optimizer
 
 from lac.util import skew_symmetric, normalize_rotation_matrix
-from lac.utils.frames import invert_transform_mat
+from lac.utils.frames import make_transform_mat, invert_transform_mat
 from lac.params import LUNAR_GRAVITY
 
 
@@ -83,27 +83,38 @@ def recover_translation_delta(a, dt):
 
 
 class ImuEstimator:
-    def __init__(self, initial_pose, dt=0.05):
+    def __init__(self, initial_pose: np.ndarray, dt: float = 0.05):
         self.dt = dt
-        self.R_curr = initial_pose[:3, :3]
+        self.R_prev = initial_pose[:3, :3]
         self.t_prev_prev = initial_pose[:3, 3]
         self.t_prev = initial_pose[:3, 3]
+        self.R_curr = self.R_prev
+        self.t_curr = self.t_prev
 
-    def reset(self, initial_pose):
+    def reset(self, initial_pose: np.ndarray) -> None:
         self.R_prev = initial_pose[:3, :3]
         self.t_prev_prev = initial_pose[:3, 3]
         self.t_prev = initial_pose[:3, 3]
 
-    def update(self, imu_data):
+    def update(self, imu_data: np.ndarray, exact: bool = True) -> None:
         a = imu_data[:3]
         omega = imu_data[3:]
 
-        self.R_curr = recover_rotation_exact(self.R_curr, omega, self.dt)
-        t_curr = recover_translation(self.t_prev_prev, self.t_prev, R_curr, a, self.dt)
-
-        self.R_prev = R_curr
+        self.R_prev = self.R_curr
         self.t_prev_prev = self.t_prev
-        self.t_prev = t_curr
+        self.t_prev = self.t_curr
 
-    def get_pose_delta(self):
-        return np.block([[self.R_prev, self.t_prev[:, None]], [0, 0, 0, 1]])
+        if exact:
+            self.R_curr = recover_rotation_exact(self.R_prev, omega, self.dt)
+        else:
+            self.R_curr = recover_rotation(self.R_prev, omega, self.dt)
+        self.t_curr = recover_translation(self.t_prev_prev, self.t_prev, self.R_curr, a, self.dt)
+
+    def get_pose(self) -> np.ndarray:
+        return make_transform_mat(self.R_curr, self.t_curr)
+
+    def get_pose_delta(self) -> np.ndarray:
+        T_curr = make_transform_mat(self.R_curr, self.t_curr)
+        T_prev = make_transform_mat(self.R_prev, self.t_prev)
+        # Odometry is intrinsic (right multiply): T_curr = T_prev @ delta
+        return invert_transform_mat(T_prev) @ T_curr

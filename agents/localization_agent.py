@@ -168,7 +168,6 @@ class LocalizationAgent(AutonomousAgent):
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         # Data logging
-
         log_entry = {
             "step": self.step,
             "timestamp": time.time(),

@@ -42,7 +42,13 @@ def plot_surface(x, y, z, fig=None, colorscale="Viridis", no_axes=False, showsca
 
 
 def plot_path_3d(
-    x, y, z, fig=None, color="red", markersize=3, linewidth=3, markers=True, name=None, **kwargs
+    path: np.ndarray,
+    fig=None,
+    color="red",
+    markersize=3,
+    linewidth=3,
+    markers=True,
+    **kwargs,
 ):
     """Plot a 3D path with optional markers."""
     if fig is None:
@@ -50,26 +56,25 @@ def plot_path_3d(
     if markers:
         fig.add_trace(
             go.Scatter3d(
-                x=x,
-                y=y,
-                z=z,
+                x=path[:, 0],
+                y=path[:, 1],
+                z=path[:, 2],
                 mode="markers+lines",
                 marker=dict(size=markersize, color=color),
                 line=dict(color=color, width=linewidth),
-                name=name,
-                hovertext=np.arange(len(x)),
+                hovertext=np.arange(len(path)),
                 **kwargs,
             )
         )
     else:
         fig.add_trace(
             go.Scatter3d(
-                x=x,
-                y=y,
-                z=z,
+                x=path[:, 0],
+                y=path[:, 1],
+                z=path[:, 2],
                 mode="lines",
                 line=dict(color=color, width=linewidth),
-                name=name,
+                hovertext=np.arange(len(path)),
                 **kwargs,
             )
         )
@@ -179,6 +184,18 @@ def pose_traces(pose_list):
         all_traces.extend(traces)
 
     return all_traces
+
+
+def plot_poses(poses, fig=None, no_axes=False, **kwargs):
+    """poses is a list of 4x4 arrays or an Nx4x4 array"""
+    if fig is None:
+        fig = go.Figure()
+    if no_axes:
+        positions = np.array([pose[:3, 3] for pose in poses])
+        fig = plot_path_3d(positions, fig=fig, **kwargs)
+    else:
+        fig.add_traces(pose_traces(poses))
+    return fig
 
 
 def vector_trace(
