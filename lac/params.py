@@ -5,6 +5,8 @@ import json
 import os
 from dataclasses import dataclass
 
+#BASE_PATH_LAC = "~/LunarAutonomyChallenge"
+BASE_PATH_LAC = "~/Documents/sw_navlab/LunarAutonomyChallenge"
 
 """ Constants """
 LUNAR_GRAVITY = np.array([0.0, 0.0, 1.6220])  # m/s^2
@@ -19,7 +21,7 @@ FL_X = IMG_WIDTH / (2 * np.tan(IMG_FOV / 2))  # Horizontal focal length
 FL_Y = FL_X  # Vertical focal length  (square pixels)
 CAMERA_INTRINSICS = np.array([[FL_X, 0, IMG_WIDTH / 2], [0, FL_Y, IMG_HEIGHT / 2], [0, 0, 1]])
 
-GEOMETRY_DICT = json.load(open(os.path.expanduser("~/LunarAutonomyChallenge/docs/geometry.json")))
+GEOMETRY_DICT = json.load(open(os.path.expanduser(BASE_PATH_LAC + "/docs/geometry.json")))
 
 # These angles are listed clockwise (starting with 0 at lander +Y-axis)
 TAG_GROUP_BEARING_ANGLES = {
