@@ -29,6 +29,11 @@ def get_poses_from_values(values):
     return poses
 
 
+def cast_sf_pose(pose):
+    """Cast a sym.pose3.Pose3 to sf.Pose3"""
+    return sf.Pose3.from_storage(pose.to_storage())
+
+
 class FactorGraph:
     def __init__(self, initial_pose, odometry_sigma, fiducial_sigma):
         self.values = Values()
@@ -108,7 +113,9 @@ class FactorGraph:
         )
         result = optimizer.optimize(self.values)
 
-        self.values = result.optimized_values
+        for key in self.values.keys():
+            if key.startswith("pose_"):
+                self.values[key] = cast_sf_pose(result.optimized_values[key])
 
         optimized_poses = get_poses_from_values(result.optimized_values)
         return [to_np_pose(pose) for pose in optimized_poses], result
