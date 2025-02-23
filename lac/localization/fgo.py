@@ -37,20 +37,21 @@ def cast_sf_pose(pose):
 
 
 class FactorGraph:
-    def __init__(self, initial_pose, odometry_sigma, fiducial_sigma):
+    def __init__(self, odometry_sigma, fiducial_sigma):
         self.values = Values()
         self.values["identity_pose"] = sf.Pose3()
         self.values["odometry_sigma"] = sf.V6(odometry_sigma)
         self.values["fiducial_sigma"] = sf.V6(fiducial_sigma)
         self.values["epsilon"] = sf.numeric_epsilon
 
-        self.values["pose_0"] = make_pose(initial_pose)
-        self.num_poses = 1
-
+        self.num_poses = 0
         self.factors = {}
-        self.factors[0] = []
 
-    def get_poses(self):
+    def get_pose(self, i: int):
+        assert i < self.num_poses, "Pose index out of range"
+        return to_np_pose(self.values[f"pose_{i}"])
+
+    def get_all_poses(self):
         return [to_np_pose(pose) for pose in get_poses_from_values(self.values)]
 
     def add_pose(self, i: int, pose: np.ndarray = None):
@@ -92,15 +93,15 @@ class FactorGraph:
             )
         )
 
-    def optimize(self, window: T.Tuple[int] = None):
-        """
+    def optimize(self, window: T.Tuple[int] = None, verbose: bool = False):
+        """Optimize the graph
 
         window : tuple
             Start and end pose indices (inclusive) of the window to optimize
 
         """
         if window is None:
-            idxs = list(range(1, self.num_poses))
+            idxs = list(range(1, self.num_poses))  # Don't optimize the initial pose
         else:
             idxs = list(range(window[0], window[1] + 1))
         optimized_keys = [f"pose_{i}" for i in idxs]
@@ -110,7 +111,7 @@ class FactorGraph:
             factors=factors_to_optimize,
             optimized_keys=optimized_keys,
             params=Optimizer.Params(
-                verbose=False, initial_lambda=1e4, iterations=100, lambda_down_factor=0.5
+                verbose=verbose, initial_lambda=1e4, iterations=100, lambda_down_factor=0.5
             ),
         )
         result = optimizer.optimize(self.values)
@@ -119,8 +120,7 @@ class FactorGraph:
             if key.startswith("pose_"):
                 self.values[key] = cast_sf_pose(result.optimized_values[key])
 
-        optimized_poses = get_poses_from_values(result.optimized_values)
-        return [to_np_pose(pose) for pose in optimized_poses], result
+        return result
 
 
 def sliding_window_fgo(

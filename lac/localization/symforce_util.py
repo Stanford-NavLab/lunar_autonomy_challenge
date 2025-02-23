@@ -88,8 +88,8 @@ def flatten_list(nested_list):
 
 
 def to_np_pose(pose: sf.Pose3):
-    R = pose.R.to_rotation_matrix()
-    t = pose.t
+    R = pose.R.to_rotation_matrix().to_numpy()
+    t = pose.t.to_numpy()
     return np.block([[R, t.reshape(3, 1)], [0, 0, 0, 1]])
 
 
