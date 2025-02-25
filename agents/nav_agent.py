@@ -35,7 +35,6 @@ from lac.perception.depth import (
     stereo_depth_from_segmentation,
     project_depths_to_world,
 )
-from lac.localization.imu_recovery import ImuEstimator
 from lac.utils.visualization import overlay_mask, draw_steering_arc, overlay_stereo_rock_depths
 from lac.utils.frames import apply_transform
 import lac.params as params
@@ -56,16 +55,9 @@ class NavAgent(AutonomousAgent):
         self.current_w = 0
         self.TELEOP = False
 
-        self.IMG_WIDTH = 1280
-        self.IMG_HEIGHT = 720
-        self.DISPLAY = True
-        self.max_steer = 1.0  # rad/s
-        self.max_steer_delta = 0.6  # rad/s
+        self.DISPLAY = True  # Whether to display the camera views
 
-        """ Controller params """
-        self.KP_STEER = 0.3
-        self.KP_LINEAR = 0.1
-        self.TARGET_SPEED = 0.2  # m/s
+        """ Controller variables """
         self.steer_delta = 0.0
 
         """ Perception modules """
@@ -77,17 +69,6 @@ class NavAgent(AutonomousAgent):
         """ Initialize a counter to keep track of the number of simulation steps. """
         self.step = 0
 
-        """ Wheel contact mapping """
-        self.wheel_rig = np.array(
-            [
-                [0.222, 0.203, -0.134],
-                [0.222, -0.203, -0.134],
-                [-0.222, 0.203, -0.134],
-                [-0.222, 0.203, -0.134],
-            ]
-        )
-        self.wheel_rig_coords = np.concatenate((self.wheel_rig.T, np.ones((1, 4))), axis=0)
-
         """ Rock mapping """
         self.all_rock_detections = []
 
@@ -95,12 +76,6 @@ class NavAgent(AutonomousAgent):
         self.waypoints = gen_square_spiral(max_val=4.5, min_val=2.0, step=0.5)
         self.waypoint_idx = 0
         self.waypoint_threshold = 1.0  # meters
-
-        """ Localization """
-        self.imu_estimator = ImuEstimator(
-            initial_pose=transform_to_numpy(self.get_initial_position()), dt=0.05
-        )
-        self.imu_start_frame = 50
 
         """ Data logging """
         self.run_name = "nav_agent"
@@ -114,15 +89,27 @@ class NavAgent(AutonomousAgent):
             "lander_pose_rover": lander_pose_rover.tolist(),
             "lander_pose_world": lander_pose_world.tolist(),
         }
-        self.cameras = {
-            "FrontLeft": {"active": True, "light": 1.0, "semantic": False},
-            "FrontRight": {"active": True, "light": 0.0, "semantic": False},
-            "BackLeft": {"active": False, "light": 0.0, "semantic": False},
-            "BackRight": {"active": False, "light": 0.0, "semantic": False},
-            "Left": {"active": False, "light": 0.0, "semantic": False},
-            "Right": {"active": True, "light": 0.0, "semantic": False},
-            "Front": {"active": False, "light": 0.0, "semantic": False},
-            "Back": {"active": False, "light": 0.0, "semantic": False},
+        self.cameras = params.CAMERA_CONFIG_INIT
+        self.cameras["FrontLeft"] = {
+            "active": True,
+            "light": 1.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
+        self.cameras["FrontRight"] = {
+            "active": True,
+            "light": 1.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
+        self.cameras["Right"] = {
+            "active": True,
+            "light": 1.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
         }
         self.out["cameras_config"] = self.cameras
         self.out["use_fiducials"] = self.use_fiducials()
@@ -135,6 +122,11 @@ class NavAgent(AutonomousAgent):
                 os.makedirs("output/" + self.run_name + "/" + cam)
                 if config["semantic"]:
                     os.makedirs("output/" + self.run_name + "/" + cam + "_semantic")
+
+    def initialize(self):
+        # Move the arms out of the way
+        self.set_front_arm_angle(radians(params.ARM_ANGLE_STATIC_DEG))
+        self.set_back_arm_angle(radians(params.ARM_ANGLE_STATIC_DEG))
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
@@ -149,8 +141,8 @@ class NavAgent(AutonomousAgent):
             sensors[getattr(carla.SensorPosition, cam)] = {
                 "camera_active": config["active"],
                 "light_intensity": config["light"],
-                "width": "1280",
-                "height": "720",
+                "width": config["width"],
+                "height": config["height"],
                 "use_semantic": config["semantic"],
             }
         return sensors
@@ -170,22 +162,20 @@ class NavAgent(AutonomousAgent):
         steer_delta = 0
         if max_mask is not None and max_area > params.ROCK_MASK_AVOID_MIN_AREA:
             max_mask = max_mask.astype(np.uint8)
-            cx, cy = mask_centroid(max_mask)
-            x, y, w, h = cv.boundingRect(max_mask)
-            offset = params.IMG_WIDTH // 2 - cx
+            cx, _ = mask_centroid(max_mask)
+            x, _, w, _ = cv.boundingRect(max_mask)
+            offset = params.IMG_WIDTH / 2 - cx
             if offset > 0:  # Turn right
                 steer_delta = -min(
-                    self.max_steer_delta * ((x + w) - cx) / 100, self.max_steer_delta
+                    params.MAX_STEER_DELTA * ((x + w) - cx) / 100, params.MAX_STEER_DELTA
                 )
             else:  # Turn left
-                steer_delta = min(self.max_steer_delta * (cx - x) / 100, self.max_steer_delta)
+                steer_delta = min(params.MAX_STEER_DELTA * (cx - x) / 100, params.MAX_STEER_DELTA)
         return steer_delta
 
     def run_step(self, input_data):
-        # Move the arms out of the way
         if self.step == 0:
-            self.set_front_arm_angle(radians(60))
-            self.set_back_arm_angle(radians(60))
+            self.initialize()
 
         current_pose = transform_to_numpy(self.get_transform())
         rpy, pos = pose_to_rpy_pos(current_pose)
@@ -213,7 +203,9 @@ class NavAgent(AutonomousAgent):
 
         angle = np.arctan2(waypoint[1] - pos[1], waypoint[0] - pos[0])
         angle_diff = wrap_angle(angle - heading)
-        nominal_steering = np.clip(self.KP_STEER * angle_diff, -self.max_steer, self.max_steer)
+        nominal_steering = np.clip(
+            params.KP_STEER * angle_diff, -params.MAX_STEER, params.MAX_STEER
+        )
 
         # Perception
         FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
@@ -234,7 +226,7 @@ class NavAgent(AutonomousAgent):
                 left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
             )
             rock_points_world = project_depths_to_world(
-                stereo_depth_results, params.CAMERA_INTRINSICS, current_pose
+                stereo_depth_results, current_pose, "FrontLeft", self.cameras
             )
             for point in rock_points_world:
                 g_map.set_rock(point[0], point[1], True)
@@ -264,7 +256,7 @@ class NavAgent(AutonomousAgent):
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         else:
             control = carla.VehicleVelocityControl(
-                self.TARGET_SPEED, nominal_steering + self.steer_delta
+                params.TARGET_SPEED, nominal_steering + self.steer_delta
             )
 
         # Data logging

@@ -7,8 +7,8 @@ import torch
 from PIL import Image
 
 from lac.perception.segmentation import get_mask_centroids, centroid_matching
-from lac.perception.vision import project_pixel_to_3D
-from lac.utils.frames import opencv_to_rover
+from lac.perception.vision import project_pixel_to_3D, get_camera_intrinsics
+from lac.utils.frames import opencv_to_rover, get_cam_pose_rover
 import lac.params as params
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -64,21 +64,30 @@ def stereo_depth_from_segmentation(left_seg_masks, right_seg_masks, baseline, fo
     return results
 
 
-def project_depths_to_world(depth_results, K, rover_pose):
+def project_depths_to_world(
+    depth_results: list, rover_pose: np.ndarray, cam_name: str, cam_config: dict
+) -> list:
     """
     depth_results : list - List of dictionaries containing depth results
     K : np.ndarray (3, 3) - Camera intrinsics matrix
     rover_pose : np.ndarray (4, 4) - Rover pose in the world frame
+
+    Returns:
+    list - List of world points
+
+    TODO: vectorize this
     """
     world_points = []
     # offset from rover origin to front left camera in rover frame (TODO: load this)
     FL_OFFSET = np.array([0.28, 0.081, 0.131])
+    CAM_TO_ROVER = get_cam_pose_rover(cam_name)
+    K = get_camera_intrinsics(cam_name, cam_config)
     for result in depth_results:
         rock_point_cam = project_pixel_to_3D(result["left_centroid"], result["depth"], K)
         # OpenCV to rover frame conversion
         rock_point_rover = opencv_to_rover(rock_point_cam)
         # Apply camera to rover offset
-        rock_point_rover = rock_point_rover + FL_OFFSET
+        rock_point_rover = rock_point_rover + FL_OFFSET  # TODO: generalize this
         # Rover to world frame conversion
         rock_point_world = (rover_pose @ np.concatenate((rock_point_rover, [1])))[:3]
         world_points.append(rock_point_world)

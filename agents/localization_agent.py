@@ -78,6 +78,7 @@ class LocalizationAgent(AutonomousAgent):
         self.fid_localizer = FiducialLocalizer()
         self.measurement_history = []
         self.odometry_history = []
+        # TODO: init Filter class
 
         """ Data logging """
         self.run_name = "localization_agent"
@@ -134,8 +135,8 @@ class LocalizationAgent(AutonomousAgent):
 
     def initialize(self):
         # Move the arms out of the way
-        self.set_front_arm_angle(radians(60))
-        self.set_back_arm_angle(radians(60))
+        self.set_front_arm_angle(radians(params.ARM_ANGLE_STATIC_DEG))
+        self.set_back_arm_angle(radians(params.ARM_ANGLE_STATIC_DEG))
 
     def run_step(self, input_data):
         if self.step == 0:
@@ -146,11 +147,17 @@ class LocalizationAgent(AutonomousAgent):
         linear_speed = self.get_linear_speed()
         angular_speed = self.get_angular_speed()
 
+        # TODO: filter predict with IMU
+
         # Perception
         FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
         if FL_gray is not None:
             R_gray = input_data["Grayscale"][carla.SensorPosition.Right]
             tag_detections = self.fid_localizer.detect(FL_gray)
+
+            # TODO:
+            # Detection fiducials
+            # EKF update
 
             if self.DISPLAY:
                 # FL_rgb_PIL = Image.fromarray(FL_gray).convert("RGB")
@@ -163,6 +170,8 @@ class LocalizationAgent(AutonomousAgent):
                 "output/" + self.run_name + "/Right/" + str(self.step) + ".png",
                 R_img,
             )
+
+        # TODO: EKF smoothing at some rate
 
         if self.TELEOP:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)

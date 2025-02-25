@@ -6,6 +6,38 @@ import apriltag
 
 from lac.perception.pnp import solve_tag_pnp
 from lac.utils.frames import invert_transform_mat, get_cam_pose_rover
+from lac.params import IMG_FOV
+
+
+def get_camera_intrinsics(cam_name: str, camera_config: dict):
+    """
+    Get camera intrinsics matrix from camera configuration
+
+    cam_name : str - Name of the camera
+    camera_config : dict - Camera configuration dictionary
+
+    Returns:
+    np.ndarray (3, 3) - Camera intrinsics matrix
+    """
+    w, h = camera_config[cam_name]["width"], camera_config[cam_name]["height"]
+    return calc_camera_intrinsics(w, h)
+
+
+def calc_camera_intrinsics(w: int, h: int):
+    """
+    Get camera intrinsics matrix from image dimensions
+
+    w : int - Image width
+    h : int - Image height
+
+    Returns:
+    np.ndarray (3, 3) - Camera intrinsics matrix
+    """
+    fx = w / (2 * np.tan(IMG_FOV / 2))
+    fy = fx  # Assuming square pixels
+    cx = w / 2
+    cy = h / 2
+    return np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
 
 
 def project_pixel_to_3D(pixel, depth, K):
