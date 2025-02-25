@@ -48,7 +48,7 @@ class DataLogger:
                 if config["semantic"]:
                     os.makedirs(f"output/{self.run_name}/{cam_name}_semantic")
 
-    def log_data(self, step: int, control: tuple):
+    def log_data(self, step: int, control: carla.VehicleVelocityControl):
         """
         step - current step in the simulation
         """
@@ -59,7 +59,7 @@ class DataLogger:
             "current_power": self.agent.get_current_power(),
             "pose": transform_to_numpy(self.agent.get_transform()).tolist(),
             "imu": self.agent.get_imu_data().tolist(),
-            "control": {"v": control[0], "w": control[1]},
+            "control": {"v": control.linear_target_velocity, "w": control.angular_target_velocity},
             "linear_speed": self.agent.get_linear_speed(),
             "angular_speed": self.agent.get_linear_speed(),
         }

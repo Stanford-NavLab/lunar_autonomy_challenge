@@ -8,12 +8,6 @@ Data collection agent
 
 """
 
-import json
-import os
-import shutil
-import random
-import time
-from math import radians
 import carla
 import cv2 as cv
 import numpy as np
@@ -35,9 +29,14 @@ from lac.perception.depth import (
     stereo_depth_from_segmentation,
     project_depths_to_world,
 )
+from lac.utils.data_logger import DataLogger
 from lac.utils.visualization import overlay_mask, draw_steering_arc, overlay_stereo_rock_depths
 from lac.utils.frames import apply_transform
 import lac.params as params
+
+DISPLAY_IMAGES = True  # Whether to display the camera views
+TELEOP = False  # Whether to use teleop control or autonomous control
+UPDATE_LOG_RATE = 100  # Update log file every 100 steps
 
 
 def get_entry_point():
@@ -53,9 +52,6 @@ class NavAgent(AutonomousAgent):
         """ For teleop """
         self.current_v = 0
         self.current_w = 0
-        self.TELEOP = False
-
-        self.DISPLAY = True  # Whether to display the camera views
 
         """ Controller variables """
         self.steer_delta = 0.0
@@ -64,7 +60,7 @@ class NavAgent(AutonomousAgent):
         self.segmentation = Segmentation()
         self.depth = DepthAnything()
         self.frame = 0
-        self.image_process_rate = 1  # Hz
+        self.image_process_rate = 1  # [Hz]
 
         """ Initialize a counter to keep track of the number of simulation steps. """
         self.step = 0
@@ -78,55 +74,39 @@ class NavAgent(AutonomousAgent):
         self.waypoint_threshold = 1.0  # meters
 
         """ Data logging """
-        self.run_name = "nav_agent"
-        self.log_file = "output/" + self.run_name + "/data_log.json"
-        self.rock_points_file = "output/" + self.run_name + "/rock_points.npy"
-        initial_rover_pose = transform_to_numpy(self.get_initial_position())
-        lander_pose_rover = transform_to_numpy(self.get_initial_lander_position())
-        lander_pose_world = initial_rover_pose @ lander_pose_rover
-        self.out = {
-            "initial_pose": initial_rover_pose.tolist(),
-            "lander_pose_rover": lander_pose_rover.tolist(),
-            "lander_pose_world": lander_pose_world.tolist(),
-        }
         self.cameras = params.CAMERA_CONFIG_INIT
         self.cameras["FrontLeft"] = {
             "active": True,
             "light": 1.0,
-            "width": 1280,
-            "height": 720,
+            "width": params.MAX_IMG_WIDTH,
+            "height": params.MAX_IMG_HEIGHT,
             "semantic": False,
         }
         self.cameras["FrontRight"] = {
             "active": True,
             "light": 1.0,
-            "width": 1280,
-            "height": 720,
+            "width": params.MAX_IMG_WIDTH,
+            "height": params.MAX_IMG_HEIGHT,
             "semantic": False,
         }
         self.cameras["Right"] = {
             "active": True,
             "light": 1.0,
-            "width": 1280,
-            "height": 720,
+            "width": params.MAX_IMG_WIDTH,
+            "height": params.MAX_IMG_HEIGHT,
             "semantic": False,
         }
-        self.out["cameras_config"] = self.cameras
-        self.out["use_fiducials"] = self.use_fiducials()
-        self.frames = []
-
-        if os.path.exists("output/" + self.run_name):
-            shutil.rmtree("output/" + self.run_name)
-        for cam, config in self.cameras.items():
-            if config["active"]:
-                os.makedirs("output/" + self.run_name + "/" + cam)
-                if config["semantic"]:
-                    os.makedirs("output/" + self.run_name + "/" + cam + "_semantic")
+        run_name = "nav_agent"
+        self.data_logger = DataLogger(self, "nav_agent", self.cameras)
+        self.rock_points_file = f"output/{run_name}/rock_points.npy"
 
     def initialize(self):
         # Move the arms out of the way
-        self.set_front_arm_angle(radians(params.ARM_ANGLE_STATIC_DEG))
-        self.set_back_arm_angle(radians(params.ARM_ANGLE_STATIC_DEG))
+        self.set_front_arm_angle(params.ARM_ANGLE_STATIC_RAD)
+        self.set_back_arm_angle(params.ARM_ANGLE_STATIC_RAD)
+
+    def image_available(self):
+        return self.step % 2 == 0  # Image data is available every other step
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
@@ -135,7 +115,6 @@ class NavAgent(AutonomousAgent):
     def sensors(self):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
         and also the initial activation state of each camera and light. Here we are activating the front left camera and light."""
-
         sensors = {}
         for cam, config in self.cameras.items():
             sensors[getattr(carla.SensorPosition, cam)] = {
@@ -176,6 +155,7 @@ class NavAgent(AutonomousAgent):
     def run_step(self, input_data):
         if self.step == 0:
             self.initialize()
+        self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
 
         current_pose = transform_to_numpy(self.get_transform())
         rpy, pos = pose_to_rpy_pos(current_pose)
@@ -208,51 +188,44 @@ class NavAgent(AutonomousAgent):
         )
 
         # Perception
-        FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-        FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
-        if (
-            FL_gray is not None
-            and (self.step - 1) % (params.FRAME_RATE // self.image_process_rate) == 0
-        ):
-            FL_rgb_PIL = Image.fromarray(FL_gray).convert("RGB")
-            FR_rgb_PIL = Image.fromarray(FR_gray).convert("RGB")
+        if self.step % (params.FRAME_RATE // self.image_process_rate) == 0:
+            # FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+            # FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
+            # FL_rgb_PIL = Image.fromarray(FL_gray).convert("RGB")
+            # FR_rgb_PIL = Image.fromarray(FR_gray).convert("RGB")
 
-            # Run segmentation
-            left_seg_masks, left_seg_full_mask = self.segmentation.segment_rocks(FL_rgb_PIL)
-            right_seg_masks, right_seg_full_mask = self.segmentation.segment_rocks(FR_rgb_PIL)
+            # # Run segmentation
+            # left_seg_masks, left_seg_full_mask = self.segmentation.segment_rocks(FL_rgb_PIL)
+            # right_seg_masks, right_seg_full_mask = self.segmentation.segment_rocks(FR_rgb_PIL)
 
-            # Stereo rock depth
-            stereo_depth_results = stereo_depth_from_segmentation(
-                left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
-            )
-            rock_points_world = project_depths_to_world(
-                stereo_depth_results, current_pose, "FrontLeft", self.cameras
-            )
-            for point in rock_points_world:
-                g_map.set_rock(point[0], point[1], True)
-                self.all_rock_detections.append(point)
+            # # Stereo rock depth
+            # stereo_depth_results = stereo_depth_from_segmentation(
+            #     left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
+            # )
+            # rock_points_world = project_depths_to_world(
+            #     stereo_depth_results, current_pose, "FrontLeft", self.cameras
+            # )
+            # for point in rock_points_world:
+            #     g_map.set_rock(point[0], point[1], True)
+            #     self.all_rock_detections.append(point)
 
-            # Hazard avoidance
-            self.steer_delta = self.segmentation_steering(left_seg_masks)
+            # # Hazard avoidance
+            # self.steer_delta = self.segmentation_steering(left_seg_masks)
 
-            if self.DISPLAY:
-                overlay = overlay_mask(FL_gray, left_seg_full_mask)
-                overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
-                overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
-                overlay = draw_steering_arc(
-                    overlay, nominal_steering + self.steer_delta, color=(0, 255, 0)
-                )
-                # cv.imshow("Left camera view", FL_gray)
-                cv.imshow("Rock segmentation", overlay)
-                cv.waitKey(1)
+            # if DISPLAY_IMAGES:
+            #     overlay = overlay_mask(FL_gray, left_seg_full_mask)
+            #     overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
+            #     overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
+            #     overlay = draw_steering_arc(
+            #         overlay, nominal_steering + self.steer_delta, color=(0, 255, 0)
+            #     )
+            #     # cv.imshow("Left camera view", FL_gray)
+            #     cv.imshow("Rock segmentation", overlay)
+            #     cv.waitKey(1)
 
-            R_img = input_data["Grayscale"][carla.SensorPosition.Right]
-            cv.imwrite(
-                "output/" + self.run_name + "/Right/" + str(self.step) + ".png",
-                R_img,
-            )
+            self.data_logger.log_images(self.step, input_data)
 
-        if self.TELEOP:
+        if TELEOP:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         else:
             control = carla.VehicleVelocityControl(
@@ -260,32 +233,16 @@ class NavAgent(AutonomousAgent):
             )
 
         # Data logging
-        imu_data = self.get_imu_data()
-        linear_speed = self.get_linear_speed()
-        angular_speed = self.get_angular_speed()
-        log_entry = {
-            "step": self.step,
-            "timestamp": time.time(),
-            "mission_time": self.get_mission_time(),
-            "current_power": self.get_current_power(),
-            "pose": current_pose.tolist(),
-            "imu": imu_data.tolist(),
-            "control": {"v": self.current_v, "w": self.current_w},
-            "linear_speed": linear_speed,
-            "angular_speed": angular_speed,
-        }
-        self.frames.append(log_entry)
-        self.step += 1
-        if self.step % 100 == 0:
-            with open(self.log_file, "w") as f:
-                self.out["frames"] = self.frames
-                json.dump(self.out, f, indent=4)
+        self.data_logger.log_data(self.step, control)
+        if self.step % UPDATE_LOG_RATE == 0:
+            self.data_logger.save_log()
             np.save(self.rock_points_file, self.all_rock_detections)
 
         return control
 
     def finalize(self):
         print("Running finalize")
+        self.data_logger.save_log()
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""

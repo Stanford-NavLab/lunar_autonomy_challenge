@@ -3,7 +3,6 @@
 import numpy as np
 import json
 import os
-from dataclasses import dataclass
 
 
 LAC_BASE_PATH = (
@@ -19,7 +18,7 @@ FRAME_RATE = 20  # fps of the simulation
 DT = 1 / FRAME_RATE  # time step
 
 STEREO_BASELINE = 0.162  # meters
-IMG_FOV = 1.22173  # radians (70 degrees)
+IMG_FOV_RAD = 1.22173  # [rad] (70 degrees)
 MAX_IMG_WIDTH = 2448
 MAX_IMG_HEIGHT = 2048
 
@@ -72,12 +71,12 @@ CAMERA_CONFIG_INIT = {
 
 
 """-------------------------------------- Parameters --------------------------------------"""
-ARM_ANGLE_STATIC_DEG = 60  # degrees
+ARM_ANGLE_STATIC_RAD = 1.0472  # [rad] (60 degrees)
 
 # TODO: these should be settable parameters
 IMG_WIDTH = 1280
 IMG_HEIGHT = 720
-FL_X = IMG_WIDTH / (2 * np.tan(IMG_FOV / 2))  # Horizontal focal length
+FL_X = IMG_WIDTH / (2 * np.tan(IMG_FOV_RAD / 2))  # Horizontal focal length
 FL_Y = FL_X  # Vertical focal length  (same as horizontal because square pixels)
 CAMERA_INTRINSICS = np.array([[FL_X, 0, IMG_WIDTH / 2], [0, FL_Y, IMG_HEIGHT / 2], [0, 0, 1]])
 

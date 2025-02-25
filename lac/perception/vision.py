@@ -6,7 +6,7 @@ import apriltag
 
 from lac.perception.pnp import solve_tag_pnp
 from lac.utils.frames import invert_transform_mat, get_cam_pose_rover
-from lac.params import IMG_FOV
+from lac.params import IMG_FOV_RAD
 
 
 def get_camera_intrinsics(cam_name: str, camera_config: dict):
@@ -33,7 +33,7 @@ def calc_camera_intrinsics(w: int, h: int):
     Returns:
     np.ndarray (3, 3) - Camera intrinsics matrix
     """
-    fx = w / (2 * np.tan(IMG_FOV / 2))
+    fx = w / (2 * np.tan(IMG_FOV_RAD / 2))
     fy = fx  # Assuming square pixels
     cx = w / 2
     cy = h / 2
@@ -61,7 +61,8 @@ def project_pixel_to_3D(pixel, depth, K):
 
 
 class FiducialLocalizer:
-    def __init__(self):
+    def __init__(self, camera_config: dict):
+        self.camera_config = camera_config
         options = apriltag.DetectorOptions(families="tag36h11")
         self.detector = apriltag.Detector(options)
 
@@ -98,8 +99,8 @@ class FiducialLocalizer:
             List of estimated rover poses in the world frame
         """
         detections = self.detect(img)
-
-        cam_poses = solve_tag_pnp(detections, lander_pose)
+        cam_intrisics = get_camera_intrinsics(cam_name, self.camera_config)
+        cam_poses = solve_tag_pnp(detections, cam_intrisics, lander_pose)
         rover_to_cam = get_cam_pose_rover(cam_name)
         cam_to_rover = invert_transform_mat(rover_to_cam)
 

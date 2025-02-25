@@ -74,12 +74,6 @@ class LocalizationAgent(AutonomousAgent):
         self.waypoint_idx = 0
         self.waypoint_threshold = 1.0  # meters
 
-        """ Localization """
-        self.fid_localizer = FiducialLocalizer()
-        self.measurement_history = []
-        self.odometry_history = []
-        # TODO: init Filter class
-
         """ Data logging """
         self.run_name = "localization_agent"
         self.log_file = "output/" + self.run_name + "/data_log.json"
@@ -102,6 +96,13 @@ class LocalizationAgent(AutonomousAgent):
             "Front": {"active": False, "light": 0.0, "semantic": False},
             "Back": {"active": False, "light": 0.0, "semantic": False},
         }
+
+        """ Localization """
+        self.fid_localizer = FiducialLocalizer(self.cameras)
+        self.measurement_history = []
+        self.odometry_history = []
+        # TODO: init Filter class
+
         self.out["cameras_config"] = self.cameras
         self.out["use_fiducials"] = self.use_fiducials()
         self.frames = []

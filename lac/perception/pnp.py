@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from lac.params import TAG_LOCATIONS, CAMERA_INTRINSICS
+from lac.params import TAG_LOCATIONS
 from lac.utils.frames import apply_transform, invert_transform_mat, OPENCV_TO_CAMERA_PASSIVE
 
 
@@ -59,7 +59,7 @@ def get_tag_corners_world(id: int, lander_pose: np.ndarray):
     return tag_corners_world
 
 
-def solve_tag_pnp(detections: list, lander_pose: np.ndarray):
+def solve_tag_pnp(detections: list, camera_intrinsics: np.ndarray, lander_pose: np.ndarray):
     """
     Solves the PnP problem to estimate the camera pose in world frame
     NOTE: currently solves for each individual tag detection in a group, rather than stacking them
@@ -68,6 +68,8 @@ def solve_tag_pnp(detections: list, lander_pose: np.ndarray):
     Inputs:
     -------
     detections : list of apriltag.Detection - AprilTag detections
+    lander_pose : np.ndarray (4, 4) - Pose of the lander in the world frame
+    camera_intrinsics : np.ndarray (3, 3) - Camera intrinsics matrix
 
     Returns:
     --------
@@ -81,7 +83,7 @@ def solve_tag_pnp(detections: list, lander_pose: np.ndarray):
         success, rvec, tvec = cv2.solvePnP(
             objectPoints=get_tag_corners_world(detection.tag_id, lander_pose),
             imagePoints=detection.corners,
-            cameraMatrix=CAMERA_INTRINSICS,
+            cameraMatrix=camera_intrinsics,
             distCoeffs=None,
             flags=cv2.SOLVEPNP_ITERATIVE,
         )
