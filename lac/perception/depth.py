@@ -8,7 +8,7 @@ from PIL import Image
 
 from lac.perception.segmentation import get_mask_centroids, centroid_matching
 from lac.perception.vision import project_pixel_to_3D, get_camera_intrinsics
-from lac.utils.frames import opencv_to_rover, get_cam_pose_rover
+from lac.utils.frames import opencv_to_camera, get_cam_pose_rover, apply_transform
 import lac.params as params
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -83,11 +83,12 @@ def project_depths_to_world(
     CAM_TO_ROVER = get_cam_pose_rover(cam_name)
     K = get_camera_intrinsics(cam_name, cam_config)
     for result in depth_results:
-        rock_point_cam = project_pixel_to_3D(result["left_centroid"], result["depth"], K)
-        # OpenCV to rover frame conversion
-        rock_point_rover = opencv_to_rover(rock_point_cam)
+        rock_point_opencv = project_pixel_to_3D(result["left_centroid"], result["depth"], K)
+        # OpenCV to camera frame conversion
+        rock_point_cam = opencv_to_camera(rock_point_opencv)
         # Apply camera to rover offset
-        rock_point_rover = rock_point_rover + FL_OFFSET  # TODO: generalize this
+        # rock_point_rover = rock_point_cam + FL_OFFSET  # TODO: generalize this
+        rock_point_rover = apply_transform(CAM_TO_ROVER, rock_point_cam)
         # Rover to world frame conversion
         rock_point_world = (rover_pose @ np.concatenate((rock_point_rover, [1])))[:3]
         world_points.append(rock_point_world)

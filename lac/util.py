@@ -10,6 +10,7 @@ def load_data(data_path):
     json_data = json.load(open(f"{data_path}/data_log.json"))
     initial_pose = np.array(json_data["initial_pose"])
     lander_pose = np.array(json_data["lander_pose_world"])
+    cam_config = json_data["cameras"]
 
     poses = [initial_pose]
     imu_data = []
@@ -18,7 +19,7 @@ def load_data(data_path):
         imu_data.append(np.array(frame["imu"]))
     imu_data = np.array(imu_data)
 
-    return initial_pose, lander_pose, poses, imu_data
+    return initial_pose, lander_pose, poses, imu_data, cam_config
 
 
 def transform_to_numpy(transform):
@@ -36,6 +37,15 @@ def transform_to_numpy(transform):
     T[:3, :3] = R
     T[:3, 3] = t
     return T
+
+
+def transform_to_rpy_pos(transform):
+    """Convert a Transform object to roll-pitch-yaw euler angles and position.
+    Euler angles are in radians (TODO: verify this)
+    """
+    t = np.array([transform.location.x, transform.location.y, transform.location.z])
+    rpy = np.array([transform.rotation.roll, transform.rotation.pitch, transform.rotation.yaw])
+    return rpy, t
 
 
 def to_blender_convention(pose):

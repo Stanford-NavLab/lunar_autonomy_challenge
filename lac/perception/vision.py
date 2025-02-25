@@ -104,4 +104,4 @@ class FiducialLocalizer:
         rover_to_cam = get_cam_pose_rover(cam_name)
         cam_to_rover = invert_transform_mat(rover_to_cam)
 
-        return [cam_pose @ cam_to_rover for cam_pose in cam_poses]
+        return {tag_id: cam_pose @ cam_to_rover for tag_id, cam_pose in cam_poses.items()}

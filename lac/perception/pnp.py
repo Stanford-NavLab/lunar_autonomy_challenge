@@ -1,9 +1,8 @@
 import cv2
 import numpy as np
-from scipy.spatial.transform import Rotation
-
 from lac.params import TAG_LOCATIONS
-from lac.utils.frames import apply_transform, invert_transform_mat, OPENCV_TO_CAMERA_PASSIVE
+from lac.utils.frames import OPENCV_TO_CAMERA_PASSIVE, apply_transform, invert_transform_mat
+from scipy.spatial.transform import Rotation
 
 
 def get_tag_corners_local(size: float):
@@ -59,7 +58,9 @@ def get_tag_corners_world(id: int, lander_pose: np.ndarray):
     return tag_corners_world
 
 
-def solve_tag_pnp(detections: list, camera_intrinsics: np.ndarray, lander_pose: np.ndarray):
+def solve_tag_pnp(
+    detections: list, camera_intrinsics: np.ndarray, lander_pose: np.ndarray
+):
     """
     Solves the PnP problem to estimate the camera pose in world frame
     NOTE: currently solves for each individual tag detection in a group, rather than stacking them
@@ -70,18 +71,24 @@ def solve_tag_pnp(detections: list, camera_intrinsics: np.ndarray, lander_pose: 
     detections : list of apriltag.Detection - AprilTag detections
     lander_pose : np.ndarray (4, 4) - Pose of the lander in the world frame
     camera_intrinsics : np.ndarray (3, 3) - Camera intrinsics matrix
+    output_tag_ids : bool - Whether to output the tag IDs along with the camera poses
 
     Returns:
     --------
-    transforms: list
-        List of camera pose estimates in world frame
-
+    transforms: dict - Dictionary of tag ID to camera pose in world frame
     """
-    transforms = []
+    transforms = {}
 
     for detection in detections:
+
+        try:
+            world_points = get_tag_corners_world(detection.tag_id, lander_pose)
+        except KeyError:
+            print(f"Tag ID {detection.tag_id} not found in TAG_LOCATIONS")
+            continue
+
         success, rvec, tvec = cv2.solvePnP(
-            objectPoints=get_tag_corners_world(detection.tag_id, lander_pose),
+            objectPoints=world_points,
             imagePoints=detection.corners,
             cameraMatrix=camera_intrinsics,
             distCoeffs=None,
@@ -91,6 +98,7 @@ def solve_tag_pnp(detections: list, camera_intrinsics: np.ndarray, lander_pose: 
             print("PnP Solution failed on tag ID:", detection.tag_id)
             continue
 
+
         # Convert rotation vector to rotation matrix
         R, _ = cv2.Rodrigues(rvec)
         T = np.eye(4)
@@ -99,6 +107,6 @@ def solve_tag_pnp(detections: list, camera_intrinsics: np.ndarray, lander_pose: 
 
         w_T_c = invert_transform_mat(T)  # world to opencv passive
         w_T_c[:3, :3] = w_T_c[:3, :3] @ OPENCV_TO_CAMERA_PASSIVE  # world to camera passive
-        transforms.append(w_T_c)
+        transforms[detection.tag_id] = w_T_c
 
     return transforms

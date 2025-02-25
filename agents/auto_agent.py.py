@@ -4,7 +4,7 @@
 # For a copy, see <https://opensource.org/licenses/MIT>.
 
 """
-Full agent
+Autonomous driving agent
 
 """
 
@@ -40,20 +40,12 @@ UPDATE_LOG_RATE = 100  # Update log file every 100 steps
 
 
 def get_entry_point():
-    return "NavAgent"
+    return "AutoAgent"
 
 
-class NavAgent(AutonomousAgent):
+class AutoAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
-        """Set up a keyboard listener from pynput to capture the key commands for controlling the robot using the arrow keys."""
-        listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
-        listener.start()
-
-        """ For teleop """
-        self.current_v = 0
-        self.current_w = 0
-
-        """ Controller variables """
+        """Controller variables"""
         self.steer_delta = 0.0
 
         """ Perception modules """
@@ -78,22 +70,22 @@ class NavAgent(AutonomousAgent):
         self.cameras["FrontLeft"] = {
             "active": True,
             "light": 1.0,
-            "width": 1280,
-            "height": 720,
+            "width": params.MAX_IMG_WIDTH,
+            "height": params.MAX_IMG_HEIGHT,
             "semantic": False,
         }
         self.cameras["FrontRight"] = {
             "active": True,
             "light": 1.0,
-            "width": 1280,
-            "height": 720,
+            "width": params.MAX_IMG_WIDTH,
+            "height": params.MAX_IMG_HEIGHT,
             "semantic": False,
         }
         self.cameras["Right"] = {
             "active": True,
             "light": 1.0,
-            "width": 1280,
-            "height": 720,
+            "width": params.MAX_IMG_WIDTH,
+            "height": params.MAX_IMG_HEIGHT,
             "semantic": False,
         }
         run_name = "nav_agent"

@@ -25,14 +25,22 @@ from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 from lac.util import (
     pose_to_rpy_pos,
     transform_to_numpy,
+    transform_to_rpy_pos,
     wrap_angle,
     mask_centroid,
     gen_square_spiral,
 )
 from lac.perception.vision import FiducialLocalizer
+from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
+from lac.localization.imu_dynamics import propagate_state
 from lac.utils.visualization import overlay_tag_detections
 from lac.utils.frames import apply_transform
+from lac.utils.data_logger import DataLogger
 import lac.params as params
+
+DISPLAY_IMAGES = True  # Whether to display the camera views
+TELEOP = False  # Whether to use teleop control or autonomous control
+UPDATE_LOG_RATE = 100  # Update log file every 100 steps
 
 
 def get_entry_point():
@@ -56,12 +64,6 @@ class LocalizationAgent(AutonomousAgent):
         self.max_steer = 1.0  # rad/s
         self.max_steer_delta = 0.6  # rad/s
 
-        """ Controller params """
-        self.KP_STEER = 0.3
-        self.KP_LINEAR = 0.1
-        self.TARGET_SPEED = 0.2  # m/s
-        self.steer_delta = 0.0
-
         """ Perception modules """
         self.frame = 0
         self.image_process_rate = 1  # Hz
@@ -75,45 +77,48 @@ class LocalizationAgent(AutonomousAgent):
         self.waypoint_threshold = 1.0  # meters
 
         """ Data logging """
-        self.run_name = "localization_agent"
-        self.log_file = "output/" + self.run_name + "/data_log.json"
-        self.rock_points_file = "output/" + self.run_name + "/rock_points.npy"
-        initial_rover_pose = transform_to_numpy(self.get_initial_position())
-        lander_pose_rover = transform_to_numpy(self.get_initial_lander_position())
-        lander_pose_world = initial_rover_pose @ lander_pose_rover
-        self.out = {
-            "initial_pose": initial_rover_pose.tolist(),
-            "lander_pose_rover": lander_pose_rover.tolist(),
-            "lander_pose_world": lander_pose_world.tolist(),
+        self.cameras = params.CAMERA_CONFIG_INIT
+        self.cameras["FrontLeft"] = {
+            "active": True,
+            "light": 1.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
         }
-        self.cameras = {
-            "FrontLeft": {"active": True, "light": 1.0, "semantic": False},
-            "FrontRight": {"active": False, "light": 0.0, "semantic": False},
-            "BackLeft": {"active": False, "light": 0.0, "semantic": False},
-            "BackRight": {"active": False, "light": 0.0, "semantic": False},
-            "Left": {"active": False, "light": 0.0, "semantic": False},
-            "Right": {"active": True, "light": 1.0, "semantic": False},
-            "Front": {"active": False, "light": 0.0, "semantic": False},
-            "Back": {"active": False, "light": 0.0, "semantic": False},
+        self.cameras["Right"] = {
+            "active": True,
+            "light": 1.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
         }
+        self.active_cameras = ["FrontLeft", "Right"]
+
+        self.data_logger = DataLogger(self, "localization_agent", self.cameras)
 
         """ Localization """
         self.fid_localizer = FiducialLocalizer(self.cameras)
         self.measurement_history = []
         self.odometry_history = []
         # TODO: init Filter class
+        init_rpy, init_pos = transform_to_rpy_pos(self.get_initial_transform())
+        v0 = np.zeros(3)
+        init_state = np.hstack((init_pos, v0, init_rpy)).T
 
-        self.out["cameras_config"] = self.cameras
-        self.out["use_fiducials"] = self.use_fiducials()
-        self.frames = []
-
-        if os.path.exists("output/" + self.run_name):
-            shutil.rmtree("output/" + self.run_name)
-        for cam, config in self.cameras.items():
-            if config["active"]:
-                os.makedirs("output/" + self.run_name + "/" + cam)
-                if config["semantic"]:
-                    os.makedirs("output/" + self.run_name + "/" + cam + "_semantic")
+        init_r = 0.001
+        init_v = 0.01
+        init_angle = 0.001
+        P0 = np.diag(
+            np.hstack(
+                (
+                    np.ones(3) * init_r * init_r,
+                    np.ones(3) * init_v * init_v,
+                    np.ones(3) * init_angle * init_angle,
+                )
+            )
+        )
+        self.Q_EKF = create_Q(params.DT, 0.03, 0.00005)
+        self.ekf = EKF(init_state, P0, store=True)
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
@@ -136,12 +141,16 @@ class LocalizationAgent(AutonomousAgent):
 
     def initialize(self):
         # Move the arms out of the way
-        self.set_front_arm_angle(radians(params.ARM_ANGLE_STATIC_DEG))
-        self.set_back_arm_angle(radians(params.ARM_ANGLE_STATIC_DEG))
+        self.set_front_arm_angle(params.ARM_ANGLE_STATIC_RAD)
+        self.set_back_arm_angle(params.ARM_ANGLE_STATIC_RAD)
+
+    def image_available(self):
+        return self.step % 2 == 0  # Image data is available every other step
 
     def run_step(self, input_data):
         if self.step == 0:
             self.initialize()
+        self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
 
         current_pose = transform_to_numpy(self.get_transform())
         imu_data = self.get_imu_data()
@@ -149,15 +158,26 @@ class LocalizationAgent(AutonomousAgent):
         angular_speed = self.get_angular_speed()
 
         # TODO: filter predict with IMU
+        a_k = imu_data[:3]
+        omega_k = imu_data[3:]
+
+        def dyn_func(x):
+            return propagate_state(x, a_k, omega_k, params.DT, with_stm=True, use_numdiff=False)
+
+        self.ekf.predict(self.step, dyn_func, self.Q_EKF)
 
         # Perception
-        FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-        if FL_gray is not None:
+        if self.image_available():
+            FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
             R_gray = input_data["Grayscale"][carla.SensorPosition.Right]
             tag_detections = self.fid_localizer.detect(FL_gray)
 
             # TODO:
             # Detection fiducials
+            fid_measurements = self.fid_localizer.estimate_rover_pose(
+                FL_gray, "FrontLeft", current_pose
+            )
+            print("Fiducial measurements: ", fid_measurements)
             # EKF update
 
             if self.DISPLAY:
@@ -166,11 +186,7 @@ class LocalizationAgent(AutonomousAgent):
                 cv.imshow("Tag detections", overlay)
                 cv.waitKey(1)
 
-            R_img = input_data["Grayscale"][carla.SensorPosition.Right]
-            cv.imwrite(
-                "output/" + self.run_name + "/Right/" + str(self.step) + ".png",
-                R_img,
-            )
+            self.data_logger.log_images(self.step, input_data)
 
         # TODO: EKF smoothing at some rate
 
@@ -178,23 +194,9 @@ class LocalizationAgent(AutonomousAgent):
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         # Data logging
-        log_entry = {
-            "step": self.step,
-            "timestamp": time.time(),
-            "mission_time": self.get_mission_time(),
-            "current_power": self.get_current_power(),
-            "pose": current_pose.tolist(),
-            "imu": imu_data.tolist(),
-            "control": {"v": self.current_v, "w": self.current_w},
-            "linear_speed": linear_speed,
-            "angular_speed": angular_speed,
-        }
-        self.frames.append(log_entry)
-        self.step += 1
-        if self.step % 100 == 0:
-            with open(self.log_file, "w") as f:
-                self.out["frames"] = self.frames
-                json.dump(self.out, f, indent=4)
+        self.data_logger.log_data(self.step, control)
+        if self.step % UPDATE_LOG_RATE == 0:
+            self.data_logger.save_log()
 
         return control
 
