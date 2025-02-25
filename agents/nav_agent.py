@@ -60,7 +60,7 @@ class NavAgent(AutonomousAgent):
         self.segmentation = Segmentation()
         self.depth = DepthAnything()
         self.frame = 0
-        self.image_process_rate = 1  # [Hz]
+        self.image_process_rate = 10  # [Hz]
 
         """ Initialize a counter to keep track of the number of simulation steps. """
         self.step = 0
