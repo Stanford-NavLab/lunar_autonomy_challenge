@@ -95,3 +95,23 @@ ROCK_MASK_MAX_AREA = 50000
 ROCK_MASK_AVOID_MIN_AREA = 1000
 
 MAX_DEPTH = 56.5  # Maximum depth value in meters (40 * sqrt(2))
+
+
+# EKF parameters
+EKF_SMOOTHING_INTERVAL = 10  # Run smoothing every N steps
+# TODO: document/organize these parameters
+EKF_INIT_R = 0.001  # Initial position std
+EKF_INIT_V = 0.01  # Initial velocity std
+EKF_INIT_ANGLE = 0.001  # Initial euler angle std
+EKF_P0 = np.diag(
+    np.hstack(
+        (
+            np.ones(3) * EKF_INIT_R * EKF_INIT_R,
+            np.ones(3) * EKF_INIT_V * EKF_INIT_V,
+            np.ones(3) * EKF_INIT_ANGLE * EKF_INIT_ANGLE,
+        )
+    )
+)
+EKF_Q_SIGMA_A = 0.03  # Acceleration std
+EKF_Q_SIGMA_ANGLE = 0.00005  # Angle std
+EKF_R_SIGMAS = np.array([0.25, 0.25, 0.25, 0.05, 0.05, 0.2])  # Measurement stds

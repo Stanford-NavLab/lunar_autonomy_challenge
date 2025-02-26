@@ -8,39 +8,32 @@ Data collection agent
 
 """
 
-import json
-import os
-import shutil
-import random
-import time
-from math import radians
 import carla
 import cv2 as cv
 import numpy as np
 from pynput import keyboard
-from PIL import Image
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.util import (
-    pose_to_rpy_pos,
+    pose_to_pos_rpy,
     transform_to_numpy,
-    transform_to_rpy_pos,
-    wrap_angle,
-    mask_centroid,
+    transform_to_pos_rpy,
     gen_square_spiral,
 )
+from lac.planning.planner import Planner
 from lac.perception.vision import FiducialLocalizer
 from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
 from lac.localization.imu_dynamics import propagate_state
+from lac.control.controller import waypoint_steering, segmentation_steering
 from lac.utils.visualization import overlay_tag_detections
-from lac.utils.frames import apply_transform
 from lac.utils.data_logger import DataLogger
 import lac.params as params
 
+""" Agent parameters and settings """
 DISPLAY_IMAGES = True  # Whether to display the camera views
 TELEOP = False  # Whether to use teleop control or autonomous control
-UPDATE_LOG_RATE = 100  # Update log file every 100 steps
+UPDATE_LOG_INTERVAL = 100  # Update log file every N steps
 
 
 def get_entry_point():
@@ -56,25 +49,26 @@ class LocalizationAgent(AutonomousAgent):
         """ For teleop """
         self.current_v = 0
         self.current_w = 0
-        self.TELEOP = True
 
-        self.IMG_WIDTH = 1280
-        self.IMG_HEIGHT = 720
-        self.DISPLAY = True
-        self.max_steer = 1.0  # rad/s
-        self.max_steer_delta = 0.6  # rad/s
-
-        """ Perception modules """
-        self.frame = 0
-        self.image_process_rate = 1  # Hz
+        """ Controller variables """
+        self.steer_delta = 0.0
 
         """ Initialize a counter to keep track of the number of simulation steps. """
         self.step = 0
 
-        """ Waypoints """
-        self.waypoints = gen_square_spiral(max_val=4.5, min_val=2.0, step=0.5)
-        self.waypoint_idx = 0
-        self.waypoint_threshold = 1.0  # meters
+        """ Planner """
+        initial_pose = transform_to_numpy(self.get_initial_position())
+        self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
+        self.planner = Planner(initial_pose)
+
+        """ Localization """
+        self.fid_localizer = FiducialLocalizer(self.cameras)
+        # Initialize EKF
+        init_pos, init_rpy = transform_to_pos_rpy(self.get_initial_position())
+        v0 = np.zeros(3)
+        init_state = np.hstack((init_pos, v0, init_rpy)).T
+        self.Q_EKF = create_Q(params.DT, params.EKF_Q_SIGMA_A, params.EKF_Q_SIGMA_ANGLE)
+        self.ekf = EKF(init_state, params.EKF_P0, store=True)
 
         """ Data logging """
         self.cameras = params.CAMERA_CONFIG_INIT
@@ -92,33 +86,11 @@ class LocalizationAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
-        self.active_cameras = ["FrontLeft", "Right"]
+        self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
-        self.data_logger = DataLogger(self, "localization_agent", self.cameras)
-
-        """ Localization """
-        self.fid_localizer = FiducialLocalizer(self.cameras)
-        self.measurement_history = []
-        self.odometry_history = []
-        # TODO: init Filter class
-        init_rpy, init_pos = transform_to_rpy_pos(self.get_initial_transform())
-        v0 = np.zeros(3)
-        init_state = np.hstack((init_pos, v0, init_rpy)).T
-
-        init_r = 0.001
-        init_v = 0.01
-        init_angle = 0.001
-        P0 = np.diag(
-            np.hstack(
-                (
-                    np.ones(3) * init_r * init_r,
-                    np.ones(3) * init_v * init_v,
-                    np.ones(3) * init_angle * init_angle,
-                )
-            )
-        )
-        self.Q_EKF = create_Q(params.DT, 0.03, 0.00005)
-        self.ekf = EKF(init_state, P0, store=True)
+        run_name = get_entry_point()
+        self.data_logger = DataLogger(self, run_name, self.cameras)
+        self.ekf_result_file = f"output/{run_name}/ekf_result.npz"
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
@@ -133,8 +105,8 @@ class LocalizationAgent(AutonomousAgent):
             sensors[getattr(carla.SensorPosition, cam)] = {
                 "camera_active": config["active"],
                 "light_intensity": config["light"],
-                "width": "1280",
-                "height": "720",
+                "width": config["width"],
+                "height": config["height"],
                 "use_semantic": config["semantic"],
             }
         return sensors
@@ -151,13 +123,13 @@ class LocalizationAgent(AutonomousAgent):
         if self.step == 0:
             self.initialize()
         self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
+        print("\nStep: ", self.step)
 
         current_pose = transform_to_numpy(self.get_transform())
-        imu_data = self.get_imu_data()
-        linear_speed = self.get_linear_speed()
-        angular_speed = self.get_angular_speed()
+        pos, rpy = pose_to_pos_rpy(current_pose)
 
-        # TODO: filter predict with IMU
+        """ EKF predict step """
+        imu_data = self.get_imu_data()
         a_k = imu_data[:3]
         omega_k = imu_data[3:]
 
@@ -166,37 +138,65 @@ class LocalizationAgent(AutonomousAgent):
 
         self.ekf.predict(self.step, dyn_func, self.Q_EKF)
 
-        # Perception
+        """ Waypoint navigation """
+        waypoint = self.planner.get_waypoint(pos, print_progress=True)
+        if waypoint is None:
+            self.mission_complete()
+        nominal_steering = waypoint_steering(waypoint, pos, rpy)
+
+        """ Image processing """
         if self.image_available():
-            FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-            R_gray = input_data["Grayscale"][carla.SensorPosition.Right]
-            tag_detections = self.fid_localizer.detect(FL_gray)
+            images_gray = {}
+            fid_measurements = []
+            for cam in self.active_cameras:
+                images_gray[cam] = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
+                pose_measurements, detections = self.fid_localizer.estimate_rover_pose(
+                    images_gray[cam], cam, self.lander_pose
+                )
+                for pose in pose_measurements.values():
+                    meas = np.concatenate(pose_to_pos_rpy(pose))
+                    fid_measurements.append(meas)
 
-            # TODO:
-            # Detection fiducials
-            fid_measurements = self.fid_localizer.estimate_rover_pose(
-                FL_gray, "FrontLeft", current_pose
-            )
-            print("Fiducial measurements: ", fid_measurements)
-            # EKF update
+                if DISPLAY_IMAGES:
+                    overlay = overlay_tag_detections(images_gray[cam], detections)
+                    cv.imshow(cam, overlay)
 
-            if self.DISPLAY:
-                # FL_rgb_PIL = Image.fromarray(FL_gray).convert("RGB")
-                overlay = overlay_tag_detections(FL_gray, tag_detections)
-                cv.imshow("Tag detections", overlay)
+            if DISPLAY_IMAGES:
                 cv.waitKey(1)
+
+            """ EKF update step """
+            n_meas = len(fid_measurements)
+            print("# measurements: ", n_meas)
+            fid_measurements = np.array(fid_measurements).flatten()
+
+            def meas_func(x):
+                return get_pose_measurement_tag(x, n_meas)
+
+            self.ekf.update(self.step, fid_measurements, meas_func)
 
             self.data_logger.log_images(self.step, input_data)
 
         # TODO: EKF smoothing at some rate
+        if self.step % params.EKF_SMOOTHING_INTERVAL == 0:
+            self.ekf.smooth()
 
-        if self.TELEOP:
+        ekf_result = self.ekf.get_results()
+        ekf_pos = ekf_result["xhat_smooth"][-1, :3]
+        print("EKF pos: ", ekf_pos)
+        print("Pos error: ", np.linalg.norm(ekf_pos - current_pose[:3, 3]))
+
+        if TELEOP:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        else:
+            control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
 
         # Data logging
         self.data_logger.log_data(self.step, control)
-        if self.step % UPDATE_LOG_RATE == 0:
+        if self.step % UPDATE_LOG_INTERVAL == 0:
             self.data_logger.save_log()
+            np.savez(self.ekf_result_file, **ekf_result)
+
+        print("\n-----------------------------------------------")
 
         return control
 

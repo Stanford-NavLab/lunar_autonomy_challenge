@@ -22,30 +22,27 @@ def load_data(data_path):
     return initial_pose, lander_pose, poses, imu_data, cam_config
 
 
+def transform_to_pos_rpy(transform):
+    """Convert a Transform object to roll-pitch-yaw euler angles and position.
+    Euler angles are in radians (TODO: verify this)
+    """
+    t = np.array([transform.location.x, transform.location.y, transform.location.z])
+    rpy = np.array([transform.rotation.roll, transform.rotation.pitch, transform.rotation.yaw])
+    return t, rpy
+
+
 def transform_to_numpy(transform):
     """Convert a Transform object to a 4x4 pose matrix.
 
     The resulting pose matrix has +X forward, +Y left, +Z up.
 
     """
-    t = np.array([transform.location.x, transform.location.y, transform.location.z])
-    euler_angles = np.array(
-        [transform.rotation.roll, transform.rotation.pitch, transform.rotation.yaw]
-    )
+    t, euler_angles = transform_to_pos_rpy(transform)
     R = Rotation.from_euler("xyz", euler_angles).as_matrix()
     T = np.eye(4)
     T[:3, :3] = R
     T[:3, 3] = t
     return T
-
-
-def transform_to_rpy_pos(transform):
-    """Convert a Transform object to roll-pitch-yaw euler angles and position.
-    Euler angles are in radians (TODO: verify this)
-    """
-    t = np.array([transform.location.x, transform.location.y, transform.location.z])
-    rpy = np.array([transform.rotation.roll, transform.rotation.pitch, transform.rotation.yaw])
-    return rpy, t
 
 
 def to_blender_convention(pose):
@@ -63,7 +60,7 @@ def to_blender_convention(pose):
     return np.block([[R_blender, t[:, None]], [0, 0, 0, 1]])
 
 
-def pose_to_rpy_pos(pose):
+def pose_to_pos_rpy(pose):
     """Convert a camera pose matrix to LAC convention.
 
     The camera pose matrix is assumed to have above starting convention (+X forward, +Y left, +Z up)
@@ -80,7 +77,7 @@ def pose_to_rpy_pos(pose):
     pos = np.array([t[0], t[1], t[2]])
     rpy = np.array([roll, pitch, yaw])
 
-    return rpy, pos
+    return pos, rpy
 
 
 def skew_symmetric(v):

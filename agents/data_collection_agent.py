@@ -94,8 +94,8 @@ class DataCollectionAgent(AutonomousAgent):
 
         if self.image_available():
             self.data_logger.log_images(self.step, input_data)
-            FL_img = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-            cv.imshow("Front left", FL_img)
+            FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+            cv.imshow("Front left", FL_gray)
             # R_img = input_data["Grayscale"][carla.SensorPosition.Right]
             # cv.imshow("Right", R_img)
             cv.waitKey(1)

@@ -1,8 +1,6 @@
 import numpy as np
 import copy
 
-from lac.localization.imu_dynamics import propagate_state
-
 
 class EKF:
     def __init__(self, x0, P0, store=False):
@@ -45,6 +43,8 @@ class EKF:
         if self.store:
             self.xbar_store[tidx] = self.x
             self.Pbar_store[tidx] = self.P
+            self.xhat_store[tidx] = self.x
+            self.Phat_store[tidx] = self.P
             self.Phi_store[tidx] = F
             self.tidx = tidx
 
@@ -116,7 +116,7 @@ class EKF:
 
         self.smoothed = True
 
-    def get_array(self):
+    def get_results(self):
         """
         Convert the dictionary to array
         """
@@ -176,6 +176,7 @@ def get_pose_measurement_tag(x, nmeas):
 
         H = np.vstack([H, Htmp])
 
+        # TODO: move these params
         std_x = 0.25
         std_y = 0.25
         std_z = 0.25

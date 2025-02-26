@@ -17,8 +17,9 @@ from PIL import Image
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.util import (
-    pose_to_rpy_pos,
+    pose_to_pos_rpy,
     transform_to_numpy,
+    transform_to_pos_rpy,
     wrap_angle,
     mask_centroid,
     gen_square_spiral,
@@ -29,10 +30,18 @@ from lac.perception.depth import (
     stereo_depth_from_segmentation,
     project_depths_to_world,
 )
-from lac.utils.data_logger import DataLogger
+from lac.perception.vision import FiducialLocalizer
+from lac.control.controller import waypoint_steering, segmentation_steering
+from lac.planning.planner import Planner
+from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
+from lac.localization.imu_dynamics import propagate_state
 from lac.utils.visualization import overlay_mask, draw_steering_arc, overlay_stereo_rock_depths
 from lac.utils.frames import apply_transform
+from lac.utils.data_logger import DataLogger
 import lac.params as params
+
+""" Agent parameters and settings """
+IMAGE_PROCESS_RATE = 10  # [Hz]
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
 TELEOP = False  # Whether to use teleop control or autonomous control
@@ -59,8 +68,6 @@ class NavAgent(AutonomousAgent):
         """ Perception modules """
         self.segmentation = Segmentation()
         self.depth = DepthAnything()
-        self.frame = 0
-        self.image_process_rate = 10  # [Hz]
 
         """ Initialize a counter to keep track of the number of simulation steps. """
         self.step = 0
@@ -68,10 +75,19 @@ class NavAgent(AutonomousAgent):
         """ Rock mapping """
         self.all_rock_detections = []
 
-        """ Waypoints """
-        self.waypoints = gen_square_spiral(max_val=4.5, min_val=2.0, step=0.5)
-        self.waypoint_idx = 0
-        self.waypoint_threshold = 1.0  # meters
+        """ Planner """
+        initial_pose = transform_to_numpy(self.get_initial_position())
+        self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
+        self.planner = Planner(initial_pose)
+
+        """ Localization """
+        self.fid_localizer = FiducialLocalizer(self.cameras)
+        # Initialize EKF
+        init_pos, init_rpy = transform_to_pos_rpy(self.get_initial_position())
+        v0 = np.zeros(3)
+        init_state = np.hstack((init_pos, v0, init_rpy)).T
+        self.Q_EKF = create_Q(params.DT, params.EKF_Q_SIGMA_A, params.EKF_Q_SIGMA_ANGLE)
+        self.ekf = EKF(init_state, params.EKF_P0, store=True)
 
         """ Data logging """
         self.cameras = params.CAMERA_CONFIG_INIT
@@ -96,8 +112,11 @@ class NavAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
-        run_name = "nav_agent"
-        self.data_logger = DataLogger(self, "nav_agent", self.cameras)
+        self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
+
+        run_name = get_entry_point()
+        self.data_logger = DataLogger(self, run_name, self.cameras)
+        self.ekf_result_file = f"output/{run_name}/ekf_result.npz"
         self.rock_points_file = f"output/{run_name}/rock_points.npy"
 
     def initialize(self):
@@ -126,42 +145,26 @@ class NavAgent(AutonomousAgent):
             }
         return sensors
 
-    def segmentation_steering(self, masks):
-        """Compute a steering delta based on segmentation results to avoid rocks.
-
-        TODO: account for offset due to operating on left camera
-        """
-        max_area = 0
-        max_mask = None
-        for mask in masks:
-            mask_area = np.sum(mask)
-            if mask_area > max_area:
-                max_area = mask_area
-                max_mask = mask
-        steer_delta = 0
-        if max_mask is not None and max_area > params.ROCK_MASK_AVOID_MIN_AREA:
-            max_mask = max_mask.astype(np.uint8)
-            cx, _ = mask_centroid(max_mask)
-            x, _, w, _ = cv.boundingRect(max_mask)
-            offset = params.IMG_WIDTH / 2 - cx
-            if offset > 0:  # Turn right
-                steer_delta = -min(
-                    params.MAX_STEER_DELTA * ((x + w) - cx) / 100, params.MAX_STEER_DELTA
-                )
-            else:  # Turn left
-                steer_delta = min(params.MAX_STEER_DELTA * (cx - x) / 100, params.MAX_STEER_DELTA)
-        return steer_delta
-
     def run_step(self, input_data):
         if self.step == 0:
             self.initialize()
         self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
+        print("\nStep: ", self.step)
 
         current_pose = transform_to_numpy(self.get_transform())
-        rpy, pos = pose_to_rpy_pos(current_pose)
-        heading = rpy[2]
+        pos, rpy = pose_to_pos_rpy(current_pose)
 
-        # Wheel contact mapping
+        """ EKF predict step """
+        imu_data = self.get_imu_data()
+        a_k = imu_data[:3]
+        omega_k = imu_data[3:]
+
+        def dyn_func(x):
+            return propagate_state(x, a_k, omega_k, params.DT, with_stm=True, use_numdiff=False)
+
+        self.ekf.predict(self.step, dyn_func, self.Q_EKF)
+
+        """ Wheel contact mapping """
         wheel_contact_points = apply_transform(current_pose, params.WHEEL_RIG_POINTS)
 
         g_map = self.get_geometric_map()
@@ -172,56 +175,67 @@ class NavAgent(AutonomousAgent):
             if (current_height == -np.inf) or (current_height > point[2]):
                 g_map.set_height(point[0], point[1], point[2])
 
-        # Navigate to the next waypoint
-        if np.linalg.norm(pos[:2] - self.waypoints[self.waypoint_idx]) < self.waypoint_threshold:
-            self.waypoint_idx += 1
-            if self.waypoint_idx >= len(self.waypoints):
-                self.mission_complete()
-                self.waypoint_idx = 0
-        print(f"Waypoint {self.waypoint_idx + 1} / {len(self.waypoints)}")
-        waypoint = self.waypoints[self.waypoint_idx]
+        """ Waypoint navigation """
+        waypoint = self.planner.get_waypoint(pos, print_progress=True)
+        if waypoint is None:
+            self.mission_complete()
+        # waypoint = self.waypoints[self.waypoint_idx]
+        # if np.linalg.norm(pos[:2] - waypoint) < params.WAYPOINT_REACHED_DIST_THRESHOLD:
+        #     self.waypoint_idx += 1
+        #     if self.waypoint_idx >= len(self.waypoints):
+        #         self.mission_complete()
+        #         self.waypoint_idx = 0
+        # print(f"Waypoint {self.waypoint_idx + 1} / {len(self.waypoints)}")
 
-        angle = np.arctan2(waypoint[1] - pos[1], waypoint[0] - pos[0])
-        angle_diff = wrap_angle(angle - heading)
-        nominal_steering = np.clip(
-            params.KP_STEER * angle_diff, -params.MAX_STEER, params.MAX_STEER
-        )
+        nominal_steering = waypoint_steering(waypoint, pos, rpy)
 
-        # Perception
-        if self.step % (params.FRAME_RATE // self.image_process_rate) == 0:
-            # FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-            # FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
-            # FL_rgb_PIL = Image.fromarray(FL_gray).convert("RGB")
-            # FR_rgb_PIL = Image.fromarray(FR_gray).convert("RGB")
+        """ Image processing """
+        if self.image_available():
+            images_gray = {}
+            fid_measurements = []
+            for cam in self.active_cameras:
+                images_gray[cam] = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
+                pose_measurements, detections = self.fid_localizer.estimate_rover_pose(
+                    images_gray[cam], cam, self.lander_pose
+                )
+                for pose in pose_measurements.values():
+                    meas = np.concatenate(pose_to_pos_rpy(pose))
+                    fid_measurements.append(meas)
 
-            # # Run segmentation
-            # left_seg_masks, left_seg_full_mask = self.segmentation.segment_rocks(FL_rgb_PIL)
-            # right_seg_masks, right_seg_full_mask = self.segmentation.segment_rocks(FR_rgb_PIL)
+            if self.step % (params.FRAME_RATE // IMAGE_PROCESS_RATE) == 0:
+                FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+                FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
+                FL_rgb_PIL = Image.fromarray(FL_gray).convert("RGB")
+                FR_rgb_PIL = Image.fromarray(FR_gray).convert("RGB")
 
-            # # Stereo rock depth
-            # stereo_depth_results = stereo_depth_from_segmentation(
-            #     left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
-            # )
-            # rock_points_world = project_depths_to_world(
-            #     stereo_depth_results, current_pose, "FrontLeft", self.cameras
-            # )
-            # for point in rock_points_world:
-            #     g_map.set_rock(point[0], point[1], True)
-            #     self.all_rock_detections.append(point)
+                # Run segmentation
+                left_seg_masks, left_seg_full_mask = self.segmentation.segment_rocks(FL_rgb_PIL)
+                right_seg_masks, right_seg_full_mask = self.segmentation.segment_rocks(FR_rgb_PIL)
 
-            # # Hazard avoidance
-            # self.steer_delta = self.segmentation_steering(left_seg_masks)
+                # Stereo rock depth
+                stereo_depth_results = stereo_depth_from_segmentation(
+                    left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
+                )
+                rock_points_world = project_depths_to_world(
+                    stereo_depth_results, current_pose, "FrontLeft", self.cameras
+                )
+                for point in rock_points_world:
+                    g_map.set_rock(point[0], point[1], True)
+                    self.all_rock_detections.append(point)
 
-            # if DISPLAY_IMAGES:
-            #     overlay = overlay_mask(FL_gray, left_seg_full_mask)
-            #     overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
-            #     overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
-            #     overlay = draw_steering_arc(
-            #         overlay, nominal_steering + self.steer_delta, color=(0, 255, 0)
-            #     )
-            #     # cv.imshow("Left camera view", FL_gray)
-            #     cv.imshow("Rock segmentation", overlay)
-            #     cv.waitKey(1)
+                # Hazard avoidance
+                self.steer_delta = segmentation_steering(left_seg_masks)
+
+            if DISPLAY_IMAGES:
+                overlay = overlay_mask(FL_gray, left_seg_full_mask)
+                overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
+                overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
+                overlay = draw_steering_arc(
+                    overlay, nominal_steering + self.steer_delta, color=(0, 255, 0)
+                )
+                # cv.imshow("Left camera view", FL_gray)
+                cv.imshow("Rock segmentation", overlay)
+                cv.waitKey(1)
 
             self.data_logger.log_images(self.step, input_data)
 

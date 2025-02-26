@@ -103,5 +103,8 @@ class FiducialLocalizer:
         cam_poses = solve_tag_pnp(detections, cam_intrisics, lander_pose)
         rover_to_cam = get_cam_pose_rover(cam_name)
         cam_to_rover = invert_transform_mat(rover_to_cam)
+        rover_pose_estimates = {
+            tag_id: cam_pose @ cam_to_rover for tag_id, cam_pose in cam_poses.items()
+        }
 
-        return {tag_id: cam_pose @ cam_to_rover for tag_id, cam_pose in cam_poses.items()}
+        return rover_pose_estimates, detections
