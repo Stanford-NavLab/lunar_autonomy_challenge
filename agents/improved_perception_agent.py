@@ -31,6 +31,16 @@ from lac.util import (
     gen_square_spiral,
     cv_display_text,
 )
+
+from lac.perception.perception_utils import (
+    get_camera_intrinsics, 
+    get_homogenous_transform,
+    get_extrinsic_left_to_right, 
+    decompose_homogenous_transform,
+    stereo_rectify,
+    segment_image
+)
+
 from lac.perception.segmentation import Segmentation
 from lac.perception.depth import DepthAnything
 from lac.localization.imu_recovery import ImuEstimator
@@ -206,7 +216,7 @@ class NavAgent(AutonomousAgent):
             if self.waypoint_idx >= len(self.waypoints):
                 self.mission_complete()
                 self.waypoint_idx = 0
-        print(f"Waypoint {self.waypoint_idx + 1} / {len(self.waypoints)}")
+        #print(f"Waypoint {self.waypoint_idx + 1} / {len(self.waypoints)}")
         waypoint = self.waypoints[self.waypoint_idx]
 
         angle = np.arctan2(waypoint[1] - pos[1], waypoint[0] - pos[0])
@@ -215,47 +225,51 @@ class NavAgent(AutonomousAgent):
         steer_delta = 0
 
         # Perception
-        FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-        if FL_gray is not None:
-            img_PIL = Image.fromarray(FL_gray).convert("RGB")
+        left_key = carla.SensorPosition.FrontLeft
+        right_key = carla.SensorPosition.FrontRight
+        FL_gray_left = input_data["Grayscale"][left_key]
+        FL_gray_right = input_data["Grayscale"][right_key]
+        if FL_gray_left is not None:
+            
+            # Rectify stereo images
+            K_left, D_left = get_camera_intrinsics(self.sensors()[left_key])
+            K_right, D_right = get_camera_intrinsics(self.sensors()[right_key])   
+            M_left2right = get_extrinsic_left_to_right(self, left_key, right_key)
+            R_left2right, T_left2right = decompose_homogenous_transform(M_left2right)
+            left_rect, right_rect = stereo_rectify(FL_gray_left, FL_gray_right, K_left, D_left, K_right, D_right, R_left2right, T_left2right)
 
-            # # Estimate depth
-            # depth = self.depth.predict_depth(img_PIL)
+            # Segmentation
+            cx_left, cy_left = segment_image(self, left_rect)
+            cx_right, cy_right = segment_image(self, right_rect)
+                
+            if cx_left is not None and cx_right is not None:
+                # Rock coordinates in left camera frame
+                disparity = cx_left - cx_right
+                z_rock_left = K_left[0, 0] * abs(T_left2right[1]) / disparity
+                x_rock_left = z_rock_left * (cx_left - K_left[0, 2]) / K_left[0, 0]
+                y_rock_left = z_rock_left * (cy_left - K_left[1, 2]) / K_left[1, 1]
+                rock_coords_left = np.array([x_rock_left, y_rock_left, z_rock_left])
 
-            # Run segmentation
-            results, full_mask = self.segmentation.segment_rocks(img_PIL)
-            FL_rgb = cv.cvtColor(FL_gray, cv.COLOR_GRAY2BGR)
-            mask_colored = color_mask(full_mask, (0, 0, 1)).astype(FL_rgb.dtype)
-            overlay = cv.addWeighted(FL_rgb, 1.0, mask_colored, beta=0.5, gamma=0)
+                # Rock coordinates in rover frame
+                transform_left = self.get_camera_position(left_key)
+                rock_coords_rover = get_homogenous_transform(transform_left) @ np.concatenate((rock_coords_left, np.array([1])))
+                
+                print(f"Rock coordinates in rover frame: {rock_coords_rover}")
+                
+                Xr = rock_coords_rover[0]
+                Yr = rock_coords_rover[1]
+                Zr = rock_coords_rover[2]
 
-            overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
+                distance = np.sqrt(Xr**2 + Yr**2 + Zr**2)
 
-            max_area = 0
-            max_mask = None
-            for mask in results["masks"]:
-                mask_area = np.sum(mask)
-                if mask_area > max_area and mask_area < 50000:  # Filter out outliers
-                    max_area = mask_area
-                    max_mask = mask
-            if max_mask is not None and max_area > 1000:
-                max_mask = max_mask.astype(np.uint8)
-                cx, cy = mask_centroid(max_mask)
-                x, y, w, h = cv.boundingRect(max_mask)
-                offset = self.IMG_WIDTH // 2 - cx
-                if offset > 0:  # Turn right
-                    steer_delta = -min(
-                        self.max_steer_delta * ((x + w) - cx) / 100, self.max_steer_delta
-                    )
-                else:  # Turn left
-                    steer_delta = min(self.max_steer_delta * (cx - x) / 100, self.max_steer_delta)
-
-            overlay = draw_steering_arc(overlay, nominal_steering + steer_delta, color=(0, 255, 0))
-
-            if self.DISPLAY:
-                # cv.imshow("Left camera view", FL_gray)
-                cv.imshow("Rock segmentation", overlay)
-                cv_display_text("Steer delta: " + str(steer_delta))
-                cv.waitKey(1)
+                danger_zone = 3.0  
+                if distance < danger_zone:
+                    print(f"Rock detected at {distance} meters")
+                    sign = -1 if Yr < 0 else +1
+                    k_avoid = 0.6
+                    steer_delta = k_avoid * (danger_zone - distance)
+                    steer_delta = steer_delta * sign
+        
 
         if self.TELEOP:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
