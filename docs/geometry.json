@@ -1,0 +1,490 @@
+{
+    "lander": {
+        "fiducials": {
+            "a": {
+                "top left": {
+                    "name": "Group A top left",
+                    "x": 0.691,
+                    "y": -1.033,
+                    "z": 0.894,
+                    "id": 243,
+                    "size": 0.339
+                },
+                "top right": {
+                    "name": "Group A top right",
+                    "x": 1.033,
+                    "y": -0.691,
+                    "z": 0.894,
+                    "id": 71,
+                    "size": 0.339
+                },
+                "lower left": {
+                    "name": "Group A lower left",
+                    "x": 0.691,
+                    "y": -1.033,
+                    "z": 0.412,
+                    "id": 462,
+                    "size": 0.339
+                },
+                "lower right": {
+                    "name": "Group A lower right",
+                    "x": 1.033,
+                    "y": -0.691,
+                    "z": 0.412,
+                    "id": 37,
+                    "size": 0.339
+                }
+            },
+            "b": {
+                "top left": {
+                    "name": "Group B top left",
+                    "x": 1.033,
+                    "y": 0.691,
+                    "z": 0.894,
+                    "id": 0,
+                    "size": 0.339
+                },
+                "top right": {
+                    "name": "Group B top right",
+                    "x": 0.691,
+                    "y": 1.033,
+                    "z": 0.894,
+                    "id": 3,
+                    "size": 0.339
+                },
+                "lower left": {
+                    "name": "Group B lower left",
+                    "x": 1.033,
+                    "y": 0.691,
+                    "z": 0.412,
+                    "id": 2,
+                    "size": 0.339
+                },
+                "lower right": {
+                    "name": "Group B lower right",
+                    "x": 0.691,
+                    "y": 1.033,
+                    "z": 0.412,
+                    "id": 1,
+                    "size": 0.339
+                }
+            },
+            "c": {
+                "top left": {
+                    "name": "Group C top left",
+                    "x": -0.691,
+                    "y": 1.033,
+                    "z": 0.894,
+                    "id": 10,
+                    "size": 0.339
+                },
+                "top right": {
+                    "name": "Group C top right",
+                    "x": -1.033,
+                    "y": 0.691,
+                    "z": 0.894,
+                    "id": 11,
+                    "size": 0.339
+                },
+                "lower left": {
+                    "name": "Group C lower left",
+                    "x": -0.691,
+                    "y": 1.033,
+                    "z": 0.412,
+                    "id": 8,
+                    "size": 0.339
+                },
+                "lower right": {
+                    "name": "Group C lower right",
+                    "x": -1.033,
+                    "y": 0.691,
+                    "z": 0.412,
+                    "id": 9,
+                    "size": 0.339
+                }
+            },
+            "d": {
+                "top left": {
+                    "name": "Group D top left",
+                    "x": -1.033,
+                    "y": -0.691,
+                    "z": 0.894,
+                    "id": 464,
+                    "size": 0.339
+                },
+                "top right": {
+                    "name": "Group D top right",
+                    "x": -0.691,
+                    "y": -1.033,
+                    "z": 0.894,
+                    "id": 459,
+                    "size": 0.339
+                },
+                "lower left": {
+                    "name": "Group D lower left",
+                    "x": -1.033,
+                    "y": -0.691,
+                    "z": 0.412,
+                    "id": 258,
+                    "size": 0.339
+                },
+                "lower right": {
+                    "name": "Group D lower right",
+                    "x": -0.691,
+                    "y": -1.033,
+                    "z": 0.412,
+                    "id": 5,
+                    "size": 0.339
+                }
+            }
+        },
+        "antenna": {
+            "name": "Charging source antenna",
+            "x": 0,
+            "y": 1.452,
+            "z": 0.509,
+            "roll": 0.0,
+            "pitch": 0.0,
+            "yaw": 3.142,
+            "orientation": [
+                0.0,
+                1.0,
+                0.0
+            ]
+        },
+        "locator": {
+            "name": "Charging antenna locator fiducial",
+            "x": 0,
+            "y": 0.662,
+            "z": 0.325,
+            "id": 69,
+            "size": 0.253
+        }
+    },
+    "rover": {
+        "cameras": {
+            "FrontLeft": {
+                "name": "FrontLeft",
+                "x": 0.28,
+                "y": 0.081,
+                "z": 0.131,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0,
+                "orientation": [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                "key": "carla.SensorPosition.FrontLeft"
+            },
+            "FrontRight": {
+                "name": "FrontRight",
+                "x": 0.28,
+                "y": -0.081,
+                "z": 0.131,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0,
+                "orientation": [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                "key": "carla.SensorPosition.FrontRight"
+            },
+            "BackLeft": {
+                "name": "BackLeft",
+                "x": -0.28,
+                "y": -0.081,
+                "z": 0.131,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 3.142,
+                "orientation": [
+                    -1.0,
+                    0.0,
+                    0.0
+                ],
+                "key": "carla.SensorPosition.BackLeft"
+            },
+            "BackRight": {
+                "name": "BackRight",
+                "x": -0.28,
+                "y": 0.081,
+                "z": 0.131,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 3.142,
+                "orientation": [
+                    -1.0,
+                    0.0,
+                    0.0
+                ],
+                "key": "carla.SensorPosition.BackRight"
+            },
+            "Left": {
+                "name": "Left",
+                "x": 0.015,
+                "y": 0.252,
+                "z": 0.132,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 1.571,
+                "orientation": [
+                    0.0,
+                    1.0,
+                    0.0
+                ],
+                "key": "carla.SensorPosition.Left"
+            },
+            "Right": {
+                "name": "Right",
+                "x": -0.015,
+                "y": -0.252,
+                "z": 0.132,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": -1.571,
+                "orientation": [
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                "key": "carla.SensorPosition.Right"
+            },
+            "front arm": {
+                "name": "Front arm",
+                "note": "position for arm at rest with respect to front arm rotation center",
+                "x": 0.414,
+                "y": -0.0147,
+                "z": -0.038,
+                "roll": 0.0,
+                "pitch": 1.571,
+                "yaw": 0.0,
+                "orientation": [
+                    0.0,
+                    0.0,
+                    -1.0
+                ],
+                "key": "carla.SensorPosition.Front"
+            },
+            "rear arm": {
+                "name": "Rear arm",
+                "note": "position for arm at rest with respect to rear arm rotation center",
+                "x": -0.339,
+                "y": 0.017,
+                "z": 0.083,
+                "roll": 0.0,
+                "pitch": -0.524,
+                "yaw": 0.0,
+                "orientation": [
+                    0.866,
+                    0.0,
+                    0.5
+                ],
+                "key": "carla.SensorPosition.Back"
+            }
+        },
+        "lights": {
+            "front left": {
+                "name": "Front left",
+                "x": 0.28,
+                "y": 0.115,
+                "z": 0.131,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0,
+                "orientation": [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                "key": "carla.SensorPosition.FrontLeft"
+            },
+            "front right": {
+                "name": "Front right",
+                "x": 0.28,
+                "y": -0.115,
+                "z": 0.131,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0,
+                "orientation": [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                "key": "carla.SensorPosition.FrontRight"
+            },
+            "rear left": {
+                "name": "Rear left",
+                "x": -0.28,
+                "y": -0.115,
+                "z": 0.131,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 3.142,
+                "orientation": [
+                    -1.0,
+                    0.0,
+                    0.0
+                ],
+                "key": "carla.SensorPosition.BackLeft"
+            },
+            "rear right": {
+                "name": "Rear right",
+                "x": -0.28,
+                "y": 0.115,
+                "z": 0.131,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 3.142,
+                "orientation": [
+                    -1.0,
+                    0.0,
+                    0.0
+                ],
+                "key": "carla.SensorPosition.BackRight"
+            },
+            "left": {
+                "name": "Left",
+                "x": -0.015,
+                "y": 0.252,
+                "z": 0.132,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 1.571,
+                "orientation": [
+                    0.0,
+                    1.0,
+                    0.0
+                ],
+                "key": "carla.SensorPosition.Left"
+            },
+            "right": {
+                "name": "Right",
+                "x": 0.015,
+                "y": -0.252,
+                "z": 0.132,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": -1.571,
+                "orientation": [
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                "key": "carla.SensorPosition.Right"
+            },
+            "front arm": {
+                "name": "Front arm",
+                "note": "position for arm at rest with respect to front arm rotation center",
+                "x": 0.414,
+                "y": 0.0147,
+                "z": -0.038,
+                "roll": 0.0,
+                "pitch": 1.571,
+                "yaw": 0.0,
+                "orientation": [
+                    0.0,
+                    0.0,
+                    -1.0
+                ],
+                "key": "carla.SensorPosition.Front"
+            },
+            "rear arm": {
+                "name": "Rear arm",
+                "note": "position for arm at rest with respect to rear arm rotation center",
+                "x": -0.339,
+                "y": -0.013,
+                "z": 0.083,
+                "roll": 0.0,
+                "pitch": -0.524,
+                "yaw": 0.0,
+                "orientation": [
+                    0.866,
+                    0.0,
+                    0.5
+                ],
+                "key": "carla.SensorPosition.Back"
+            }
+        },
+            "wheels": {
+                "front left": {
+                    "name": "Front left wheel center",
+                    "x": 0.222,
+                    "y": 0.203,
+                    "z": 0.041,
+                    "diameter": 0.32,
+                    "width": 0.127
+                },
+                "front right": {
+                    "name": "Front right wheel center",
+                    "x": 0.222,
+                    "y": -0.203,
+                    "z": 0.041,
+                    "diameter": 0.32,
+                    "width": 0.127
+                },
+                "rear left": {
+                    "name": "Rear left wheel center",
+                    "x": -0.222,
+                    "y": 0.203,
+                    "z": 0.041,
+                    "diameter": 0.32,
+                    "width": 0.127
+                },
+                "rear right": {
+                    "name": "Rear right wheel center",
+                    "x": -0.222,
+                    "y": -0.203,
+                    "z": 0.041,
+                    "diameter": 0.32,
+                    "width": 0.127
+                }
+            },
+            "imu": {
+                "name": "Inertial measurement unit",
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0,
+                "orientation": [
+                    1.0,
+                    0.0,
+                    0.0
+                ]
+            },
+            "arms": {
+                "front arm": {
+                    "name": "Front arm rotation center",
+                    "x": 0.222,
+                    "y": 0.0,
+                    "z": 0.061
+                },
+                "rear arm": {
+                    "name": "Rear arm rotation center",
+                    "x": -0.223,
+                    "y": 0.0,
+                    "z": 0.061
+                }
+            },
+            "antenna": {
+                "name": "Charging antenna receiver",
+                "x": 0.0,
+                "y": -0.20813,
+                "z": 0.34603,
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": -1.5707963267948966,
+                "orientation": [
+                    0.0,
+                    -1.0,
+                    0.0
+                ]
+            }
+        }
+    }

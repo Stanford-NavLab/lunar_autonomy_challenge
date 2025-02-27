@@ -24,7 +24,8 @@ def load_data(data_path):
 
 def transform_to_pos_rpy(transform):
     """Convert a Transform object to roll-pitch-yaw euler angles and position.
-    Euler angles are in radians (TODO: verify this)
+    Euler angles are in radians.
+
     """
     t = np.array([transform.location.x, transform.location.y, transform.location.z])
     rpy = np.array([transform.rotation.roll, transform.rotation.pitch, transform.rotation.yaw])
@@ -42,6 +43,15 @@ def transform_to_numpy(transform):
     T = np.eye(4)
     T[:3, :3] = R
     T[:3, 3] = t
+    return T
+
+
+def pos_rpy_to_pose(pos, rpy):
+    """Convert a position and rpy to a 4x4 pose matrix."""
+    R = Rotation.from_euler("xyz", rpy).as_matrix()
+    T = np.eye(4)
+    T[:3, :3] = R
+    T[:3, 3] = pos
     return T
 
 

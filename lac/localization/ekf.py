@@ -1,8 +1,14 @@
 import numpy as np
 import copy
 
+from lac.params import EKF_P0
+
 
 class EKF:
+    """
+    State: (x, y, z, vx, vy, vz, roll, pitch, yaw)
+    """
+
     def __init__(self, x0, P0, store=False):
         """
         Initialize the EKF filter
@@ -115,6 +121,19 @@ class EKF:
             self.xhat_store_smooth[k] = xhat
 
         self.smoothed = True
+
+    def zero_velocity_update(self, tidx):
+        """
+        Zero velocity update
+        """
+        self.x[3:6] = 0
+        self.P[3:6, 3:6] = EKF_P0[3:6, 3:6]
+        self.P[3:6, :3] = 0
+        self.P[:3, 3:6] = 0
+        self.P[3:6, 6:] = 0
+        self.P[6:, 3:6] = 0
+        self.xhat_store[tidx] = self.x
+        self.Phat_store[tidx] = self.P
 
     def get_results(self):
         """

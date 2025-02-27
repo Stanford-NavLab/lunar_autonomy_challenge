@@ -4,12 +4,13 @@ import numpy as np
 import time
 import cv2 as cv
 
-from lac.util import mask_centroid, wrap_angle
+from lac.util import mask_centroid, wrap_angle, pose_to_pos_rpy
 import lac.params as params
 
 
-def waypoint_steering(waypoint: np.ndarray, pos: np.ndarray, rpy: np.ndarray) -> float:
+def waypoint_steering(waypoint: np.ndarray, current_pose: np.ndarray) -> float:
     """Compute steering to point to a waypoint."""
+    pos, rpy = pose_to_pos_rpy(current_pose)
     angle_to_waypoint = np.arctan2(waypoint[1] - pos[1], waypoint[0] - pos[0])
     angle_diff = wrap_angle(angle_to_waypoint - rpy[2])  # [rad]
     steering = np.clip(params.KP_STEER * angle_diff, -params.MAX_STEER, params.MAX_STEER)

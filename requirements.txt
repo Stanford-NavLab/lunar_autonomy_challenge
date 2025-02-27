@@ -10,3 +10,4 @@ symforce==0.9.0
 apriltag==0.0.16
 opencv-python==4.10.0.84
 pillow==11.1.0
+pynput==1.7.7

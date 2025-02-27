@@ -4,31 +4,37 @@
 # For a copy, see <https://opensource.org/licenses/MIT>.
 
 """
-Data collection agent
+Mapping agent
 
 """
 
-import json
-import os
-import random
-import time
-from math import radians
 import carla
 import cv2 as cv
 import numpy as np
 from pynput import keyboard
-from PIL import Image
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.util import (
-    pose_to_rpy_pos,
+    pose_to_pos_rpy,
     transform_to_numpy,
-    wrap_angle,
-    color_mask,
-    draw_steering_arc,
-    mask_centroid,
+    transform_to_pos_rpy,
+    pos_rpy_to_pose,
 )
+from lac.planning.planner import Planner
+from lac.perception.vision import FiducialLocalizer
+from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
+from lac.localization.imu_dynamics import propagate_state
+from lac.control.controller import waypoint_steering
+from lac.mapping.mapper import Mapper
+from lac.utils.visualization import overlay_tag_detections
+from lac.utils.data_logger import DataLogger
+import lac.params as params
+
+""" Agent parameters and settings """
+DISPLAY_IMAGES = True  # Whether to display the camera views
+TELEOP = False  # Whether to use teleop control or autonomous control
+UPDATE_LOG_INTERVAL = 100  # Update log file every N steps
 
 
 def get_entry_point():
@@ -41,120 +47,172 @@ class MappingAgent(AutonomousAgent):
         listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
 
-        # For teleop
+        """ For teleop """
         self.current_v = 0
         self.current_w = 0
-        self.max_speed = 0.2
-        self.speed_increment = 0.05
-        self.turn_rate = 0.3
 
-        self.wheel_rig = np.array(
-            [
-                [0.222, 0.203, -0.134],
-                [0.222, -0.203, -0.134],
-                [-0.222, 0.203, -0.134],
-                [-0.222, 0.203, -0.134],
-            ]
-        )
-        self.wheel_rig_coords = np.concatenate((self.wheel_rig.T, np.ones((1, 4))), axis=0)
+        """ State variable for velocity reset stop """
+        self.stop_reset_counter = 0
+
+        """ Controller variables """
+        self.steer_delta = 0.0
 
         """ Initialize a counter to keep track of the number of simulation steps. """
-        self.frame = 0
-        self.rate = 1  # Sub-sample rate. Max rate is 10Hz
+        self.step = 0
+
+        """ Camera config """
+        self.cameras = params.CAMERA_CONFIG_INIT
+        self.cameras["FrontLeft"] = {
+            "active": True,
+            "light": 1.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
+        self.cameras["Right"] = {
+            "active": True,
+            "light": 1.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
+        self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
+
+        """ Planner """
+        initial_pose = transform_to_numpy(self.get_initial_position())
+        self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
+        self.planner = Planner(initial_pose)
+
+        """ Localization """
+        self.fid_localizer = FiducialLocalizer(self.cameras)
+        # Initialize EKF
+        init_pos, init_rpy = transform_to_pos_rpy(self.get_initial_position())
+        v0 = np.zeros(3)
+        init_state = np.hstack((init_pos, v0, init_rpy)).T
+        self.Q_EKF = create_Q(params.DT, params.EKF_Q_SIGMA_A, params.EKF_Q_SIGMA_ANGLE)
+        self.ekf = EKF(init_state, params.EKF_P0, store=True)
+        self.current_pose = initial_pose
+
+        """ Mapping """
+        self.mapper = Mapper()
+
+        """ Data logging """
+        run_name = get_entry_point()
+        self.data_logger = DataLogger(self, run_name, self.cameras)
+        self.ekf_result_file = f"output/{run_name}/ekf_result.npz"
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
-        return False
+        return True
 
     def sensors(self):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
         and also the initial activation state of each camera and light. Here we are activating the front left camera and light."""
 
-        sensors = {
-            carla.SensorPosition.Front: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.FrontLeft: {
-                "camera_active": True,
-                "light_intensity": 1.0,
-                "width": "1280",
-                "height": "720",
-                "use_semantic": False,
-            },
-            carla.SensorPosition.FrontRight: {
-                "camera_active": False,
-                "light_intensity": 1.0,
-                "width": "1280",
-                "height": "720",
-                "use_semantic": False,
-            },
-            carla.SensorPosition.Left: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.Right: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.BackLeft: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.BackRight: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-            carla.SensorPosition.Back: {
-                "camera_active": False,
-                "light_intensity": 0,
-                "width": "1280",
-                "height": "720",
-            },
-        }
+        sensors = {}
+        for cam, config in self.cameras.items():
+            sensors[getattr(carla.SensorPosition, cam)] = {
+                "camera_active": config["active"],
+                "light_intensity": config["light"],
+                "width": config["width"],
+                "height": config["height"],
+                "use_semantic": config["semantic"],
+            }
         return sensors
 
-    def run_step(self, input_data):
+    def initialize(self):
         # Move the arms out of the way
-        if self.frame == 0:
-            self.set_front_arm_angle(radians(60))
-            self.set_back_arm_angle(radians(60))
+        self.set_front_arm_angle(params.ARM_ANGLE_STATIC_RAD)
+        self.set_back_arm_angle(params.ARM_ANGLE_STATIC_RAD)
 
-        # Cheat with perfect localization
-        current_pose = transform_to_numpy(self.get_transform())
+    def image_available(self):
+        return self.step % 2 == 0  # Image data is available every other step
 
-        # Wheel contact mapping
-        wheel_contact_points = current_pose @ self.wheel_rig_coords
-        wheel_contact_points = wheel_contact_points[:3, :].T
+    def run_step(self, input_data):
+        if self.step == 0:
+            self.initialize()
+        self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
+        print("\nStep: ", self.step)
 
-        g_map = self.get_geometric_map()
-        for point in wheel_contact_points:
-            current_height = g_map.get_height(point[0], point[1])
-            if (current_height == -np.inf) or (current_height > point[2]):
-                g_map.set_height(point[0], point[1], point[2])
+        ground_truth_pose = transform_to_numpy(self.get_transform())
 
-        # Show camera POV
-        FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-        if FL_gray is not None:
-            cv.imshow("Left camera view", FL_gray)
-            cv.waitKey(1)
+        """ EKF predict step """
+        imu_data = self.get_imu_data()
+        a_k = imu_data[:3]
+        omega_k = imu_data[3:]
 
-        control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        def dyn_func(x):
+            return propagate_state(x, a_k, omega_k, params.DT, with_stm=True, use_numdiff=False)
+
+        self.ekf.predict(self.step, dyn_func, self.Q_EKF)
+
+        """ Image processing """
+        if self.image_available():
+            images_gray = {}
+            fid_measurements = []
+            for cam in self.active_cameras:
+                images_gray[cam] = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
+                pose_measurements, detections = self.fid_localizer.estimate_rover_pose(
+                    images_gray[cam], cam, self.lander_pose
+                )
+                for pose in pose_measurements.values():
+                    meas = np.concatenate(pose_to_pos_rpy(pose))
+                    fid_measurements.append(meas)
+
+                if DISPLAY_IMAGES:
+                    overlay = overlay_tag_detections(images_gray[cam], detections)
+                    cv.imshow(cam, overlay)
+
+            if DISPLAY_IMAGES:
+                cv.waitKey(1)
+
+            """ EKF update step """
+            n_meas = len(fid_measurements)
+            print("# measurements: ", n_meas)
+            fid_measurements = np.array(fid_measurements).flatten()
+
+            def meas_func(x):
+                return get_pose_measurement_tag(x, n_meas)
+
+            self.ekf.update(self.step, fid_measurements, meas_func)
+
+            self.data_logger.log_images(self.step, input_data)
+
+        if self.step % params.EKF_SMOOTHING_INTERVAL == 0:
+            self.ekf.smooth()
+
+        ekf_result = self.ekf.get_results()
+        ekf_state = ekf_result["xhat_smooth"][-1]
+        self.current_pose = pos_rpy_to_pose(ekf_state[:3], ekf_state[-3:])
+        print("Position error: ", np.linalg.norm(ekf_state[:3] - ground_truth_pose[:3, 3]))
+
+        """ Waypoint navigation """
+        waypoint = self.planner.get_waypoint(self.current_pose, print_progress=True)
+        if waypoint is None:
+            self.mission_complete()
+            return carla.VehicleVelocityControl(0.0, 0.0)
+        nominal_steering = waypoint_steering(waypoint, self.current_pose)
+
+        if TELEOP:
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        else:
+            control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
+
+        """ Data logging """
+        self.data_logger.log_data(self.step, control)
+        if self.step % UPDATE_LOG_INTERVAL == 0:
+            self.data_logger.save_log()
+            np.savez(self.ekf_result_file, **ekf_result)
+
+        print("\n-----------------------------------------------")
 
         return control
 
     def finalize(self):
         print("Running finalize")
+        g_map = self.get_geometric_map()
+        self.mapper.wheel_contact_update(g_map, self.ekf.get_results())
+        self.mapper.finalize(g_map)
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""
@@ -166,15 +224,15 @@ class MappingAgent(AutonomousAgent):
         velocity of 0.6 radians per second."""
 
         if key == keyboard.Key.up:
-            self.current_v += self.speed_increment
-            self.current_v = np.clip(self.current_v, 0, self.max_speed)
+            self.current_v += 0.1
+            self.current_v = np.clip(self.current_v, 0, 0.3)
         if key == keyboard.Key.down:
-            self.current_v -= self.speed_increment
-            self.current_v = np.clip(self.current_v, -self.max_speed, 0)
+            self.current_v -= 0.1
+            self.current_v = np.clip(self.current_v, -0.3, 0)
         if key == keyboard.Key.left:
-            self.current_w = self.turn_rate
+            self.current_w = 0.6
         if key == keyboard.Key.right:
-            self.current_w = -self.turn_rate
+            self.current_w = -0.6
 
     def on_release(self, key):
         """This method sets the angular or linear velocity to zero when the arrow key is released. Stopping the robot."""

@@ -8,6 +8,7 @@ Dummy agent
 
 """
 
+import numpy as np
 import carla
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
@@ -82,11 +83,21 @@ class DummyAgent(AutonomousAgent):
         return sensors
 
     def run_step(self, input_data):
-        if self.step == 0:
-            self.mission_complete()
+        # # Initialize the map
+        # g_map = self.get_geometric_map()
+        # map_array = g_map.get_map_array()
+        # map_array[:, :, 2] = 1.5  # set heights
+        # map_array[:, :, 3] = 1.0  # set rocks
+
+        self.mission_complete()
 
         control = carla.VehicleVelocityControl(0.0, 0.0)
         return control
 
     def finalize(self):
         print("Running finalize")
+        # Initialize the map
+        g_map = self.get_geometric_map()
+        map_array = g_map.get_map_array()
+        map_array[:, :, 2] = 1.5  # set heights
+        map_array[:, :, 3] = 1.0  # set rocks

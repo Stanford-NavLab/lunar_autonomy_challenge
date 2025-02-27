@@ -1,0 +1,23 @@
+"""Utility functions for map generation and comparison
+
+Scoring functions: ref. Leaderboard/leaderboard/statistics/statistics_manager.py
+
+"""
+
+import numpy as np
+
+GEOMETRIC_MAP_MAX_SCORE = 300.0
+GEOMETRIC_MAP_MIN_SCORE = 0.0
+GEOMETRIC_MAP_THRESHOLD = 0.05
+
+
+def get_geometric_score(ground_map: np.ndarray, agent_map: np.ndarray) -> float:
+    """Compare the calculated heights vs the real ones"""
+    if agent_map is None or ground_map is None:
+        return GEOMETRIC_MAP_MIN_SCORE
+
+    true_heights = ground_map[:, :, 2]
+    agent_heights = agent_map[:, :, 2]
+    error_heights = np.sum(np.abs(true_heights - agent_heights) < GEOMETRIC_MAP_THRESHOLD)
+    score_rate = error_heights / true_heights.size
+    return GEOMETRIC_MAP_MAX_SCORE * score_rate

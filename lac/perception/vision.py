@@ -97,6 +97,7 @@ class FiducialLocalizer:
         --------
         rover_pose_estimates : list of np.ndarray (4, 4)
             List of estimated rover poses in the world frame
+        detections : list of apriltag detections
         """
         detections = self.detect(img)
         cam_intrisics = get_camera_intrinsics(cam_name, self.camera_config)

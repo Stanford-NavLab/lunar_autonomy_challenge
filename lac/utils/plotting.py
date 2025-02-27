@@ -23,14 +23,23 @@ def plot_heatmap(data, fig=None, colorscale="Viridis", no_axes=False):
 ##### ------------------- 3D ------------------- #####
 
 
-def plot_surface(x, y, z, fig=None, colorscale="Viridis", no_axes=False, showscale=True, **kwargs):
+def plot_surface(grid, fig=None, colorscale="Viridis", no_axes=False, showscale=True, **kwargs):
     """
-    x, y, z are 2D arrays representing the coordinates and elevation data for a surface plot.
+    grid is NxNx3 array representing the coordinates and elevation data for a surface plot.
 
     """
     if fig is None:
         fig = go.Figure()
-    fig.add_trace(go.Surface(x=x, y=y, z=z, colorscale=colorscale, showscale=showscale, **kwargs))
+    fig.add_trace(
+        go.Surface(
+            x=grid[:, :, 0],
+            y=grid[:, :, 1],
+            z=grid[:, :, 2],
+            colorscale=colorscale,
+            showscale=showscale,
+            **kwargs,
+        )
+    )
     fig.update_layout(width=1600, height=900, scene_aspectmode="data")
     if no_axes:
         fig.update_layout(
@@ -195,6 +204,7 @@ def plot_poses(poses, fig=None, no_axes=False, **kwargs):
         fig = plot_path_3d(positions, fig=fig, **kwargs)
     else:
         fig.add_traces(pose_traces(poses))
+    fig.update_layout(width=1600, height=900, scene_aspectmode="data")
     return fig
 
 
