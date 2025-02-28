@@ -56,6 +56,10 @@ class NavAgent(AutonomousAgent):
         listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
 
+        """ Time"""
+        self.time = 0
+
+
         """ For teleop """
         self.current_v = 0
         self.current_w = 0
@@ -186,6 +190,8 @@ class NavAgent(AutonomousAgent):
             self.set_front_arm_angle(radians(60))
             self.set_back_arm_angle(radians(60))
 
+
+
         # # Wait 50 frames for IMU to stabilize and motion to go to zero
         # while self.frame < self.imu_start_frame:
         #     control = carla.VehicleVelocityControl(0.0, 0.0)
@@ -222,9 +228,12 @@ class NavAgent(AutonomousAgent):
         angle = np.arctan2(waypoint[1] - pos[1], waypoint[0] - pos[0])
         angle_diff = wrap_angle(angle - heading)
         nominal_steering = np.clip(self.KP_STEER * angle_diff, -self.max_steer, self.max_steer)
-        steer_delta = 0
+        
 
         # Perception
+        steer_angle = 0
+        steer_speed = 0
+        self.time += 1/20
         left_key = carla.SensorPosition.FrontLeft
         right_key = carla.SensorPosition.FrontRight
         FL_gray_left = input_data["Grayscale"][left_key]
@@ -262,20 +271,21 @@ class NavAgent(AutonomousAgent):
 
                 distance = np.sqrt(Xr**2 + Yr**2 + Zr**2)
 
-                danger_zone = 3.0  
+                danger_zone = 4
                 if distance < danger_zone:
                     print(f"Rock detected at {distance} meters")
                     sign = -1 if Yr < 0 else +1
                     k_avoid = 0.6
-                    steer_delta = k_avoid * (danger_zone - distance)
-                    steer_delta = steer_delta * sign
+                    steer_angle = k_avoid * (danger_zone - distance)**2
+                    steer_angle = steer_angle * sign
+                    steer_speed = -0.1
         
 
         if self.TELEOP:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         else:
             control = carla.VehicleVelocityControl(
-                self.TARGET_SPEED, nominal_steering + steer_delta
+                self.TARGET_SPEED + steer_speed, nominal_steering + steer_angle
             )
 
         # Data logging
