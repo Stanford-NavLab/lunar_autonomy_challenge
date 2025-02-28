@@ -289,7 +289,7 @@ class NavAgent(AutonomousAgent):
                             print("Panic mode")
                             self.panic = True 
                             self.avoid_frames_remaining = 20
-                            self.panic_speed = 0.1
+                            self.panic_speed = 0.3
                             self.panic_angle = sign*np.pi/4
                         else:
                             target_speed -= 0.15
