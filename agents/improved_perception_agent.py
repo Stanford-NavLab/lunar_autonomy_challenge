@@ -278,7 +278,7 @@ class NavAgent(AutonomousAgent):
                     k_avoid = 0.6
                     steer_angle = k_avoid * (danger_zone - distance)**2
                     steer_angle = steer_angle * sign
-                    steer_speed = -0.1
+                    steer_speed = -0.15
         
 
         if self.TELEOP:
