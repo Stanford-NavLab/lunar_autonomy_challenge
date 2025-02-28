@@ -32,6 +32,10 @@ from lac.utils.data_logger import DataLogger
 import lac.params as params
 
 """ Agent parameters and settings """
+STOP_INTERVAL = 1e7  # Number of steps to stop and reset the velocity
+STOP_DURATION_STEPS = 40  # Number of steps to stop for
+USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
+
 DISPLAY_IMAGES = True  # Whether to display the camera views
 TELEOP = False  # Whether to use teleop control or autonomous control
 UPDATE_LOG_INTERVAL = 100  # Update log file every N steps
@@ -85,6 +89,8 @@ class MappingAgent(AutonomousAgent):
 
         """ Localization """
         self.fid_localizer = FiducialLocalizer(self.cameras)
+        self.fiducials_last_seen = False
+        self.fiducials_stop_counter = 0
         # Initialize EKF
         init_pos, init_rpy = transform_to_pos_rpy(self.get_initial_position())
         v0 = np.zeros(3)
@@ -94,12 +100,12 @@ class MappingAgent(AutonomousAgent):
         self.current_pose = initial_pose
 
         """ Mapping """
-        self.mapper = Mapper()
+        self.mapper = Mapper(self.get_geometric_map())
 
         """ Data logging """
-        run_name = get_entry_point()
-        self.data_logger = DataLogger(self, run_name, self.cameras)
-        self.ekf_result_file = f"output/{run_name}/ekf_result.npz"
+        agent_name = get_entry_point()
+        self.data_logger = DataLogger(self, agent_name, self.cameras)
+        self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
@@ -176,6 +182,18 @@ class MappingAgent(AutonomousAgent):
 
             self.ekf.update(self.step, fid_measurements, meas_func)
 
+            if n_meas > 0:
+                self.fiducials_last_seen = True
+            elif n_meas == 0 and self.fiducials_last_seen:
+                self.fiducials_last_seen = False
+                if self.fiducials_stop_counter == 0:
+                    self.fiducials_stop_counter = 40
+                    self.stop_reset_counter = STOP_DURATION_STEPS
+                else:
+                    self.fiducials_stop_counter -= 1
+
+            print("Fiducials last seen: ", self.fiducials_last_seen)
+
             self.data_logger.log_images(self.step, input_data)
 
         if self.step % params.EKF_SMOOTHING_INTERVAL == 0:
@@ -186,17 +204,32 @@ class MappingAgent(AutonomousAgent):
         self.current_pose = pos_rpy_to_pose(ekf_state[:3], ekf_state[-3:])
         print("Position error: ", np.linalg.norm(ekf_state[:3] - ground_truth_pose[:3, 3]))
 
+        if USE_GROUND_TRUTH_NAV:
+            nav_pose = ground_truth_pose
+        else:
+            nav_pose = self.current_pose
+
         """ Waypoint navigation """
-        waypoint = self.planner.get_waypoint(self.current_pose, print_progress=True)
+        waypoint = self.planner.get_waypoint(nav_pose, print_progress=True)
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
-        nominal_steering = waypoint_steering(waypoint, self.current_pose)
+        nominal_steering = waypoint_steering(waypoint, nav_pose)
 
         if TELEOP:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         else:
-            control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
+            if self.step % STOP_INTERVAL == 0:
+                self.stop_reset_counter = STOP_DURATION_STEPS
+            if self.stop_reset_counter > 0:
+                self.stop_reset_counter -= 1
+                print(" ======= STOPPING ======= ")
+                control = carla.VehicleVelocityControl(0.0, 0.0)
+                # NOTE: should probably wait a few steps to allow rover to stop before zeroing
+                if self.stop_reset_counter == 0:
+                    self.ekf.zero_velocity_update(self.step)
+            else:
+                control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
 
         """ Data logging """
         self.data_logger.log_data(self.step, control)
@@ -210,9 +243,10 @@ class MappingAgent(AutonomousAgent):
 
     def finalize(self):
         print("Running finalize")
-        g_map = self.get_geometric_map()
-        self.mapper.wheel_contact_update(g_map, self.ekf.get_results())
-        self.mapper.finalize(g_map)
+        self.mapper.wheel_contact_update(self.ekf.get_smoothed_poses())
+        self.mapper.finalize_heights()
+
+        self.data_logger.save_log()
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""

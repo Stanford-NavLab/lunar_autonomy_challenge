@@ -20,6 +20,40 @@ def plot_heatmap(data, fig=None, colorscale="Viridis", no_axes=False):
     return fig
 
 
+def plot_points_rover_frame(points, fig=None, color="red", **kwargs):
+    """Plot points in the rover frame."""
+    if fig is None:
+        fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=points[:, 1],
+            y=points[:, 0],
+            mode="markers",
+            marker=dict(color=color, size=5),
+            **kwargs,
+        )
+    )
+    fig.update_layout(
+        xaxis=dict(
+            title="Y axis (Left)",
+            autorange="reversed",
+            zerolinewidth=3,
+            zerolinecolor="gray",
+            tickmode="linear",
+            dtick=1,  # Ensure uniform spacing
+        ),
+        yaxis=dict(
+            title="X axis (Forward)",
+            scaleanchor="x",
+            zerolinewidth=3,
+            zerolinecolor="gray",
+            tickmode="linear",
+            dtick=1,  # Ensure uniform spacing
+        ),
+    )
+    return fig
+
+
 ##### ------------------- 3D ------------------- #####
 
 

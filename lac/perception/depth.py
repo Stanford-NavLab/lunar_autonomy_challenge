@@ -47,7 +47,11 @@ def stereo_depth_from_segmentation(left_seg_masks, right_seg_masks, baseline, fo
         return []
 
     matches = centroid_matching(left_rock_centroids, right_rock_centroids)
-    disparities = [match[0][0] - match[1][0] for match in matches]
+
+    # Since we compute disparity as x_left - x_right, the computed depth is with respect to the left camera
+    disparities = [
+        left_rock_centroids[match[0]][0] - right_rock_centroids[match[1]][0] for match in matches
+    ]
     depths = (focal_length_x * baseline) / disparities
 
     results = []
@@ -55,8 +59,10 @@ def stereo_depth_from_segmentation(left_seg_masks, right_seg_masks, baseline, fo
         if depths[i] > 0 and depths[i] < params.MAX_DEPTH:
             results.append(
                 {
-                    "left_centroid": match[0],
-                    "right_centroid": match[1],
+                    "left_centroid": left_rock_centroids[match[0]],
+                    "left_mask": left_seg_masks[match[0]],
+                    "right_centroid": right_rock_centroids[match[1]],
+                    "right_mask": right_seg_masks[match[1]],
                     "disparity": disparities[i],
                     "depth": depths[i],
                 }
@@ -78,8 +84,6 @@ def project_depths_to_world(
     TODO: vectorize this
     """
     world_points = []
-    # offset from rover origin to front left camera in rover frame (TODO: load this)
-    FL_OFFSET = np.array([0.28, 0.081, 0.131])
     CAM_TO_ROVER = get_cam_pose_rover(cam_name)
     K = get_camera_intrinsics(cam_name, cam_config)
     for result in depth_results:
@@ -87,12 +91,22 @@ def project_depths_to_world(
         # OpenCV to camera frame conversion
         rock_point_cam = opencv_to_camera(rock_point_opencv)
         # Apply camera to rover offset
-        # rock_point_rover = rock_point_cam + FL_OFFSET  # TODO: generalize this
         rock_point_rover = apply_transform(CAM_TO_ROVER, rock_point_cam)
         # Rover to world frame conversion
         rock_point_world = (rover_pose @ np.concatenate((rock_point_rover, [1])))[:3]
         world_points.append(rock_point_world)
     return world_points
+
+
+def project_pixel_to_rover(
+    pixel: tuple | np.ndarray, depth: float, cam_name: str, cam_config: dict
+):
+    CAM_TO_ROVER = get_cam_pose_rover(cam_name)
+    K = get_camera_intrinsics(cam_name, cam_config)
+    point_opencv = project_pixel_to_3D(pixel, depth, K)
+    point_cam = opencv_to_camera(point_opencv)
+    point_rover = apply_transform(CAM_TO_ROVER, point_cam)
+    return point_rover
 
 
 def compute_stereo_depth(

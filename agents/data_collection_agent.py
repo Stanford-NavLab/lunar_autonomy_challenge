@@ -52,6 +52,13 @@ class DataCollectionAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
+        self.cameras["FrontRight"] = {
+            "active": True,
+            "light": 1.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
         self.cameras["Right"] = {
             "active": True,
             "light": 1.0,
@@ -59,8 +66,8 @@ class DataCollectionAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
-
-        self.data_logger = DataLogger(self, "data_collection", self.cameras)
+        agent_name = get_entry_point()
+        self.data_logger = DataLogger(self, agent_name, self.cameras)
 
     def use_fiducials(self):
         return True
@@ -103,8 +110,8 @@ class DataCollectionAgent(AutonomousAgent):
         control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         self.data_logger.log_data(self.step, control)
-        if self.step % UPDATE_LOG_RATE == 0:
-            self.data_logger.save_log()
+        # if self.step % UPDATE_LOG_RATE == 0:
+        #     self.data_logger.save_log()
 
         return control
 

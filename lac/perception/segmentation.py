@@ -7,7 +7,7 @@ import torch
 import cv2 as cv
 
 from lac.util import mask_centroid
-from lac.params import ROCK_MASK_MAX_AREA
+from lac.params import ROCK_MASK_MAX_AREA, ROCK_BRIGHTNESS_THRESHOLD
 
 
 class Segmentation:
@@ -22,9 +22,13 @@ class Segmentation:
         results = self.model.predict([image], [text_prompt])
 
         full_mask = np.zeros_like(image, dtype=np.uint8).copy()
+        image_np = np.array(image.convert("L"))
         masks = []
         for mask in results[0]["masks"]:
-            if mask.sum() < ROCK_MASK_MAX_AREA:
+            if (
+                mask.sum() < ROCK_MASK_MAX_AREA
+                and image_np[mask.astype(bool)].mean() > ROCK_BRIGHTNESS_THRESHOLD
+            ):
                 masks.append(mask)
                 full_mask[mask.astype(bool)] = 255
 
@@ -90,7 +94,8 @@ def centroid_matching(left_centroids, right_centroids, max_y_diff=5, max_x_diff=
             and left_idx not in used_left
             and right_idx not in used_right
         ):
-            matches.append((left_centroids[left_idx], right_centroids[right_idx]))
+            # matches.append((left_centroids[left_idx], right_centroids[right_idx]))
+            matches.append((left_idx, right_idx))
             used_left.add(left_idx)
             used_right.add(right_idx)
 

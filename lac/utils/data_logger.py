@@ -17,14 +17,16 @@ import carla
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.util import transform_to_numpy
+from lac.params import DEFAULT_RUN_NAME
 
 
 class DataLogger:
-    def __init__(self, agent: AutonomousAgent, run_name: str, camera_config: dict):
-        self.run_name = run_name
+    def __init__(self, agent: AutonomousAgent, agent_name: str, camera_config: dict):
+        self.agent_name = agent_name
         self.data = {}
         self.frames = []
-        self.log_file = "output/" + self.run_name + "/data_log.json"
+        self.run_name = DEFAULT_RUN_NAME
+        self.log_file = f"output/{self.agent_name}/{self.run_name}/data_log.json"
 
         self.agent = agent
         self.cameras = camera_config
@@ -40,13 +42,13 @@ class DataLogger:
         self.data["use_fiducials"] = self.agent.use_fiducials()
 
         # Initialize output folders
-        if os.path.exists("output/" + self.run_name):
-            shutil.rmtree("output/" + self.run_name)
+        if os.path.exists(f"output/{self.agent_name}/{self.run_name}"):
+            shutil.rmtree(f"output/{self.agent_name}/{self.run_name}")
         for cam_name, config in self.cameras.items():
             if config["active"]:
-                os.makedirs(f"output/{self.run_name}/{cam_name}")
+                os.makedirs(f"output/{self.agent_name}/{self.run_name}/{cam_name}")
                 if config["semantic"]:
-                    os.makedirs(f"output/{self.run_name}/{cam_name}_semantic")
+                    os.makedirs(f"output/{self.agent_name}/{self.run_name}/{cam_name}_semantic")
 
     def log_data(self, step: int, control: carla.VehicleVelocityControl):
         """
@@ -73,13 +75,13 @@ class DataLogger:
             if config["active"]:
                 img = input_data["Grayscale"][getattr(carla.SensorPosition, cam_name)]
                 cv.imwrite(
-                    f"output/{self.run_name}/{cam_name}/{step}.png",
+                    f"output/{self.agent_name}/{self.run_name}/{cam_name}/{step}.png",
                     img,
                 )
                 if config["semantic"]:
                     semantic_img = input_data["Semantic"][getattr(carla.SensorPosition, cam_name)]
                     cv.imwrite(
-                        f"output/{self.run_name}/{cam_name}_semantic/{step}.png",
+                        f"output/{self.agent_name}/{self.run_name}/{cam_name}_semantic/{step}.png",
                         semantic_img,
                     )
 

@@ -1,10 +1,11 @@
 """Controller module for the LAC challenge."""
 
 import numpy as np
-import time
 import cv2 as cv
 
+from lac.perception.depth import project_pixel_to_rover
 from lac.util import mask_centroid, wrap_angle, pose_to_pos_rpy
+from lac.control.dynamics import arc
 import lac.params as params
 
 
@@ -42,3 +43,57 @@ def segmentation_steering(masks: list[np.ndarray]) -> float:
         else:  # Turn left
             steer_delta = min(params.MAX_STEER_DELTA * (cx - x) / 100, params.MAX_STEER_DELTA)
     return steer_delta
+
+
+def rock_avoidance_steering(depth_results: dict, cam_config: dict) -> float:
+    """Compute a steering delta based on segmentation results to avoid rocks."""
+    ROCK_AVOID_DIST = 4.0
+    K_AVOID = 0.6
+
+    rock_points_rover_frame = []
+    mask_areas = []
+    distances = []
+    for rock in depth_results:
+        rock_point_rover_frame = project_pixel_to_rover(
+            rock["left_centroid"], rock["depth"], "FrontLeft", cam_config
+        )
+        distance = np.linalg.norm(rock_point_rover_frame)
+        if distance < ROCK_AVOID_DIST:
+            rock_points_rover_frame.append(rock_point_rover_frame)
+            mask_areas.append(rock["left_mask"].sum())
+            distances.append(distance)
+
+    if len(mask_areas) == 0:
+        return 0.0
+
+    max_mask_area_idx = np.argmax(mask_areas)
+    print(f"Max mask area: {mask_areas[max_mask_area_idx]}")
+    if mask_areas[max_mask_area_idx] < params.ROCK_MASK_AVOID_MIN_AREA:
+        return 0.0
+
+    rock_point = rock_points_rover_frame[max_mask_area_idx]
+    distance = distances[max_mask_area_idx]
+    print(f"Rock distance: {distance}")
+    if distance > ROCK_AVOID_DIST:
+        return 0.0
+    else:
+        steer_mag = min(params.MAX_STEER_DELTA, K_AVOID * (ROCK_AVOID_DIST - distance) ** 2)
+        return -np.sign(rock_point[1]) * steer_mag
+
+
+class ArcPlanner:
+    def __init__(self):
+        NUM_OMEGAS = 5
+        MAX_OMEGA = 2.0  # [rad/s]
+        ARC_DURATION = 5.0  # [s]
+        NUM_ARC_POINTS = int(ARC_DURATION / params.DT)
+
+        self.speeds = [0.05, 0.1, 0.15, 0.2]
+        self.omegas = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS)
+        self.candidate_arcs = []
+        for v in self.speeds:
+            for w in self.omegas:
+                self.candidate_arcs.append(arc(np.zeros(3), [v, w], NUM_ARC_POINTS, params.DT))
+
+    def plan_arc(self, waypoint: np.ndarray, current_pose: np.ndarray):
+        pass

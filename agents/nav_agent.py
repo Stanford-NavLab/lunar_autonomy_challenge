@@ -11,6 +11,7 @@ Full agent
 import carla
 import cv2 as cv
 import numpy as np
+import json
 from PIL import Image
 from pynput import keyboard
 
@@ -25,25 +26,26 @@ from lac.util import (
 from lac.perception.segmentation import Segmentation
 from lac.perception.depth import (
     stereo_depth_from_segmentation,
-    project_depths_to_world,
 )
 from lac.perception.vision import FiducialLocalizer
-from lac.control.controller import waypoint_steering, segmentation_steering
+from lac.control.controller import waypoint_steering, rock_avoidance_steering
 from lac.planning.planner import Planner
 from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
 from lac.localization.imu_dynamics import propagate_state
 from lac.mapping.mapper import Mapper
 from lac.utils.visualization import overlay_mask, draw_steering_arc, overlay_stereo_rock_depths
-from lac.utils.frames import apply_transform
 from lac.utils.data_logger import DataLogger
 import lac.params as params
 
+import signal
+import sys
+
 """ Agent parameters and settings """
 IMAGE_PROCESS_RATE = 10  # [Hz]
+USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
 
-DISPLAY_IMAGES = False  # Whether to display the camera views
+DISPLAY_IMAGES = True  # Whether to display the camera views
 LOG_DATA = True  # Whether to log data
-UPDATE_LOG_RATE = 100  # Update log file every 100 steps
 EVAL = False  # Whether running in evaluation mode (disable ground truth)
 
 
@@ -109,25 +111,27 @@ class NavAgent(AutonomousAgent):
         self.current_pose = initial_pose
 
         """ Mapping """
-        self.mapper = Mapper()
+        self.mapper = Mapper(self.get_geometric_map())
 
         """ Data logging """
         if LOG_DATA:
-            run_name = get_entry_point()
-            self.data_logger = DataLogger(self, run_name, self.cameras)
-            self.ekf_result_file = f"output/{run_name}/ekf_result.npz"
-            self.rock_points_file = f"output/{run_name}/rock_points.npy"
+            agent_name = get_entry_point()
+            self.data_logger = DataLogger(self, agent_name, self.cameras)
+            self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
+            self.rock_detections_file = (
+                f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/rock_detections.json"
+            )
+
+        signal.signal(signal.SIGINT, self.handle_interrupt)
+
+    def handle_interrupt(self, signal_received, frame):
+        print("\nCtrl+C detected! Exiting mission")
+        self.mission_complete()
 
     def initialize(self):
         # Move the arms out of the way
         self.set_front_arm_angle(params.ARM_ANGLE_STATIC_RAD)
         self.set_back_arm_angle(params.ARM_ANGLE_STATIC_RAD)
-
-        # Initialize the map
-        g_map = self.get_geometric_map()
-        map_array = g_map.get_map_array()
-        # map_array[:, :, 2] = 10.0  # set heights
-        map_array[:, :, 3] = 0.0  # set rocks
 
     def image_available(self):
         return self.step % 2 == 0  # Image data is available every other step
@@ -137,8 +141,6 @@ class NavAgent(AutonomousAgent):
         return True
 
     def sensors(self):
-        """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
-        and also the initial activation state of each camera and light. Here we are activating the front left camera and light."""
         sensors = {}
         for cam, config in self.cameras.items():
             sensors[getattr(carla.SensorPosition, cam)] = {
@@ -202,22 +204,21 @@ class NavAgent(AutonomousAgent):
         self.current_pose = pos_rpy_to_pose(ekf_state[:3], ekf_state[-3:])
         print("Position error: ", np.linalg.norm(ekf_state[:3] - ground_truth_pose[:3, 3]))
 
+        if USE_GROUND_TRUTH_NAV:
+            nav_pose = ground_truth_pose
+        else:
+            nav_pose = self.current_pose
+
         """ Waypoint navigation """
-        waypoint = self.planner.get_waypoint(self.current_pose, print_progress=True)
+        waypoint, advanced = self.planner.get_waypoint(nav_pose, print_progress=True)
+        # if advanced:
+        #     self.mapper.wheel_contact_update(self.ekf.get_smoothed_poses())
+        #     self.mapper.finalize_heights()
+        #     self.mapper.rock_projection_update(self.ekf.get_smoothed_poses(), self.cameras)
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
-        nominal_steering = waypoint_steering(waypoint, self.current_pose)
-
-        """ Wheel contact mapping """
-        g_map = self.get_geometric_map()
-        # wheel_contact_points = apply_transform(self.current_pose, params.WHEEL_RIG_POINTS)
-        # for point in wheel_contact_points:
-        #     current_height = g_map.get_height(point[0], point[1])
-        #     if current_height is None:  # Out of bounds
-        #         continue
-        #     if (current_height == -np.inf) or (current_height > point[2]):
-        #         g_map.set_height(point[0], point[1], point[2])
+        nominal_steering = waypoint_steering(waypoint, nav_pose)
 
         """ Rock segmentation """
         if self.step % (params.FRAME_RATE // IMAGE_PROCESS_RATE) == 0:
@@ -234,15 +235,10 @@ class NavAgent(AutonomousAgent):
             stereo_depth_results = stereo_depth_from_segmentation(
                 left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
             )
-            rock_points_world = project_depths_to_world(
-                stereo_depth_results, self.current_pose, "FrontLeft", self.cameras
-            )
-            for point in rock_points_world:
-                g_map.set_rock(point[0], point[1], True)
-                self.all_rock_detections.append(point)
+            self.mapper.add_rock_detections(self.step, stereo_depth_results)
 
             # Hazard avoidance
-            self.steer_delta = segmentation_steering(left_seg_masks)
+            self.steer_delta = rock_avoidance_steering(stereo_depth_results, self.cameras)
 
             if DISPLAY_IMAGES:
                 overlay = overlay_mask(FL_gray, left_seg_full_mask)
@@ -255,17 +251,14 @@ class NavAgent(AutonomousAgent):
                 cv.imshow("Rock segmentation", overlay)
                 cv.waitKey(1)
 
-        control = carla.VehicleVelocityControl(
-            params.TARGET_SPEED, nominal_steering + self.steer_delta
-        )
+        target_speed = params.TARGET_SPEED
+        if self.steer_delta != 0:
+            target_speed = 0.1
+        control = carla.VehicleVelocityControl(target_speed, nominal_steering + self.steer_delta)
 
         """ Data logging """
         if LOG_DATA:
             self.data_logger.log_data(self.step, control)
-            if self.step % UPDATE_LOG_RATE == 0:
-                self.data_logger.save_log()
-                np.save(self.rock_points_file, self.all_rock_detections)
-                np.savez(self.ekf_result_file, **ekf_result)
 
         print("\n-----------------------------------------------")
 
@@ -273,16 +266,15 @@ class NavAgent(AutonomousAgent):
 
     def finalize(self):
         print("Running finalize")
+        self.mapper.wheel_contact_update(self.ekf.get_smoothed_poses())
+        self.mapper.finalize_heights()
+        self.mapper.rock_projection_update(self.ekf.get_smoothed_poses(), self.cameras)
+
         if LOG_DATA:
             self.data_logger.save_log()
-
-        # g_map = self.get_geometric_map()
-        # map_array = g_map.get_map_array()
-        # min_height = np.min(map_array[:, :, 2])
-        # # Set all heights that are still -inf to the minimum height
-        # map_array[map_array[:, :, 2] == -np.inf] = min_height
-        g_map = self.get_geometric_map()
-        self.mapper.wheel_contact_update(g_map, self.ekf.get_results())
+            np.savez(self.ekf_result_file, **self.ekf.get_results())
+            # with open(self.rock_detections_file, "w") as f:
+            #     json.dump(self.mapper.rock_detections_serialized, f, indent=4)
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""

@@ -19,7 +19,7 @@ from lac.util import (
     pose_to_pos_rpy,
     transform_to_numpy,
     transform_to_pos_rpy,
-    gen_square_spiral,
+    pos_rpy_to_pose,
 )
 from lac.planning.planner import Planner
 from lac.perception.vision import FiducialLocalizer
@@ -179,21 +179,21 @@ class LocalizationAgent(AutonomousAgent):
             self.ekf.smooth()
 
         ekf_result = self.ekf.get_results()
-        ekf_pos = ekf_result["xhat_smooth"][-1, :3]
-        print("EKF pos: ", ekf_pos)
-        print("Pos error: ", np.linalg.norm(ekf_pos - ground_truth_pose[:3, 3]))
+        ekf_state = ekf_result["xhat_smooth"][-1]
+        self.current_pose = pos_rpy_to_pose(ekf_state[:3], ekf_state[-3:])
+        print("Position error: ", np.linalg.norm(ekf_state[:3] - ground_truth_pose[:3, 3]))
 
         if USE_GROUND_TRUTH_NAV:
-            self.current_pose = transform_to_numpy(self.get_transform())
+            nav_pose = ground_truth_pose
         else:
-            current_pose = self.current_pose
+            nav_pose = self.current_pose
 
         """ Waypoint navigation """
-        waypoint = self.planner.get_waypoint(current_pose, print_progress=True)
+        waypoint = self.planner.get_waypoint(nav_pose, print_progress=True)
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
-        nominal_steering = waypoint_steering(waypoint, current_pose)
+        nominal_steering = waypoint_steering(waypoint, nav_pose)
 
         if TELEOP:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)

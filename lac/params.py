@@ -11,6 +11,8 @@ LAC_BASE_PATH = (
     else os.path.expanduser("~/LunarAutonomyChallenge")
 )
 
+DEFAULT_RUN_NAME = "default_run"
+
 """-------------------------------------- Constants --------------------------------------"""
 LUNAR_GRAVITY = np.array([0.0, 0.0, 1.6220])  # m/s^2
 
@@ -84,15 +86,18 @@ CAMERA_INTRINSICS = np.array([[FL_X, 0, IMG_WIDTH / 2], [0, FL_Y, IMG_HEIGHT / 2
 KP_STEER = 0.3
 KP_LINEAR = 0.1
 TARGET_SPEED = 0.2  # [m/s]
-MAX_STEER = 1.0  # [rad/s]
-MAX_STEER_DELTA = 0.6  # [rad/s]
-WAYPOINT_REACHED_DIST_THRESHOLD = 1.0  # distance threshold for moving to next waypoint [m]
+MAX_STEER = 1.2  # [rad/s]
+MAX_STEER_DELTA = 1.0  # [rad/s]
+WAYPOINT_REACHED_DIST_THRESHOLD = 1.5  # distance threshold for moving to next waypoint [m]
 
 # Maximum area of a rock segmentation mask in pixels, anything larger is ignored
 ROCK_MASK_MAX_AREA = 50000
 
 # Minimum area of a rock segmentation mask in pixels to be considered for obstacle avoidance
 ROCK_MASK_AVOID_MIN_AREA = 1000
+
+ROCK_AVOID_DIST = 2.0  # [m] distance to avoid rocks
+ROCK_BRIGHTNESS_THRESHOLD = 50  # [0-255] pixel threshold for segmentation to be consider rock
 
 MAX_DEPTH = 56.5  # Maximum depth value in meters (40 * sqrt(2))
 

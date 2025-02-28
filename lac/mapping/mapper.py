@@ -3,6 +3,7 @@
 import numpy as np
 from scipy.interpolate import griddata
 
+from lac.perception.depth import project_depths_to_world
 from lac.utils.frames import apply_transform
 from lac.util import pos_rpy_to_pose
 from lac.params import WHEEL_RIG_POINTS
@@ -32,6 +33,7 @@ def interpolate_heights(height_array: np.ndarray) -> np.ndarray:
     x_known = height_array[..., 0][valid_mask]
     y_known = height_array[..., 1][valid_mask]
     z_known = height_array[..., 2][valid_mask]
+    print(np.sum(valid_mask))
 
     # Extract all (x, y) grid points
     x_all = height_array[..., 0].ravel()
@@ -52,22 +54,52 @@ def interpolate_heights(height_array: np.ndarray) -> np.ndarray:
 
 
 class Mapper:
-    def __init__(self):
-        self.rock_detections_samples = []
+    def __init__(self, geometric_map):
+        self.g_map = geometric_map
+        map_array = self.g_map.get_map_array()
+        map_array[:, :, 3] = 0.0  # initialize rocks
+        self.rock_detections = {}
+        self.rock_detections_serialized = {}
 
-    def wheel_contact_update(self, g_map, ekf_result) -> None:
-        """Update the geometric map with the wheel contact points based on EKF trajectory."""
-        ekf_trajectory = ekf_result["xhat_smooth"]
-        for state in ekf_trajectory:
-            pose = pos_rpy_to_pose(state[:3], state[-3:])
+    def wheel_contact_update(self, poses: list[np.ndarray]) -> None:
+        """Update the geometric map with the wheel contact points based on trajectory of poses."""
+        for pose in poses:
             wheel_contact_points = apply_transform(pose, WHEEL_RIG_POINTS)
             for point in wheel_contact_points:
-                current_height = g_map.get_height(point[0], point[1])
+                current_height = self.g_map.get_height(point[0], point[1])
                 if current_height is None:  # Out of bounds
                     continue
                 if (current_height == -np.inf) or (current_height > point[2]):
-                    g_map.set_height(point[0], point[1], point[2])
+                    self.g_map.set_height(point[0], point[1], point[2])
 
-    def finalize(self, g_map) -> None:
-        height_array = g_map.get_map_array()
-        height_array = interpolate_heights(height_array)
+    def add_rock_detections(self, step: int, depth_results: list[dict]) -> None:
+        self.rock_detections[step] = depth_results
+        out_list = []
+        for result in depth_results:
+            out_list.append(
+                [result["left_centroid"][0], result["left_centroid"][1], result["depth"]]
+            )
+        self.rock_detections_serialized[step] = out_list
+
+    def rock_projection_update(self, poses: list[np.ndarray], camera_config: dict) -> None:
+        """Update the geometric map with the projected rock detections based on trajectory of poses."""
+        for step, detections in self.rock_detections.items():
+            if step >= len(poses):
+                continue
+            pose = poses[step]
+            rock_points_world = project_depths_to_world(
+                detections, pose, "FrontLeft", camera_config
+            )
+            for point in rock_points_world:
+                self.g_map.set_rock(point[0], point[1], True)
+
+    def finalize_heights(self) -> None:
+        map_array = self.g_map.get_map_array()
+        if np.sum(map_array[..., 2] != -np.inf) == 0:
+            # No height values have been set
+            map_array[..., 2] = 0.0
+        else:
+            map_array[:] = interpolate_heights(map_array)
+
+    def get_map(self):
+        return self.g_map

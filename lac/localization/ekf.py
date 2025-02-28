@@ -1,12 +1,15 @@
 import numpy as np
 import copy
 
+from lac.util import pos_rpy_to_pose
 from lac.params import EKF_P0
 
 
 class EKF:
     """
     State: (x, y, z, vx, vy, vz, roll, pitch, yaw)
+
+    tidx=0 corresponds to initialization, successive tidxs are synced with agent step count
     """
 
     def __init__(self, x0, P0, store=False):
@@ -123,9 +126,7 @@ class EKF:
         self.smoothed = True
 
     def zero_velocity_update(self, tidx):
-        """
-        Zero velocity update
-        """
+        """Zero velocity and covariance cross terms"""
         self.x[3:6] = 0
         self.P[3:6, 3:6] = EKF_P0[3:6, 3:6]
         self.P[3:6, :3] = 0
@@ -136,9 +137,7 @@ class EKF:
         self.Phat_store[tidx] = self.P
 
     def get_results(self):
-        """
-        Convert the dictionary to array
-        """
+        """Convert the dictionary to array"""
         result = {
             "xhat": np.zeros((self.lent + 1, self.x.shape[0])),
             "Phat": np.zeros((self.lent + 1, self.P.shape[0], self.P.shape[1])),
@@ -154,6 +153,16 @@ class EKF:
                 result["Phat_smooth"][k] = self.Phat_store_smooth[k]
 
         return result
+
+    def get_smoothed_poses(self) -> list[np.ndarray]:
+        poses = []
+        for k in range(self.lent + 1):
+            poses.append(state_to_pose(self.xhat_store_smooth[k]))
+        return poses
+
+
+def state_to_pose(state):
+    return pos_rpy_to_pose(state[:3], state[-3:])
 
 
 def create_Q(dt, sigma_a, sigma_angle):
