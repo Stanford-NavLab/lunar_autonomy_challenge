@@ -58,7 +58,11 @@ class NavAgent(AutonomousAgent):
 
         """ Time"""
         self.time = 0
-
+        self.avoid_frames_remaining = 0
+        self.avoid_direction = 0
+        self.panic = False
+        self.panic_speed = 0
+        self.panic_angle = 0
 
         """ For teleop """
         self.current_v = 0
@@ -231,61 +235,79 @@ class NavAgent(AutonomousAgent):
         
 
         # Perception
-        steer_angle = 0
-        steer_speed = 0
         self.time += 1/20
         left_key = carla.SensorPosition.FrontLeft
         right_key = carla.SensorPosition.FrontRight
         FL_gray_left = input_data["Grayscale"][left_key]
         FL_gray_right = input_data["Grayscale"][right_key]
-        if FL_gray_left is not None:
-            
-            # Rectify stereo images
-            K_left, D_left = get_camera_intrinsics(self.sensors()[left_key])
-            K_right, D_right = get_camera_intrinsics(self.sensors()[right_key])   
-            M_left2right = get_extrinsic_left_to_right(self, left_key, right_key)
-            R_left2right, T_left2right = decompose_homogenous_transform(M_left2right)
-            left_rect, right_rect = stereo_rectify(FL_gray_left, FL_gray_right, K_left, D_left, K_right, D_right, R_left2right, T_left2right)
-
-            # Segmentation
-            cx_left, cy_left = segment_image(self, left_rect)
-            cx_right, cy_right = segment_image(self, right_rect)
+        if self.panic==False:
+            target_speed = self.TARGET_SPEED
+            target_angle = nominal_steering
+            if FL_gray_left is not None:
                 
-            if cx_left is not None and cx_right is not None:
-                # Rock coordinates in left camera frame
-                disparity = cx_left - cx_right
-                z_rock_left = K_left[0, 0] * abs(T_left2right[1]) / disparity
-                x_rock_left = z_rock_left * (cx_left - K_left[0, 2]) / K_left[0, 0]
-                y_rock_left = z_rock_left * (cy_left - K_left[1, 2]) / K_left[1, 1]
-                rock_coords_left = np.array([x_rock_left, y_rock_left, z_rock_left])
+                # Rectify stereo images
+                K_left, D_left = get_camera_intrinsics(self.sensors()[left_key])
+                K_right, D_right = get_camera_intrinsics(self.sensors()[right_key])   
+                M_left2right = get_extrinsic_left_to_right(self, left_key, right_key)
+                R_left2right, T_left2right = decompose_homogenous_transform(M_left2right)
+                left_rect, right_rect = stereo_rectify(FL_gray_left, FL_gray_right, K_left, D_left, K_right, D_right, R_left2right, T_left2right)
 
-                # Rock coordinates in rover frame
-                transform_left = self.get_camera_position(left_key)
-                rock_coords_rover = get_homogenous_transform(transform_left) @ np.concatenate((rock_coords_left, np.array([1])))
-                
-                print(f"Rock coordinates in rover frame: {rock_coords_rover}")
-                
-                Xr = rock_coords_rover[0]
-                Yr = rock_coords_rover[1]
-                Zr = rock_coords_rover[2]
+                # Segmentation
+                cx_left, cy_left = segment_image(self, left_rect)
+                cx_right, cy_right = segment_image(self, right_rect)
+                    
+                if cx_left is not None and cx_right is not None:
+                    # Rock coordinates in left camera frame
+                    disparity = cx_left - cx_right
+                    z_rock_left = K_left[0, 0] * abs(T_left2right[1]) / disparity
+                    x_rock_left = z_rock_left * (cx_left - K_left[0, 2]) / K_left[0, 0]
+                    y_rock_left = z_rock_left * (cy_left - K_left[1, 2]) / K_left[1, 1]
+                    rock_coords_left = np.array([x_rock_left, y_rock_left, z_rock_left])
 
-                distance = np.sqrt(Xr**2 + Yr**2 + Zr**2)
+                    # Rock coordinates in rover frame
+                    transform_left = self.get_camera_position(left_key)
+                    rock_coords_rover = get_homogenous_transform(transform_left) @ np.concatenate((rock_coords_left, np.array([1])))
+                    
+                    print(f"Rock coordinates in rover frame: {rock_coords_rover}")
+                    
+                    Xr = rock_coords_rover[0]
+                    Yr = rock_coords_rover[1]
+                    Zr = rock_coords_rover[2]
 
-                danger_zone = 4
-                if distance < danger_zone:
-                    print(f"Rock detected at {distance} meters")
-                    sign = -1 if Yr < 0 else +1
-                    k_avoid = 0.6
-                    steer_angle = k_avoid * (danger_zone - distance)**2
-                    steer_angle = steer_angle * sign
-                    steer_speed = -0.15
-        
+                    distance = np.sqrt(Xr**2 + Yr**2 + Zr**2)
+
+                    danger_zone = 4
+                    critical_distance = 1.0
+
+                    if distance < danger_zone:
+                        print(f"Rock detected at {distance} meters")
+                        sign = -1 if Yr < 0 else +1
+                        k_avoid = 0.6
+
+                       
+                        if distance < critical_distance:
+                            print("Panic mode")
+                            self.panic = True 
+                            self.avoid_frames_remaining = 20
+                            self.panic_speed = 0.1
+                            self.panic_angle = sign*np.pi/4
+                        else:
+                            target_speed -= 0.15
+                            target_angle += sign * k_avoid * (danger_zone - distance)**2
+
+        else:
+            self.avoid_frames_remaining -= 1
+            target_speed = self.panic_speed
+            target_angle = self.panic_angle
+            if self.avoid_frames_remaining <=0:
+                self.avoid_frames_remaining = 0
+                self.panic = False
 
         if self.TELEOP:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         else:
             control = carla.VehicleVelocityControl(
-                self.TARGET_SPEED + steer_speed, nominal_steering + steer_angle
+                target_speed, target_angle
             )
 
         # Data logging
