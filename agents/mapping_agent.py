@@ -12,6 +12,7 @@ import carla
 import cv2 as cv
 import numpy as np
 from pynput import keyboard
+import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
@@ -19,7 +20,6 @@ from lac.util import (
     pose_to_pos_rpy,
     transform_to_numpy,
     transform_to_pos_rpy,
-    pos_rpy_to_pose,
 )
 from lac.planning.planner import Planner
 from lac.perception.vision import FiducialLocalizer
@@ -27,6 +27,7 @@ from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
 from lac.localization.imu_dynamics import propagate_state
 from lac.control.controller import waypoint_steering
 from lac.mapping.mapper import Mapper
+from lac.utils.dashboard import Dashboard
 from lac.utils.visualization import overlay_tag_detections
 from lac.utils.data_logger import DataLogger
 import lac.params as params
@@ -38,7 +39,6 @@ USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
 TELEOP = False  # Whether to use teleop control or autonomous control
-UPDATE_LOG_INTERVAL = 100  # Update log file every N steps
 
 
 def get_entry_point():
@@ -107,14 +107,21 @@ class MappingAgent(AutonomousAgent):
         self.data_logger = DataLogger(self, agent_name, self.cameras)
         self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
 
+        self.dashboard = Dashboard()
+        self.dashboard.start(port=8050)
+        self.gt_poses = [initial_pose]
+
+        signal.signal(signal.SIGINT, self.handle_interrupt)
+
+    def handle_interrupt(self, signal_received, frame):
+        print("\nCtrl+C detected! Exiting mission")
+        self.mission_complete()
+
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
         return True
 
     def sensors(self):
-        """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
-        and also the initial activation state of each camera and light. Here we are activating the front left camera and light."""
-
         sensors = {}
         for cam, config in self.cameras.items():
             sensors[getattr(carla.SensorPosition, cam)] = {
@@ -141,6 +148,7 @@ class MappingAgent(AutonomousAgent):
         print("\nStep: ", self.step)
 
         ground_truth_pose = transform_to_numpy(self.get_transform())
+        self.gt_poses.append(ground_truth_pose)
 
         """ EKF predict step """
         imu_data = self.get_imu_data()
@@ -196,13 +204,21 @@ class MappingAgent(AutonomousAgent):
 
             self.data_logger.log_images(self.step, input_data)
 
-        if self.step % params.EKF_SMOOTHING_INTERVAL == 0:
-            self.ekf.smooth()
+        # if self.step % params.EKF_SMOOTHING_INTERVAL == 0:
+        self.ekf.smooth()
 
-        ekf_result = self.ekf.get_results()
-        ekf_state = ekf_result["xhat_smooth"][-1]
-        self.current_pose = pos_rpy_to_pose(ekf_state[:3], ekf_state[-3:])
-        print("Position error: ", np.linalg.norm(ekf_state[:3] - ground_truth_pose[:3, 3]))
+        # ekf_result = self.ekf.get_results()
+        # if self.step < params.EKF_SMOOTHING_INTERVAL:
+        #     ekf_state = ekf_result["xhat"][-1]
+        # else:
+        #     ekf_state = ekf_result["xhat_smooth"][-1]
+        # self.current_pose = pos_rpy_to_pose(ekf_state[:3], ekf_state[-3:])
+        # print("Position error: ", np.linalg.norm(ekf_state[:3] - ground_truth_pose[:3, 3]))
+        self.current_pose = self.ekf.get_pose(self.step)
+        position_error = np.linalg.norm(self.current_pose[:3, 3] - ground_truth_pose[:3, 3])
+        print("Position error: ", position_error)
+        self.dashboard.update_metric(position_error)
+        self.dashboard.update_pose_plot(self.gt_poses, self.ekf.get_smoothed_poses())
 
         if USE_GROUND_TRUTH_NAV:
             nav_pose = ground_truth_pose
@@ -210,7 +226,7 @@ class MappingAgent(AutonomousAgent):
             nav_pose = self.current_pose
 
         """ Waypoint navigation """
-        waypoint = self.planner.get_waypoint(nav_pose, print_progress=True)
+        waypoint, _ = self.planner.get_waypoint(nav_pose, print_progress=True)
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
@@ -229,14 +245,11 @@ class MappingAgent(AutonomousAgent):
                 if self.stop_reset_counter == 0:
                     self.ekf.zero_velocity_update(self.step)
             else:
+                print(params.TARGET_SPEED, nominal_steering)
                 control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
 
         """ Data logging """
         self.data_logger.log_data(self.step, control)
-        if self.step % UPDATE_LOG_INTERVAL == 0:
-            self.data_logger.save_log()
-            np.savez(self.ekf_result_file, **ekf_result)
-
         print("\n-----------------------------------------------")
 
         return control
@@ -247,6 +260,7 @@ class MappingAgent(AutonomousAgent):
         self.mapper.finalize_heights()
 
         self.data_logger.save_log()
+        np.savez(self.ekf_result_file, **self.ekf.get_results())
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""

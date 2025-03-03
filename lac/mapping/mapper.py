@@ -33,7 +33,6 @@ def interpolate_heights(height_array: np.ndarray) -> np.ndarray:
     x_known = height_array[..., 0][valid_mask]
     y_known = height_array[..., 1][valid_mask]
     z_known = height_array[..., 2][valid_mask]
-    print(np.sum(valid_mask))
 
     # Extract all (x, y) grid points
     x_all = height_array[..., 0].ravel()

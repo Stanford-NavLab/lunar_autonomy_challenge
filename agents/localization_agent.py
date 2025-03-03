@@ -12,6 +12,7 @@ import carla
 import cv2 as cv
 import numpy as np
 from pynput import keyboard
+import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
@@ -31,9 +32,10 @@ from lac.utils.data_logger import DataLogger
 import lac.params as params
 
 """ Agent parameters and settings """
+USE_FIDUCIALS = False
+
 DISPLAY_IMAGES = True  # Whether to display the camera views
 TELEOP = True  # Whether to use teleop control or autonomous control
-UPDATE_LOG_INTERVAL = 100  # Update log file every N steps
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 
 
@@ -66,13 +68,14 @@ class LocalizationAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
-        self.cameras["Right"] = {
-            "active": True,
-            "light": 1.0,
-            "width": 1280,
-            "height": 720,
-            "semantic": False,
-        }
+        if USE_FIDUCIALS:
+            self.cameras["Right"] = {
+                "active": True,
+                "light": 1.0,
+                "width": 1280,
+                "height": 720,
+                "semantic": False,
+            }
         self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
         """ Planner """
@@ -91,13 +94,19 @@ class LocalizationAgent(AutonomousAgent):
         self.current_pose = initial_pose
 
         """ Data logging """
-        run_name = get_entry_point()
-        self.data_logger = DataLogger(self, run_name, self.cameras)
-        self.ekf_result_file = f"output/{run_name}/ekf_result.npz"
+        agent_name = get_entry_point()
+        self.data_logger = DataLogger(self, agent_name, self.cameras)
+        self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
+
+        signal.signal(signal.SIGINT, self.handle_interrupt)
+
+    def handle_interrupt(self, signal_received, frame):
+        print("\nCtrl+C detected! Exiting mission")
+        self.mission_complete()
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
-        return True
+        return USE_FIDUCIALS
 
     def sensors(self):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
@@ -202,9 +211,9 @@ class LocalizationAgent(AutonomousAgent):
 
         # Data logging
         self.data_logger.log_data(self.step, control)
-        if self.step % UPDATE_LOG_INTERVAL == 0:
-            self.data_logger.save_log()
-            np.savez(self.ekf_result_file, **ekf_result)
+        # if self.step % UPDATE_LOG_INTERVAL == 0:
+        #     self.data_logger.save_log()
+        #     np.savez(self.ekf_result_file, **ekf_result)
 
         print("\n-----------------------------------------------")
 
@@ -212,6 +221,8 @@ class LocalizationAgent(AutonomousAgent):
 
     def finalize(self):
         print("Running finalize")
+        self.data_logger.save_log()
+        np.savez(self.ekf_result_file, **self.ekf.get_results())
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""

@@ -13,7 +13,7 @@ import cv2 as cv
 import numpy as np
 import json
 from PIL import Image
-from pynput import keyboard
+import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
@@ -21,7 +21,6 @@ from lac.util import (
     pose_to_pos_rpy,
     transform_to_numpy,
     transform_to_pos_rpy,
-    pos_rpy_to_pose,
 )
 from lac.perception.segmentation import Segmentation
 from lac.perception.depth import (
@@ -33,20 +32,32 @@ from lac.planning.planner import Planner
 from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
 from lac.localization.imu_dynamics import propagate_state
 from lac.mapping.mapper import Mapper
-from lac.utils.visualization import overlay_mask, draw_steering_arc, overlay_stereo_rock_depths
+from lac.utils.visualization import (
+    overlay_mask,
+    draw_steering_arc,
+    overlay_stereo_rock_depths,
+    overlay_tag_detections,
+)
 from lac.utils.data_logger import DataLogger
 import lac.params as params
 
-import signal
-import sys
 
 """ Agent parameters and settings """
-IMAGE_PROCESS_RATE = 10  # [Hz]
-USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
-
-DISPLAY_IMAGES = True  # Whether to display the camera views
-LOG_DATA = True  # Whether to log data
 EVAL = False  # Whether running in evaluation mode (disable ground truth)
+USE_FIDUCIALS = True
+
+TARGET_SPEED = 0.15  # [m/s]
+IMAGE_PROCESS_RATE = 10  # [Hz]
+EARLY_STOP_STEP = 3000  # Number of steps before stopping the mission (0 for no early stop)
+USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
+
+DISPLAY_IMAGES = False  # Whether to display the camera views
+LOG_DATA = True  # Whether to log data
+
+if EVAL:
+    USE_GROUND_TRUTH_NAV = False
+    DISPLAY_IMAGES = False
+    LOG_DATA = False
 
 
 def get_entry_point():
@@ -55,9 +66,6 @@ def get_entry_point():
 
 class NavAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
-        listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
-        listener.start()
-
         """Controller variables"""
         self.steer_delta = 0.0
 
@@ -83,13 +91,14 @@ class NavAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
-        self.cameras["Right"] = {
-            "active": True,
-            "light": 1.0,
-            "width": 1280,
-            "height": 720,
-            "semantic": False,
-        }
+        if USE_FIDUCIALS:
+            self.cameras["Right"] = {
+                "active": True,
+                "light": 1.0,
+                "width": 1280,
+                "height": 720,
+                "semantic": False,
+            }
         self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
         """ Rock mapping """
@@ -138,7 +147,7 @@ class NavAgent(AutonomousAgent):
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
-        return True
+        return USE_FIDUCIALS
 
     def sensors(self):
         sensors = {}
@@ -158,7 +167,12 @@ class NavAgent(AutonomousAgent):
         self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
         print("\nStep: ", self.step)
 
-        ground_truth_pose = transform_to_numpy(self.get_transform())
+        if EARLY_STOP_STEP != 0 and self.step >= EARLY_STOP_STEP:
+            self.mission_complete()
+            return carla.VehicleVelocityControl(0.0, 0.0)
+
+        if not EVAL:
+            ground_truth_pose = transform_to_numpy(self.get_transform())
 
         """ EKF predict step """
         imu_data = self.get_imu_data()
@@ -172,37 +186,47 @@ class NavAgent(AutonomousAgent):
 
         """ Image processing """
         if self.image_available():
-            images_gray = {}
-            fid_measurements = []
-            for cam in self.active_cameras:
-                images_gray[cam] = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
-                pose_measurements, detections = self.fid_localizer.estimate_rover_pose(
-                    images_gray[cam], cam, self.lander_pose
-                )
-                for pose in pose_measurements.values():
-                    meas = np.concatenate(pose_to_pos_rpy(pose))
-                    fid_measurements.append(meas)
+            if self.use_fiducials():
+                images_gray = {}
+                fid_measurements = []
+                for cam in self.active_cameras:
+                    images_gray[cam] = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
+                    pose_measurements, detections = self.fid_localizer.estimate_rover_pose(
+                        images_gray[cam], cam, self.lander_pose
+                    )
+                    for pose in pose_measurements.values():
+                        meas = np.concatenate(pose_to_pos_rpy(pose))
+                        fid_measurements.append(meas)
 
-            """ EKF update step """
-            n_meas = len(fid_measurements)
-            print("# measurements: ", n_meas)
-            fid_measurements = np.array(fid_measurements).flatten()
+                    if DISPLAY_IMAGES and cam == "Right":
+                        overlay = overlay_tag_detections(images_gray[cam], detections)
+                        cv.imshow(cam, overlay)
 
-            def meas_func(x):
-                return get_pose_measurement_tag(x, n_meas)
+                """ EKF update step """
+                n_meas = len(fid_measurements)
+                fid_measurements = np.array(fid_measurements).flatten()
 
-            self.ekf.update(self.step, fid_measurements, meas_func)
+                def meas_func(x):
+                    return get_pose_measurement_tag(x, n_meas)
+
+                self.ekf.update(self.step, fid_measurements, meas_func)
 
             if LOG_DATA:
                 self.data_logger.log_images(self.step, input_data)
 
-        if self.step % params.EKF_SMOOTHING_INTERVAL == 0:
-            self.ekf.smooth()
+        # if self.step % params.EKF_SMOOTHING_INTERVAL == 0:
+        #     self.ekf.smooth()
+        self.ekf.smooth()
 
-        ekf_result = self.ekf.get_results()
-        ekf_state = ekf_result["xhat_smooth"][-1]
-        self.current_pose = pos_rpy_to_pose(ekf_state[:3], ekf_state[-3:])
-        print("Position error: ", np.linalg.norm(ekf_state[:3] - ground_truth_pose[:3, 3]))
+        # ekf_result = self.ekf.get_results()
+        # ekf_state = ekf_result["xhat_smooth"][-1]
+        # self.current_pose = pos_rpy_to_pose(ekf_state[:3], ekf_state[-3:])
+        self.current_pose = self.ekf.get_pose(self.step)
+        if not EVAL:
+            print(
+                "Position error: ",
+                np.linalg.norm(self.current_pose[:3, 3] - ground_truth_pose[:3, 3]),
+            )
 
         if USE_GROUND_TRUTH_NAV:
             nav_pose = ground_truth_pose
@@ -247,11 +271,10 @@ class NavAgent(AutonomousAgent):
                 overlay = draw_steering_arc(
                     overlay, nominal_steering + self.steer_delta, color=(0, 255, 0)
                 )
-                # cv.imshow("Left camera view", FL_gray)
                 cv.imshow("Rock segmentation", overlay)
                 cv.waitKey(1)
 
-        target_speed = params.TARGET_SPEED
+        target_speed = TARGET_SPEED
         if self.steer_delta != 0:
             target_speed = 0.1
         control = carla.VehicleVelocityControl(target_speed, nominal_steering + self.steer_delta)
@@ -273,42 +296,6 @@ class NavAgent(AutonomousAgent):
         if LOG_DATA:
             self.data_logger.save_log()
             np.savez(self.ekf_result_file, **self.ekf.get_results())
-            # with open(self.rock_detections_file, "w") as f:
-            #     json.dump(self.mapper.rock_detections_serialized, f, indent=4)
 
-        """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
-        In this case, we should close the OpenCV window."""
-        cv.destroyAllWindows()
-
-    def on_press(self, key):
-        """This is the callback executed when a key is pressed. If the key pressed is either the up or down arrow, this method will add
-        or subtract target linear velocity. If the key pressed is either the left or right arrow, this method will set a target angular
-        velocity of 0.6 radians per second."""
-
-        if key == keyboard.Key.up:
-            self.current_v += 0.1
-            self.current_v = np.clip(self.current_v, 0, 0.3)
-        if key == keyboard.Key.down:
-            self.current_v -= 0.1
-            self.current_v = np.clip(self.current_v, -0.3, 0)
-        if key == keyboard.Key.left:
-            self.current_w = 0.6
-        if key == keyboard.Key.right:
-            self.current_w = -0.6
-
-    def on_release(self, key):
-        """This method sets the angular or linear velocity to zero when the arrow key is released. Stopping the robot."""
-
-        if key == keyboard.Key.up:
-            self.current_v = 0
-        if key == keyboard.Key.down:
-            self.current_v = 0
-        if key == keyboard.Key.left:
-            self.current_w = 0
-        if key == keyboard.Key.right:
-            self.current_w = 0
-
-        """ Press escape to end the mission. """
-        if key == keyboard.Key.esc:
-            self.mission_complete()
+        if DISPLAY_IMAGES:
             cv.destroyAllWindows()

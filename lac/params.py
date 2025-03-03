@@ -3,6 +3,7 @@
 import numpy as np
 import json
 import os
+from pathlib import Path
 
 
 LAC_BASE_PATH = (
@@ -26,7 +27,10 @@ MAX_IMG_HEIGHT = 2048
 
 """-------------------------------------- Data Structures --------------------------------------"""
 
-GEOMETRY_DICT = json.load(open(os.path.expanduser(LAC_BASE_PATH + "/docs/geometry.json")))
+# GEOMETRY_DICT = json.load(open(os.path.expanduser(LAC_BASE_PATH + "/docs/geometry.json")))
+current_file = Path(__file__)
+current_dir = current_file.parent
+GEOMETRY_DICT = json.load(open(current_dir / "../docs/geometry.json"))
 
 # These angles are listed clockwise (starting with 0 at lander +Y-axis)
 TAG_GROUP_BEARING_ANGLES = {

@@ -154,6 +154,13 @@ class EKF:
 
         return result
 
+    def get_pose(self, tidx) -> np.ndarray:
+        if self.smoothed:
+            # NOTE: only works for getting latest if smoothing is run every step
+            return state_to_pose(self.xhat_store_smooth[tidx])
+        else:
+            return state_to_pose(self.xhat_store[tidx])
+
     def get_smoothed_poses(self) -> list[np.ndarray]:
         poses = []
         for k in range(self.lent + 1):

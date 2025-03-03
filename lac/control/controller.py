@@ -67,17 +67,17 @@ def rock_avoidance_steering(depth_results: dict, cam_config: dict) -> float:
         return 0.0
 
     max_mask_area_idx = np.argmax(mask_areas)
-    print(f"Max mask area: {mask_areas[max_mask_area_idx]}")
     if mask_areas[max_mask_area_idx] < params.ROCK_MASK_AVOID_MIN_AREA:
         return 0.0
 
     rock_point = rock_points_rover_frame[max_mask_area_idx]
     distance = distances[max_mask_area_idx]
-    print(f"Rock distance: {distance}")
     if distance > ROCK_AVOID_DIST:
         return 0.0
     else:
-        steer_mag = min(params.MAX_STEER_DELTA, K_AVOID * (ROCK_AVOID_DIST - distance) ** 2)
+        MAX_STEER_DELTA = 0.8
+        steer_mag = min(MAX_STEER_DELTA, K_AVOID * (ROCK_AVOID_DIST - distance) ** 2)
+        # steer_mag = K_AVOID * (ROCK_AVOID_DIST - distance) ** 2
         return -np.sign(rock_point[1]) * steer_mag
 
 

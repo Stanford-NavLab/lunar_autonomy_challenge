@@ -12,13 +12,12 @@ import numpy as np
 import carla
 import cv2 as cv
 from pynput import keyboard
+import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.utils.data_logger import DataLogger
 import lac.params as params
-
-UPDATE_LOG_RATE = 100  # Update log file every 100 steps
 
 # Attributes for teleop sensitivity and max speed
 MAX_SPEED = 0.3
@@ -69,6 +68,12 @@ class DataCollectionAgent(AutonomousAgent):
         agent_name = get_entry_point()
         self.data_logger = DataLogger(self, agent_name, self.cameras)
 
+        signal.signal(signal.SIGINT, self.handle_interrupt)
+
+    def handle_interrupt(self, signal_received, frame):
+        print("\nCtrl+C detected! Exiting mission")
+        self.mission_complete()
+
     def use_fiducials(self):
         return True
 
@@ -110,8 +115,6 @@ class DataCollectionAgent(AutonomousAgent):
         control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         self.data_logger.log_data(self.step, control)
-        # if self.step % UPDATE_LOG_RATE == 0:
-        #     self.data_logger.save_log()
 
         return control
 
