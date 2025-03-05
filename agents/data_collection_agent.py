@@ -112,7 +112,16 @@ class DataCollectionAgent(AutonomousAgent):
             # cv.imshow("Right", R_img)
             cv.waitKey(1)
 
-        control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        if self.step >= 100:
+            V = 0.2
+            W = -0.5
+            control = carla.VehicleVelocityControl(V, W)
+        else:
+            control = carla.VehicleVelocityControl(0.0, 0.0)
+
+        if self.step >= 400:
+            self.mission_complete()
+        # control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         self.data_logger.log_data(self.step, control)
 

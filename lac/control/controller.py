@@ -4,8 +4,9 @@ import numpy as np
 import cv2 as cv
 
 from lac.perception.depth import project_pixel_to_rover
-from lac.util import mask_centroid, wrap_angle, pose_to_pos_rpy
 from lac.control.dynamics import arc
+from lac.utils.frames import invert_transform_mat
+from lac.util import mask_centroid, wrap_angle, pose_to_pos_rpy
 import lac.params as params
 
 
@@ -83,12 +84,12 @@ def rock_avoidance_steering(depth_results: dict, cam_config: dict) -> float:
 
 class ArcPlanner:
     def __init__(self):
-        NUM_OMEGAS = 5
+        NUM_OMEGAS = 10
         MAX_OMEGA = 2.0  # [rad/s]
         ARC_DURATION = 5.0  # [s]
         NUM_ARC_POINTS = int(ARC_DURATION / params.DT)
 
-        self.speeds = [0.05, 0.1, 0.15, 0.2]
+        self.speeds = [0.05, 0.1, 0.15, 0.2]  # [m/s]
         self.omegas = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS)
         self.candidate_arcs = []
         for v in self.speeds:
@@ -96,4 +97,8 @@ class ArcPlanner:
                 self.candidate_arcs.append(arc(np.zeros(3), [v, w], NUM_ARC_POINTS, params.DT))
 
     def plan_arc(self, waypoint: np.ndarray, current_pose: np.ndarray):
+        # Transform global waypoint to local frame
+        waypoint_local = np.array([waypoint[0], waypoint[1], 0.0, 1.0])
+        waypoint_local = invert_transform_mat(current_pose) @ waypoint_local
+
         pass

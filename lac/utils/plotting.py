@@ -54,6 +54,40 @@ def plot_points_rover_frame(points, fig=None, color="red", **kwargs):
     return fig
 
 
+def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, **kwargs):
+    """Plot points in the rover frame."""
+    if fig is None:
+        fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=path[:, 1],
+            y=path[:, 0],
+            mode="lines",
+            line=dict(color=color, width=linewidth),
+            **kwargs,
+        )
+    )
+    fig.update_layout(
+        xaxis=dict(
+            title="Y axis (Left)",
+            autorange="reversed",
+            zerolinewidth=3,
+            zerolinecolor="gray",
+            tickmode="linear",
+            dtick=1,  # Ensure uniform spacing
+        ),
+        yaxis=dict(
+            title="X axis (Forward)",
+            scaleanchor="x",
+            zerolinewidth=3,
+            zerolinecolor="gray",
+            tickmode="linear",
+            dtick=1,  # Ensure uniform spacing
+        ),
+    )
+    return fig
+
+
 ##### ------------------- 3D ------------------- #####
 
 
