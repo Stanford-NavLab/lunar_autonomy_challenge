@@ -19,6 +19,58 @@ def plot_heatmap(data, fig=None, colorscale="Viridis", no_axes=False):
         fig.update_layout(xaxis=dict(visible=False), yaxis=dict(visible=False))
     return fig
 
+def plot_rocks_rover_frame(rock_points, rock_radii, fig=None, color="red", **kwargs):
+    """Plot rocks with radii in the rover frame."""
+    if fig is None:
+        fig = go.Figure()
+    
+    # Scatter plot for rock centers
+    fig.add_trace(
+        go.Scatter(
+            x=rock_points[:, 1],
+            y=rock_points[:, 0],
+            mode="markers",
+            marker=dict(color=color, size=5),
+            name="Rock Centers",
+            **kwargs,
+        )
+    )
+    
+    # Scatter plot for rock radii
+    fig.add_trace(
+        go.Scatter(
+            x=rock_points[:, 1],
+            y=rock_points[:, 0],
+            mode="markers",
+            marker=dict(
+                color=color,
+                size=np.array(rock_radii) * 2,  # Scale appropriately for visualization
+                opacity=0.3
+            ),
+            name="Rock Radii"
+        )
+    )
+    
+    fig.update_layout(
+        xaxis=dict(
+            title="Y axis (Left)",
+            autorange="reversed",
+            zerolinewidth=3,
+            zerolinecolor="gray",
+            tickmode="linear",
+            dtick=1,  # Ensure uniform spacing
+        ),
+        yaxis=dict(
+            title="X axis (Forward)",
+            scaleanchor="x",
+            zerolinewidth=3,
+            zerolinecolor="gray",
+            tickmode="linear",
+            dtick=1,  # Ensure uniform spacing
+        ),
+        showlegend=True
+    )
+    return fig
 
 def plot_points_rover_frame(points, fig=None, color="red", **kwargs):
     """Plot points in the rover frame."""

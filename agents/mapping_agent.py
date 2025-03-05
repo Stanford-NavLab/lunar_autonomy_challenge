@@ -27,9 +27,9 @@ from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
 from lac.localization.imu_dynamics import propagate_state
 from lac.control.controller import waypoint_steering
 from lac.mapping.mapper import Mapper
-from lac.utils.dashboard import Dashboard
 from lac.utils.visualization import overlay_tag_detections
 from lac.utils.data_logger import DataLogger
+from lac.utils.rerun_interface import Rerun
 import lac.params as params
 
 """ Agent parameters and settings """
@@ -107,8 +107,9 @@ class MappingAgent(AutonomousAgent):
         self.data_logger = DataLogger(self, agent_name, self.cameras)
         self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
 
-        self.dashboard = Dashboard()
-        self.dashboard.start(port=8050)
+        Rerun.init_vo()
+        # self.dashboard = Dashboard()
+        # self.dashboard.start(port=8050)
         self.gt_poses = [initial_pose]
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
@@ -215,10 +216,19 @@ class MappingAgent(AutonomousAgent):
         # self.current_pose = pos_rpy_to_pose(ekf_state[:3], ekf_state[-3:])
         # print("Position error: ", np.linalg.norm(ekf_state[:3] - ground_truth_pose[:3, 3]))
         self.current_pose = self.ekf.get_pose(self.step)
-        position_error = np.linalg.norm(self.current_pose[:3, 3] - ground_truth_pose[:3, 3])
-        print("Position error: ", position_error)
-        self.dashboard.update_metric(position_error)
-        self.dashboard.update_pose_plot(self.gt_poses, self.ekf.get_smoothed_poses())
+        position_error = self.current_pose[:3, 3] - ground_truth_pose[:3, 3]
+        # print("Position error: ", position_error)
+        gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
+        ekf_trajectory = np.array([pose[:3, 3] for pose in self.ekf.get_smoothed_poses()])
+        Rerun.log_3d_trajectory(
+            self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255]
+        )
+        Rerun.log_3d_trajectory(
+            self.step, ekf_trajectory, trajectory_string="EKF", color=[255, 165, 0]
+        )
+        Rerun.log_2d_seq_scalar("trajectory_error/err_x", self.step, position_error[0])
+        Rerun.log_2d_seq_scalar("trajectory_error/err_y", self.step, position_error[1])
+        Rerun.log_2d_seq_scalar("trajectory_error/err_z", self.step, position_error[2])
 
         if USE_GROUND_TRUTH_NAV:
             nav_pose = ground_truth_pose
