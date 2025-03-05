@@ -63,7 +63,7 @@ class DataLogger:
             "imu": self.agent.get_imu_data().tolist(),
             "control": {"v": control.linear_target_velocity, "w": control.angular_target_velocity},
             "linear_speed": self.agent.get_linear_speed(),
-            "angular_speed": self.agent.get_linear_speed(),
+            "angular_speed": self.agent.get_angular_speed(),
         }
         self.frames.append(log_entry)
 

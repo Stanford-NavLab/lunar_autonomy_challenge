@@ -32,11 +32,11 @@ from lac.utils.data_logger import DataLogger
 import lac.params as params
 
 """ Agent parameters and settings """
-USE_FIDUCIALS = False
+USE_FIDUCIALS = True
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
-TELEOP = True  # Whether to use teleop control or autonomous control
-USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
+TELEOP = False  # Whether to use teleop control or autonomous control
+USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
 
 
 def get_entry_point():
@@ -198,7 +198,10 @@ class LocalizationAgent(AutonomousAgent):
             nav_pose = self.current_pose
 
         """ Waypoint navigation """
-        waypoint = self.planner.get_waypoint(nav_pose, print_progress=True)
+        waypoint, advanced = self.planner.get_waypoint(nav_pose, print_progress=True)
+        if advanced:
+            self.data_logger.save_log()
+            np.savez(self.ekf_result_file, **self.ekf.get_results())
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
