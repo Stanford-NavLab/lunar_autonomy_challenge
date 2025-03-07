@@ -95,11 +95,13 @@ class ArcPlanner:
         self.omegas = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS)
         self.root_arcs = []
         self.candidate_arcs = []
+        self.vw = []
         for v in self.speeds:
             for w in self.omegas:
                 new_arc = dubins_traj(np.zeros(3), [v, w], NUM_ARC_POINTS, params.DT)
                 self.root_arcs.append(new_arc)
                 self.candidate_arcs.append(new_arc)
+
 
         concatenated_arcs = []
         for root_arc in self.root_arcs:
@@ -111,9 +113,11 @@ class ArcPlanner:
                     new_arc = dubins_traj(last_state, [v, w], NUM_ARC_POINTS, params.DT)
                     # print(f"new_arc:{new_arc}")
                     concatenated_arcs.append(np.concatenate((root_arc, new_arc)))
+                    self.vw.append((v, w))
         
         self.candidate_arcs = concatenated_arcs
         self.np_candidate_arcs = np.array(self.candidate_arcs)
+
 
     def plan_arc(self, waypoint: np.ndarray, current_pose: np.ndarray, rock_coords: np.ndarray, rock_radii: list,  ):
         # Transform global waypoint to local frame
@@ -122,19 +126,17 @@ class ArcPlanner:
         # print(waypoint_local)
 
         path_costs = np.linalg.norm(self.np_candidate_arcs[:, -1, :2] - (waypoint_local[:2]), axis=1)
+        sorted_indices = np.argsort(path_costs)
         # print(path_costs)
-        for i, arc in enumerate(self.np_candidate_arcs[:, :, :2]):
+        for i in sorted_indices:
+            arc = self.np_candidate_arcs[i]
+            valid = True
             for j in range(len(arc)):
                 for rock, radius in zip(rock_coords, rock_radii):
                     if np.linalg.norm(arc[j][:2] - rock[:2]) <= radius:
-                        path_costs[i] += 1000  # Penalize paths that end inside rocks
+                        path_costs[i] += 1000
+                        valid = False
                         break
-
-         # Select the best path with minimal cost
-        best_path_index = np.argmin(path_costs)
-        return best_path_index, waypoint_local
-
-        
-
-        
-        
+            if valid:
+                return self.vw[i], arc, waypoint_local
+       
