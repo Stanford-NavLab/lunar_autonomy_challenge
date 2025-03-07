@@ -19,10 +19,20 @@ def plot_heatmap(data, fig=None, colorscale="Viridis", no_axes=False):
         fig.update_layout(xaxis=dict(visible=False), yaxis=dict(visible=False))
     return fig
 
-def plot_rocks_rover_frame(rock_points, rock_radii, fig=None, color="red", **kwargs):
+
+def plot_rocks_rover_frame(rock_points, rock_radii, waypoint = None, fig=None, color="red", **kwargs):
     """Plot rocks with radii in the rover frame."""
     if fig is None:
         fig = go.Figure()
+    
+    # Ensure inputs are NumPy arrays
+    rock_points = np.asarray(rock_points)[:,:2]
+    rock_radii = np.array(rock_radii, dtype=float)  # Convert to NumPy array explicitly
+    
+    if rock_points.shape[1] != 2:
+        raise ValueError("rock_points must be an (N, 2) array of (x, y) coordinates.")
+    if len(rock_radii) != rock_points.shape[0]:
+        raise ValueError("rock_radii must have the same length as rock_points.")
     
     # Scatter plot for rock centers
     fig.add_trace(
@@ -35,19 +45,50 @@ def plot_rocks_rover_frame(rock_points, rock_radii, fig=None, color="red", **kwa
             **kwargs,
         )
     )
-    
-    # Scatter plot for rock radii
+    if waypoint is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=[waypoint[1]],
+                y=[waypoint[0]],
+                mode="markers",
+                marker=dict(color="blue", size=10),
+                name="Waypoint",
+                **kwargs,
+            )
+        )
+
     fig.add_trace(
         go.Scatter(
             x=rock_points[:, 1],
             y=rock_points[:, 0],
             mode="markers",
-            marker=dict(
-                color=color,
-                size=np.array(rock_radii) * 2,  # Scale appropriately for visualization
-                opacity=0.3
-            ),
-            name="Rock Radii"
+            marker=dict(color=color, size=5),
+            name="Rock Centers",
+            **kwargs,
+        )
+    )
+    
+    # Create parametric circles for all rocks in a single trace
+    theta = np.linspace(0, 2 * np.pi, 100)
+    circle_x = np.cos(theta)
+    circle_y = np.sin(theta)
+    
+    all_x = []
+    all_y = []
+    for (x, y), r in zip(rock_points, rock_radii):
+        if r is not None:  # Ensure radius is valid
+            all_x.extend(x + r * circle_x)
+            all_y.extend(y + r * circle_y)
+            all_x.append(None)  # Break between circles
+            all_y.append(None)
+    
+    fig.add_trace(
+        go.Scatter(
+            x=all_y,  # Swapping x and y to match rover frame convention
+            y=all_x,
+            mode="lines",
+            line=dict(color=color, width=1),
+            name="Rock Boundaries"
         )
     )
     

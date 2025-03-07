@@ -1,10 +1,11 @@
 """Controller module for the LAC challenge."""
 
+from math import pi
 import numpy as np
 import cv2 as cv
 
 from lac.perception.depth import project_pixel_to_rover
-from lac.control.dynamics import arc
+from lac.control.dynamics import arc, dubins_traj
 from lac.utils.frames import invert_transform_mat
 from lac.util import mask_centroid, wrap_angle, pose_to_pos_rpy
 import lac.params as params
@@ -84,21 +85,56 @@ def rock_avoidance_steering(depth_results: dict, cam_config: dict) -> float:
 
 class ArcPlanner:
     def __init__(self):
-        NUM_OMEGAS = 10
-        MAX_OMEGA = 2.0  # [rad/s]
-        ARC_DURATION = 5.0  # [s]
+        NUM_OMEGAS = 5
+        MAX_OMEGA = 1  # [rad/s]
+        ARC_DURATION = 2.0  # [s]
         NUM_ARC_POINTS = int(ARC_DURATION / params.DT)
+        print(NUM_ARC_POINTS)
 
-        self.speeds = [0.05, 0.1, 0.15, 0.2]  # [m/s]
+        self.speeds = [0.2] #[0.05, 0.1, 0.15, 0.2]  # [m/s]
         self.omegas = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS)
+        self.root_arcs = []
         self.candidate_arcs = []
         for v in self.speeds:
             for w in self.omegas:
-                self.candidate_arcs.append(arc(np.zeros(3), [v, w], NUM_ARC_POINTS, params.DT))
+                new_arc = dubins_traj(np.zeros(3), [v, w], NUM_ARC_POINTS, params.DT)
+                self.root_arcs.append(new_arc)
+                self.candidate_arcs.append(new_arc)
 
-    def plan_arc(self, waypoint: np.ndarray, current_pose: np.ndarray):
+        concatenated_arcs = []
+        for root_arc in self.root_arcs:
+            last_state = root_arc[-1]  # Extract last state [x, y, theta]
+            # print(f"root arc :{root_arc}")
+
+            for v in self.speeds:
+                for w in self.omegas:
+                    new_arc = dubins_traj(last_state, [v, w], NUM_ARC_POINTS, params.DT)
+                    # print(f"new_arc:{new_arc}")
+                    concatenated_arcs.append(np.concatenate((root_arc, new_arc)))
+        
+        self.candidate_arcs = concatenated_arcs
+        self.np_candidate_arcs = np.array(self.candidate_arcs)
+
+    def plan_arc(self, waypoint: np.ndarray, current_pose: np.ndarray, rock_coords: np.ndarray, rock_radii: list,  ):
         # Transform global waypoint to local frame
         waypoint_local = np.array([waypoint[0], waypoint[1], 0.0, 1.0])
         waypoint_local = invert_transform_mat(current_pose) @ waypoint_local
+        # print(waypoint_local)
 
-        pass
+        path_costs = np.linalg.norm(self.np_candidate_arcs[:, -1, :2] - (waypoint_local[:2]), axis=1)
+        # print(path_costs)
+        for i, arc in enumerate(self.np_candidate_arcs[:, :, :2]):
+            for j in range(len(arc)):
+                for rock, radius in zip(rock_coords, rock_radii):
+                    if np.linalg.norm(arc[j][:2] - rock[:2]) <= radius:
+                        path_costs[i] += 1000  # Penalize paths that end inside rocks
+                        break
+
+         # Select the best path with minimal cost
+        best_path_index = np.argmin(path_costs)
+        return best_path_index, waypoint_local
+
+        
+
+        
+        
