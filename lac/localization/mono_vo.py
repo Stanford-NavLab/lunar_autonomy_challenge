@@ -56,7 +56,7 @@ class MonoVisualOdometry(object):
 
         self.poses = poses
 
-        self.process_frame()
+        # self.process_frame()
 
     def initialize_pose(self, R, t):
         """Used to initialize pose from first two frames"""
@@ -173,6 +173,13 @@ class MonoVisualOdometry(object):
         scale = np.linalg.norm(true_vect - prev_vect)
         return scale
 
+    def init_frame(self, id):
+        self.id = id
+        self.old_frame = cv2.imread(self.file_path + f"/{id - 2}.png", 0)
+        self.current_frame = cv2.imread(self.file_path + f"/{id}.png", 0)
+        self.visual_odometry()
+        self.id += 2
+
     def process_frame(self):
         """Processes images in sequence frame by frame"""
 
@@ -185,7 +192,7 @@ class MonoVisualOdometry(object):
             self.old_frame = self.current_frame
             self.current_frame = cv2.imread(self.file_path + f"/{self.id}.png", 0)
             self.visual_odometry()
-            self.id += 1
+            self.id += 2
         else:
             print("No more frames to process")
             return

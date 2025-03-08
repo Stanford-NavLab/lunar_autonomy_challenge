@@ -1,7 +1,7 @@
 """Factor Graph Optimization with SymForce
 
-Step -1 is initialization. Poses start at index -1
-The first run_step call starts at step 0. Odometry and measurements start at index 0.
+Step 0 is initialization. Poses start at index 1
+The first run_step call starts at step 1. Odometry and measurements start at index 1.
 
 """
 
@@ -15,12 +15,16 @@ from symforce.opt.optimizer import Optimizer
 
 from lac.localization.symforce_util import (
     odometry_residual,
+    bearing_residual,
+    imu_gyro_residual,
+    imu_accel_residual,
     make_pose,
     to_np_pose,
     copy_pose,
     flatten_list,
     odometry_lander_relpose_fgo,
 )
+from lac.params import DT, LUNAR_GRAVITY
 
 
 def get_poses_from_values(values):
@@ -42,6 +46,10 @@ class FactorGraph:
         self.values["identity_pose"] = sf.Pose3()
         self.values["odometry_sigma"] = sf.V6(odometry_sigma)
         self.values["fiducial_sigma"] = sf.V6(fiducial_sigma)
+        self.values["imu_accel_sigma"] = 1e-5
+        self.values["imu_gyro_sigma"] = 1e-5
+        self.values["gravity"] = sf.V3(LUNAR_GRAVITY)
+        self.values["dt"] = sf.numeric_epsilon
         self.values["epsilon"] = sf.numeric_epsilon
 
         self.num_poses = 0
@@ -74,6 +82,38 @@ class FactorGraph:
                     f"odometry_{i}",
                     "odometry_sigma",
                     "epsilon",
+                ],
+            )
+        )
+
+    def add_gyro_factor(self, i: int, angvel: np.ndarray):
+        self.values[f"angvel_{i}"] = sf.V3(angvel)
+        self.factors[i].append(
+            Factor(
+                residual=imu_gyro_residual,
+                keys=[
+                    f"pose_{i}",
+                    f"pose_{i - 1}",
+                    f"angvel_{i}",
+                    "dt",
+                    "imu_gyro_sigma",
+                ],
+            )
+        )
+
+    def add_accel_factor(self, i: int, accel: np.ndarray):
+        self.values[f"accel_{i}"] = sf.V3(accel)
+        self.factors[i].append(
+            Factor(
+                residual=imu_accel_residual,
+                keys=[
+                    f"pose_{i}",
+                    f"pose_{i - 1}",
+                    f"pose_{i - 2}",
+                    f"accel_{i}",
+                    "gravity",
+                    "dt",
+                    "imu_accel_sigma",
                 ],
             )
         )

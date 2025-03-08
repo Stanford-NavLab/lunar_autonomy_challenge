@@ -29,20 +29,39 @@ def odometry_residual(
     return T.cast(sf.V6, sf.M.diag(diagonal_sigmas.to_flat_list()).inv() * sf.V6(tangent_error))
 
 
-def local_odometry_residual(
-    world_T_a: sf.Pose3,
-    world_T_b: sf.Pose3,
-    R_a_b: sf.Rot3,
-    t_a_b: sf.Vector3,
-    diagonal_sigmas: sf.V6,
-    epsilon: sf.Scalar,
-) -> sf.V6:
+def imu_gyro_residual(
+    T_curr: sf.Pose3,
+    T_prev: sf.Pose3,
+    angvel: sf.V3,
+    dt: float,
+    sigma: float,
+) -> sf.V3:
     """
-    Residual on the relative pose between two timesteps of the robot.
-    Rotation and translation are in the local robot frame.
+    Angular velocity constraint on 2 consecutive poses based on IMU equations.
     """
-    a_T_b_predicted = world_T_a.inverse() * world_T_b
-    a_T_b = sf.Pose3(R=R_a_b, t=t_a_b)
+    R_curr = T_curr.R.to_rotation_matrix()
+    R_prev = T_prev.R.to_rotation_matrix()
+    rotmat_der = (R_curr - R_prev) / dt
+    angvel_mat = rotmat_der * R_curr.T
+    expected_angvel = sf.V3(angvel_mat[2, 1], angvel_mat[0, 2], angvel_mat[1, 0])
+    return sf.V3(angvel - expected_angvel) / sigma
+
+
+def imu_accel_residual(
+    T_curr: sf.Pose3,
+    T_prev: sf.Pose3,
+    T_prev_prev: sf.Pose3,
+    accel: sf.V3,
+    gravity: sf.V3,
+    dt: float,
+    sigma: float,
+) -> sf.V3:
+    """
+    Acceleration constraint on 3 consecutive poses based on IMU equations.
+    """
+    expected_accel = (T_curr.t + T_prev_prev.t - 2.0 * T_prev.t) / dt**2.0 + gravity
+    expected_accel = T_curr.R.inverse() * expected_accel
+    return sf.V3(accel - expected_accel) / sigma
 
 
 def bearing_residual(
