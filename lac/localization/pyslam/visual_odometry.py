@@ -5,8 +5,6 @@ import cv2 as cv
 
 from lac.params import IMG_FOV_RAD
 
-"""Pinhole camera with square pixels"""
-
 
 class Camera:
     def __init__(self, width, height):
