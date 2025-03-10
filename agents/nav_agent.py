@@ -49,9 +49,9 @@ USE_FIDUCIALS = True
 TARGET_SPEED = 0.15  # [m/s]
 IMAGE_PROCESS_RATE = 10  # [Hz]
 EARLY_STOP_STEP = 3000  # Number of steps before stopping the mission (0 for no early stop)
-USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
+USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
 
-DISPLAY_IMAGES = False  # Whether to display the camera views
+DISPLAY_IMAGES = True  # Whether to display the camera views
 LOG_DATA = True  # Whether to log data
 
 if EVAL:
@@ -265,7 +265,7 @@ class NavAgent(AutonomousAgent):
             self.steer_delta = rock_avoidance_steering(stereo_depth_results, self.cameras)
 
             if DISPLAY_IMAGES:
-                overlay = overlay_mask(FL_gray, left_seg_full_mask)
+                overlay = overlay_mask(FL_gray, left_seg_full_mask, color=(0, 0, 1))
                 overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
                 overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
                 overlay = draw_steering_arc(
