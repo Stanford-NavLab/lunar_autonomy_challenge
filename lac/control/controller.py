@@ -84,14 +84,15 @@ def rock_avoidance_steering(depth_results: dict, cam_config: dict) -> float:
 
 
 class ArcPlanner:
+    """Arc planner"""
+
     def __init__(self):
         NUM_OMEGAS = 5
         MAX_OMEGA = 1  # [rad/s]
         ARC_DURATION = 2.0  # [s]
         NUM_ARC_POINTS = int(ARC_DURATION / params.DT)
-        print(NUM_ARC_POINTS)
 
-        self.speeds = [0.2] #[0.05, 0.1, 0.15, 0.2]  # [m/s]
+        self.speeds = [0.2]  # [0.05, 0.1, 0.15, 0.2]  # [m/s]
         self.omegas = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS)
         self.root_arcs = []
         self.candidate_arcs = []
@@ -101,7 +102,6 @@ class ArcPlanner:
                 new_arc = dubins_traj(np.zeros(3), [v, w], NUM_ARC_POINTS, params.DT)
                 self.root_arcs.append(new_arc)
                 self.candidate_arcs.append(new_arc)
-
 
         concatenated_arcs = []
         for root_arc in self.root_arcs:
@@ -114,18 +114,32 @@ class ArcPlanner:
                     # print(f"new_arc:{new_arc}")
                     concatenated_arcs.append(np.concatenate((root_arc, new_arc)))
                     self.vw.append((v, w))
-        
+
         self.candidate_arcs = concatenated_arcs
         self.np_candidate_arcs = np.array(self.candidate_arcs)
 
+    def plan_arc(
+        self,
+        waypoint: np.ndarray,
+        current_pose: np.ndarray,
+        rock_coords: np.ndarray,
+        rock_radii: list,
+    ):
+        """Plan an arc to a waypoint while avoiding rocks
 
-    def plan_arc(self, waypoint: np.ndarray, current_pose: np.ndarray, rock_coords: np.ndarray, rock_radii: list,  ):
+        Given rock coordinates and radii in rover local frame, select the path with lowest cost
+        (distance to waypoint) that also avoids rocks.
+
+        """
         # Transform global waypoint to local frame
         waypoint_local = np.array([waypoint[0], waypoint[1], 0.0, 1.0])
         waypoint_local = invert_transform_mat(current_pose) @ waypoint_local
         # print(waypoint_local)
 
-        path_costs = np.linalg.norm(self.np_candidate_arcs[:, -1, :2] - (waypoint_local[:2]), axis=1)
+        # Distance to waypoint cost
+        path_costs = np.linalg.norm(
+            self.np_candidate_arcs[:, -1, :2] - (waypoint_local[:2]), axis=1
+        )
         sorted_indices = np.argsort(path_costs)
         # print(path_costs)
         for i in sorted_indices:
@@ -139,4 +153,5 @@ class ArcPlanner:
                         break
             if valid:
                 return self.vw[i], arc, waypoint_local
-       
+
+        # TODO: handle case if no paths are valid

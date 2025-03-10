@@ -70,6 +70,54 @@ def stereo_depth_from_segmentation(left_seg_masks, right_seg_masks, baseline, fo
     return results
 
 
+def compute_rock_coords_rover_frame(stereo_depth_results, cam_name, cam_config):
+    """
+    stereo_depth_results : list - List of dictionaries containing stereo depth results
+    cam_name : str - Name of the camera
+    cam_config : dict - Camera configuration dictionary
+
+    Returns:
+    list - List of rock points in the rover frame
+    """
+    rock_coords_rover_frame = []
+    for result in stereo_depth_results:
+        rock_point_rover_frame = project_pixel_to_rover(
+            result["left_centroid"], result["depth"], cam_name, cam_config
+        )
+        rock_coords_rover_frame.append(rock_point_rover_frame)
+    return rock_coords_rover_frame
+
+
+def compute_rock_radii(stereo_depth_results):
+    """
+    Computes radii of detected rocks based on depth and bounding box width.
+
+    Args:
+        results (list): A list of dictionaries containing rock detection masks and depth values.
+        params (object): An object containing camera parameters, specifically `FL_X` (focal length in pixels).
+
+    Returns:
+        list: A list of tuples [(x, y, radius), ...] representing the coordinates and estimated radius of each rock.
+    """
+    rock_radii = []
+
+    for result in stereo_depth_results:
+        if "left_mask" not in result or "depth" not in result:
+            print("WARNING: Required keys missing in stereo depth results !!!!!!!!!!!!!!!!!!!!!!")
+            continue  # Skip if required keys are missing
+
+        # Convert mask to uint8 and get bounding box
+        mask_uint8 = result["left_mask"].astype(np.uint8)
+        x, y, w, h = cv2.boundingRect(mask_uint8)
+
+        # Compute real-world width and radius using depth and focal length
+        width_real = w * result["depth"] / params.FL_X
+        radius_real = width_real / 2  # Approximate the radius
+
+        rock_radii.append(radius_real)
+    return rock_radii
+
+
 def project_depths_to_world(
     depth_results: list, rover_pose: np.ndarray, cam_name: str, cam_config: dict
 ) -> list:

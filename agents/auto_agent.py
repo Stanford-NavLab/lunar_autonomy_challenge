@@ -25,15 +25,15 @@ from lac.util import (
 from lac.perception.segmentation import Segmentation
 from lac.perception.depth import (
     stereo_depth_from_segmentation,
+    compute_rock_coords_rover_frame,
+    compute_rock_radii,
 )
-from lac.control.controller import waypoint_steering, rock_avoidance_steering
+from lac.control.controller import waypoint_steering, ArcPlanner
 from lac.planning.planner import Planner
-from lac.localization.imu_dynamics import propagate_state
 from lac.utils.visualization import (
     overlay_mask,
     draw_steering_arc,
     overlay_stereo_rock_depths,
-    overlay_tag_detections,
 )
 from lac.utils.data_logger import DataLogger
 import lac.params as params
@@ -42,10 +42,9 @@ import lac.params as params
 """ Agent parameters and settings """
 TARGET_SPEED = 0.15  # [m/s]
 IMAGE_PROCESS_RATE = 10  # [Hz]
-EARLY_STOP_STEP = 3000  # Number of steps before stopping the mission (0 for no early stop)
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 
-DISPLAY_IMAGES = False  # Whether to display the camera views
+DISPLAY_IMAGES = True  # Whether to display the camera views
 LOG_DATA = True  # Whether to log data
 
 
@@ -90,6 +89,7 @@ class AutoAgent(AutonomousAgent):
 
         """ Path planner """
         # TODO: initialize ArcPlanner
+        self.arc_planner = ArcPlanner()
 
         """ Data logging """
         if LOG_DATA:
@@ -161,21 +161,29 @@ class AutoAgent(AutonomousAgent):
             stereo_depth_results = stereo_depth_from_segmentation(
                 left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
             )
+            rock_coords = compute_rock_coords_rover_frame(
+                stereo_depth_results, "FrontLeft", self.cameras
+            )
+            rock_radii = compute_rock_radii(stereo_depth_results)
 
             # Path planning
             # TODO: set self.current_v and self.current_w based on output of Arc Planner
+            control, path, waypoint_local = self.arc_planner.plan_arc(
+                waypoint, nav_pose, rock_coords, rock_radii
+            )
+            self.current_v, self.current_w = control
+            print(f"Control: linear = {self.current_v}, angular = {self.current_w}")
+            print(f"Waypoint_local: {waypoint_local}")
 
             if DISPLAY_IMAGES:
                 overlay = overlay_mask(FL_gray, left_seg_full_mask)
-                overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
+                overlay = draw_steering_arc(overlay, self.current_w, color=(255, 0, 0))
                 overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
-                overlay = draw_steering_arc(
-                    overlay, nominal_steering + self.steer_delta, color=(0, 255, 0)
-                )
                 cv.imshow("Rock segmentation", overlay)
                 cv.waitKey(1)
 
         control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        # control = carla.VehicleVelocityControl(0.2, nominal_steering)
 
         """ Data logging """
         if LOG_DATA:
