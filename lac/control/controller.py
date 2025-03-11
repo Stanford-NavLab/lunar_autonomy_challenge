@@ -108,12 +108,11 @@ class ArcPlanner:
         concatenated_arcs = []
         for count, root_arc in enumerate(self.root_arcs):
             last_state = root_arc[-1]  # Extract last state [x, y, theta]
-            # print(f"root arc :{root_arc}")
+
 
             for v in self.speeds:
                 for w in self.omegas:
                     new_arc = dubins_traj(last_state, [v, w], NUM_ARC_POINTS, params.DT)
-                    # print(f"new_arc:{new_arc}")
                     concatenated_arcs.append(np.concatenate((root_arc, new_arc)))
                     self.vw.append(self.root_vw[count])
  
