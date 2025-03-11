@@ -91,20 +91,22 @@ class ArcPlanner:
         MAX_OMEGA = 1  # [rad/s]
         ARC_DURATION = 2.0  # [s]
         NUM_ARC_POINTS = int(ARC_DURATION / params.DT)
-
         self.speeds = [0.2]  # [0.05, 0.1, 0.15, 0.2]  # [m/s]
         self.omegas = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS)
         self.root_arcs = []
         self.candidate_arcs = []
+        self.root_vw = []
         self.vw = []
         for v in self.speeds:
             for w in self.omegas:
                 new_arc = dubins_traj(np.zeros(3), [v, w], NUM_ARC_POINTS, params.DT)
                 self.root_arcs.append(new_arc)
                 self.candidate_arcs.append(new_arc)
+                self.root_vw.append((v, w))
+
 
         concatenated_arcs = []
-        for root_arc in self.root_arcs:
+        for count, root_arc in enumerate(self.root_arcs):
             last_state = root_arc[-1]  # Extract last state [x, y, theta]
             # print(f"root arc :{root_arc}")
 
@@ -113,7 +115,8 @@ class ArcPlanner:
                     new_arc = dubins_traj(last_state, [v, w], NUM_ARC_POINTS, params.DT)
                     # print(f"new_arc:{new_arc}")
                     concatenated_arcs.append(np.concatenate((root_arc, new_arc)))
-                    self.vw.append((v, w))
+                    self.vw.append(self.root_vw[count])
+ 
 
         self.candidate_arcs = concatenated_arcs
         self.np_candidate_arcs = np.array(self.candidate_arcs)
@@ -134,14 +137,15 @@ class ArcPlanner:
         # Transform global waypoint to local frame
         waypoint_local = np.array([waypoint[0], waypoint[1], 0.0, 1.0])
         waypoint_local = invert_transform_mat(current_pose) @ waypoint_local
-        # print(waypoint_local)
 
         # Distance to waypoint cost
         path_costs = np.linalg.norm(
             self.np_candidate_arcs[:, -1, :2] - (waypoint_local[:2]), axis=1
         )
+
         sorted_indices = np.argsort(path_costs)
-        # print(path_costs)
+
+        
         for i in sorted_indices:
             arc = self.np_candidate_arcs[i]
             valid = True

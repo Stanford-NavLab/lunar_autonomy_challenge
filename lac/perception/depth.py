@@ -102,10 +102,6 @@ def compute_rock_radii(stereo_depth_results):
     rock_radii = []
 
     for result in stereo_depth_results:
-        if "left_mask" not in result or "depth" not in result:
-            print("WARNING: Required keys missing in stereo depth results !!!!!!!!!!!!!!!!!!!!!!")
-            continue  # Skip if required keys are missing
-
         # Convert mask to uint8 and get bounding box
         mask_uint8 = result["left_mask"].astype(np.uint8)
         x, y, w, h = cv2.boundingRect(mask_uint8)
