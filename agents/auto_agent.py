@@ -146,17 +146,17 @@ class AutoAgent(AutonomousAgent):
         nominal_steering = waypoint_steering(waypoint, nav_pose)
 
         # TODO: version of planning without rock avoidance
-        rock_coords = []
-        rock_radii = []
-        control, path, waypoint_local = self.arc_planner.plan_arc(
-                waypoint, nav_pose, rock_coords, rock_radii
-            )
-        self.current_v, self.current_w = control
-        if self.image_available():
-            FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-            overlay = draw_steering_arc(FL_gray, self.current_w, color=(255, 0, 0))
-            cv.imshow("Rock segmentation", overlay)
-            cv.waitKey(1)
+        # rock_coords = []
+        # rock_radii = []
+        # control, path, waypoint_local = self.arc_planner.plan_arc(
+        #         waypoint, nav_pose, rock_coords, rock_radii
+        #     )
+        # self.current_v, self.current_w = control
+        # if self.image_available():
+        #     FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+        #     overlay = draw_steering_arc(FL_gray, self.current_w, color=(255, 0, 0))
+        #     cv.imshow("Rock segmentation", overlay)
+        #     cv.waitKey(1)
 
 
         """ Rock segmentation """
@@ -192,7 +192,7 @@ class AutoAgent(AutonomousAgent):
                 self.data_logger.log_images(self.step, input_data)
 
             if DISPLAY_IMAGES:
-                overlay = overlay_mask(FL_gray, left_seg_full_mask, color=(0, 0, 255))
+                overlay = overlay_mask(FL_gray, left_seg_full_mask, color=(0, 0, 1))
                 overlay = draw_steering_arc(overlay, self.current_w, color=(255, 0, 0))
                 overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
                 cv.imshow("Rock segmentation", overlay)
