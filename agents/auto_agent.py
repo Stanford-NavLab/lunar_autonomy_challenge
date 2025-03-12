@@ -42,7 +42,6 @@ import lac.params as params
 """ Agent parameters and settings """
 TARGET_SPEED = 0.15  # [m/s]
 IMAGE_PROCESS_RATE = 10  # [Hz]
-USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
 LOG_DATA = True  # Whether to log data
@@ -130,7 +129,7 @@ class AutoAgent(AutonomousAgent):
             }
         return sensors
 
-    def run_step(self, input_data):
+    def run_step(self, input_data):  # This runs at 20 Hz
         if self.step == 0:
             self.initialize()
         self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
@@ -146,8 +145,22 @@ class AutoAgent(AutonomousAgent):
             return carla.VehicleVelocityControl(0.0, 0.0)
         nominal_steering = waypoint_steering(waypoint, nav_pose)
 
+        # TODO: version of planning without rock avoidance
+        rock_coords = []
+        rock_radii = []
+        control, path, waypoint_local = self.arc_planner.plan_arc(
+                waypoint, nav_pose, rock_coords, rock_radii
+            )
+        self.current_v, self.current_w = control
+        if self.image_available():
+            FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+            overlay = draw_steering_arc(FL_gray, self.current_w, color=(255, 0, 0))
+            cv.imshow("Rock segmentation", overlay)
+            cv.waitKey(1)
+
+
         """ Rock segmentation """
-        if self.step % (params.FRAME_RATE // IMAGE_PROCESS_RATE) == 0:
+        if self.step % (params.FRAME_RATE // IMAGE_PROCESS_RATE) == 0:  # This runs at 1 Hz
             FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
             FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
             FL_rgb_PIL = Image.fromarray(FL_gray).convert("RGB")
@@ -175,8 +188,11 @@ class AutoAgent(AutonomousAgent):
             print(f"Control: linear = {self.current_v}, angular = {self.current_w}")
             print(f"Waypoint_local: {waypoint_local}")
 
+            if LOG_DATA:
+                self.data_logger.log_images(self.step, input_data)
+
             if DISPLAY_IMAGES:
-                overlay = overlay_mask(FL_gray, left_seg_full_mask)
+                overlay = overlay_mask(FL_gray, left_seg_full_mask, color=(0, 0, 255))
                 overlay = draw_steering_arc(overlay, self.current_w, color=(255, 0, 0))
                 overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
                 cv.imshow("Rock segmentation", overlay)

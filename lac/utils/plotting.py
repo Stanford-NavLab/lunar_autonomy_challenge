@@ -150,7 +150,7 @@ def plot_points_rover_frame(points, fig=None, color="red", **kwargs):
     return fig
 
 
-def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, **kwargs):
+def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, waypoint = None, **kwargs):
     """Plot points in the rover frame."""
     if fig is None:
         fig = go.Figure()
@@ -163,6 +163,18 @@ def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, **kwargs):
             **kwargs,
         )
     )
+    if waypoint is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=[waypoint[1]],
+                y=[waypoint[0]],
+                mode="markers",
+                marker=dict(color="blue", size=10),
+                name="Waypoint",
+                **kwargs,
+            )
+        )
+
     fig.update_layout(
         xaxis=dict(
             title="Y axis (Left)",
