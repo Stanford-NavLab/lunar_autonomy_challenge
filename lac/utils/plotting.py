@@ -5,6 +5,8 @@ import typing as T
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 ##### ------------------- 2D ------------------- #####
 
@@ -20,20 +22,20 @@ def plot_heatmap(data, fig=None, colorscale="Viridis", no_axes=False):
     return fig
 
 
-def plot_rocks_rover_frame(rock_points, rock_radii, waypoint = None, fig=None, color="red", **kwargs):
+def plot_rocks_rover_frame(rock_points, rock_radii, waypoint=None, fig=None, color="red", **kwargs):
     """Plot rocks with radii in the rover frame."""
     if fig is None:
         fig = go.Figure()
-    
+
     # Ensure inputs are NumPy arrays
-    rock_points = np.asarray(rock_points)[:,:2]
+    rock_points = np.asarray(rock_points)[:, :2]
     rock_radii = np.array(rock_radii, dtype=float)  # Convert to NumPy array explicitly
-    
+
     if rock_points.shape[1] != 2:
         raise ValueError("rock_points must be an (N, 2) array of (x, y) coordinates.")
     if len(rock_radii) != rock_points.shape[0]:
         raise ValueError("rock_radii must have the same length as rock_points.")
-    
+
     # Scatter plot for rock centers
     fig.add_trace(
         go.Scatter(
@@ -67,12 +69,12 @@ def plot_rocks_rover_frame(rock_points, rock_radii, waypoint = None, fig=None, c
             **kwargs,
         )
     )
-    
+
     # Create parametric circles for all rocks in a single trace
     theta = np.linspace(0, 2 * np.pi, 100)
     circle_x = np.cos(theta)
     circle_y = np.sin(theta)
-    
+
     all_x = []
     all_y = []
     for (x, y), r in zip(rock_points, rock_radii):
@@ -81,17 +83,17 @@ def plot_rocks_rover_frame(rock_points, rock_radii, waypoint = None, fig=None, c
             all_y.extend(y + r * circle_y)
             all_x.append(None)  # Break between circles
             all_y.append(None)
-    
+
     fig.add_trace(
         go.Scatter(
             x=all_y,  # Swapping x and y to match rover frame convention
             y=all_x,
             mode="lines",
             line=dict(color=color, width=1),
-            name="Rock Boundaries"
+            name="Rock Boundaries",
         )
     )
-    
+
     fig.update_layout(
         xaxis=dict(
             title="Y axis (Left)",
@@ -109,9 +111,10 @@ def plot_rocks_rover_frame(rock_points, rock_radii, waypoint = None, fig=None, c
             tickmode="linear",
             dtick=1,  # Ensure uniform spacing
         ),
-        showlegend=True
+        showlegend=True,
     )
     return fig
+
 
 def plot_points_rover_frame(points, fig=None, color="red", **kwargs):
     """Plot points in the rover frame."""
@@ -434,3 +437,41 @@ def plot_reference_frames(poses: T.List[np.ndarray], pose_names: T.List[str]) ->
 
     fig_poses.update_layout(height=700, width=1200, scene_aspectmode="data")
     return fig_poses
+
+
+def plot_mesh_vertices_edges(mesh, title="Mesh Visualization"):
+    """
+    Plots the vertices and edges of a PyTorch3D mesh using Matplotlib.
+
+    Args:
+        mesh: A PyTorch3D Meshes object.
+        title: Title of the plot.
+    """
+    verts = mesh.verts_packed().clone().detach().cpu().numpy()  # Extract vertex positions
+    faces = mesh.faces_packed().clone().detach().cpu().numpy()  # Extract face indices
+
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(111, projection="3d")
+
+    # Plot vertices
+    ax.scatter(verts[:, 0], verts[:, 1], verts[:, 2], color="red", s=10, label="Vertices")
+
+    # Create edges from face indices
+    edges = set()
+    for face in faces:
+        for i in range(3):
+            edge = tuple(sorted((face[i], face[(i + 1) % 3])))  # Ensure unique edges
+            edges.add(edge)
+
+    edge_lines = [[verts[i], verts[j]] for i, j in edges]
+
+    # Plot edges
+    ax.add_collection3d(Line3DCollection(edge_lines, colors="black", linewidths=0.5))
+
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+    # ax.set_title(title)
+    # plt.axis("equal")
+    plt.show()
+    return fig
