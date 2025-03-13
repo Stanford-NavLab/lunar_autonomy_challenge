@@ -24,7 +24,7 @@ class Planner:
     def get_waypoint(self, pose: np.ndarray, print_progress: bool = False) -> np.ndarray | None:
         """Get the next waypoint for the agent to follow.
 
-        Returns None if all waypoints have been reached.
+        Returns None if all waypoints have been reached. TODO: handle this better
 
         """
         advanced = False
@@ -34,7 +34,7 @@ class Planner:
             self.waypoint_idx += 1
             if self.waypoint_idx >= len(self.waypoints):
                 self.waypoint_idx = 0
-                return None
+                return self.waypoints[self.waypoint_idx], True
             waypoint = self.waypoints[self.waypoint_idx]
             advanced = True
         if print_progress:

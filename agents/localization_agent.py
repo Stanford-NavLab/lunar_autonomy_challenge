@@ -32,7 +32,7 @@ from lac.utils.data_logger import DataLogger
 import lac.params as params
 
 """ Agent parameters and settings """
-USE_FIDUCIALS = True
+USE_FIDUCIALS = False
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
 TELEOP = False  # Whether to use teleop control or autonomous control
@@ -63,7 +63,7 @@ class LocalizationAgent(AutonomousAgent):
         self.cameras = params.CAMERA_CONFIG_INIT
         self.cameras["FrontLeft"] = {
             "active": True,
-            "light": 1.0,
+            "light": 0.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
@@ -71,7 +71,7 @@ class LocalizationAgent(AutonomousAgent):
         if USE_FIDUCIALS:
             self.cameras["Right"] = {
                 "active": True,
-                "light": 1.0,
+                "light": 0.0,
                 "width": 1280,
                 "height": 720,
                 "semantic": False,
@@ -199,12 +199,12 @@ class LocalizationAgent(AutonomousAgent):
 
         """ Waypoint navigation """
         waypoint, advanced = self.planner.get_waypoint(nav_pose, print_progress=True)
-        if advanced:
-            self.data_logger.save_log()
-            np.savez(self.ekf_result_file, **self.ekf.get_results())
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
+        if advanced:
+            self.data_logger.save_log()
+            np.savez(self.ekf_result_file, **self.ekf.get_results())
         nominal_steering = waypoint_steering(waypoint, nav_pose)
 
         if TELEOP:
@@ -214,9 +214,6 @@ class LocalizationAgent(AutonomousAgent):
 
         # Data logging
         self.data_logger.log_data(self.step, control)
-        # if self.step % UPDATE_LOG_INTERVAL == 0:
-        #     self.data_logger.save_log()
-        #     np.savez(self.ekf_result_file, **ekf_result)
 
         print("\n-----------------------------------------------")
 
