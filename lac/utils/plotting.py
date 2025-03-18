@@ -150,7 +150,7 @@ def plot_points_rover_frame(points, fig=None, color="red", **kwargs):
     return fig
 
 
-def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, waypoint = None, **kwargs):
+def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, waypoint=None, **kwargs):
     """Plot points in the rover frame."""
     if fig is None:
         fig = go.Figure()
@@ -439,39 +439,107 @@ def plot_reference_frames(poses: T.List[np.ndarray], pose_names: T.List[str]) ->
     return fig_poses
 
 
-def plot_mesh_vertices_edges(mesh, title="Mesh Visualization"):
+# def plot_mesh_vertices_edges(mesh, title="Mesh Visualization"):
+#     """
+#     Plots the vertices and edges of a PyTorch3D mesh using Matplotlib.
+
+#     Args:
+#         mesh: A PyTorch3D Meshes object.
+#         title: Title of the plot.
+#     """
+#     verts = mesh.verts_packed().clone().detach().cpu().numpy()  # Extract vertex positions
+#     faces = mesh.faces_packed().clone().detach().cpu().numpy()  # Extract face indices
+
+#     fig = plt.figure(figsize=(8, 8))
+#     ax = fig.add_subplot(111, projection="3d")
+
+#     # Plot vertices
+#     ax.scatter(verts[:, 0], verts[:, 1], verts[:, 2], color="red", s=10, label="Vertices")
+
+#     # Create edges from face indices
+#     edges = set()
+#     for face in faces:
+#         for i in range(3):
+#             edge = tuple(sorted((face[i], face[(i + 1) % 3])))  # Ensure unique edges
+#             edges.add(edge)
+
+#     edge_lines = [[verts[i], verts[j]] for i, j in edges]
+
+#     # Plot edges
+#     ax.add_collection3d(Line3DCollection(edge_lines, colors="black", linewidths=0.5))
+
+#     ax.set_xlabel("X")
+#     ax.set_ylabel("Y")
+#     ax.set_zlabel("Z")
+#     # ax.set_title(title)
+#     # plt.axis("equal")
+#     plt.show()
+#     return fig
+
+
+def plot_mesh(mesh, show_edges=True, textured=False):
     """
-    Plots the vertices and edges of a PyTorch3D mesh using Matplotlib.
+    Plots the vertices and edges of a PyTorch3D mesh using Plotly's Mesh3d.
 
     Args:
         mesh: A PyTorch3D Meshes object.
         title: Title of the plot.
     """
-    verts = mesh.verts_packed().clone().detach().cpu().numpy()  # Extract vertex positions
-    faces = mesh.faces_packed().clone().detach().cpu().numpy()  # Extract face indices
+    verts = mesh.verts_packed().clone().detach().cpu().numpy()
+    faces = mesh.faces_packed().clone().detach().cpu().numpy()
 
-    fig = plt.figure(figsize=(8, 8))
-    ax = fig.add_subplot(111, projection="3d")
+    # Extract vertices
+    x, y, z = verts[:, 0], verts[:, 1], verts[:, 2]
 
-    # Plot vertices
-    ax.scatter(verts[:, 0], verts[:, 1], verts[:, 2], color="red", s=10, label="Vertices")
+    # Create Mesh3d plot
+    mesh_plot = go.Mesh3d(
+        x=x,
+        y=y,
+        z=z,
+        i=faces[:, 0],
+        j=faces[:, 1],
+        k=faces[:, 2],
+        color="lightblue",
+        opacity=0.50,
+        name="Mesh",
+    )
 
-    # Create edges from face indices
-    edges = set()
-    for face in faces:
-        for i in range(3):
-            edge = tuple(sorted((face[i], face[(i + 1) % 3])))  # Ensure unique edges
-            edges.add(edge)
+    # Create scatter plot for vertices
+    if textured and mesh.textures:
+        colors = mesh.textures.verts_features_packed().clone().detach().cpu().numpy()
+        # TODO: handle TexturesUV
+    else:
+        colors = "lightblue"
+    vertices_plot = go.Scatter3d(
+        x=x, y=y, z=z, mode="markers", marker=dict(color=colors, size=2), name="Vertices"
+    )
 
-    edge_lines = [[verts[i], verts[j]] for i, j in edges]
+    data = [mesh_plot, vertices_plot]
 
-    # Plot edges
-    ax.add_collection3d(Line3DCollection(edge_lines, colors="black", linewidths=0.5))
+    # Create edges
+    if show_edges:
+        edges = set()
+        for face in faces:
+            for i in range(3):
+                edge = tuple(sorted((face[i], face[(i + 1) % 3])))
+                edges.add(edge)
 
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.set_zlabel("Z")
-    # ax.set_title(title)
-    # plt.axis("equal")
-    plt.show()
+        edge_x, edge_y, edge_z = [], [], []
+        for i, j in edges:
+            edge_x += [x[i], x[j], None]
+            edge_y += [y[i], y[j], None]
+            edge_z += [z[i], z[j], None]
+
+        edge_plot = go.Scatter3d(
+            x=edge_x,
+            y=edge_y,
+            z=edge_z,
+            mode="lines",
+            line=dict(color="black", width=1),
+            name="Edges",
+        )
+        data.append(edge_plot)
+
+    fig = go.Figure(data=data)
+    fig.update_layout(scene=dict(xaxis_title="X", yaxis_title="Y", zaxis_title="Z"))
     return fig

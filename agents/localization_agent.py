@@ -8,28 +8,27 @@ Localization agent
 
 """
 
-import carla
-import cv2 as cv
-import numpy as np
-from pynput import keyboard
 import signal
 
-from leaderboard.autoagents.autonomous_agent import AutonomousAgent
-
+import carla
+import cv2 as cv
+import lac.params as params
+import numpy as np
+from lac.control.controller import waypoint_steering
+from lac.localization.ekf import EKF, create_Q, get_pose_measurement_tag
+from lac.localization.imu_dynamics import propagate_state
+from lac.perception.vision import FiducialLocalizer
+from lac.planning.planner import Planner
 from lac.util import (
+    pos_rpy_to_pose,
     pose_to_pos_rpy,
     transform_to_numpy,
     transform_to_pos_rpy,
-    pos_rpy_to_pose,
 )
-from lac.planning.planner import Planner
-from lac.perception.vision import FiducialLocalizer
-from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
-from lac.localization.imu_dynamics import propagate_state
-from lac.control.controller import waypoint_steering
-from lac.utils.visualization import overlay_tag_detections
 from lac.utils.data_logger import DataLogger
-import lac.params as params
+from lac.utils.visualization import overlay_tag_detections
+from leaderboard.autoagents.autonomous_agent import AutonomousAgent
+from pynput import keyboard
 
 """ Agent parameters and settings """
 USE_FIDUCIALS = False

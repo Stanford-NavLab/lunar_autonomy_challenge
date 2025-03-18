@@ -1,8 +1,8 @@
-import numpy as np
 import copy
 
-from lac.util import pos_rpy_to_pose
+import numpy as np
 from lac.params import EKF_P0
+from lac.util import pos_rpy_to_pose
 
 
 class EKF:
