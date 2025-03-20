@@ -13,7 +13,7 @@ from lac.util import load_data
 from lac.params import LAC_BASE_PATH
 
 
-data_path = Path(LAC_BASE_PATH) / "output/DataCollectionAgent/map1_preset0_nolight"
+data_path = Path(LAC_BASE_PATH) / "output/DataCollectionAgent/map1_preset0_nolight_allcams"
 # initial_pose, lander_pose, poses, imu_data, cam_config = load_data(data_path)
 json_data = json.load(open(f"{data_path}/data_log.json"))
 
