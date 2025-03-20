@@ -49,7 +49,7 @@ class FactorGraph:
         self.values["imu_accel_sigma"] = 1e-5
         self.values["imu_gyro_sigma"] = 1e-5
         self.values["gravity"] = sf.V3(LUNAR_GRAVITY)
-        self.values["dt"] = sf.numeric_epsilon
+        self.values["dt"] = DT
         self.values["epsilon"] = sf.numeric_epsilon
 
         self.num_poses = 0

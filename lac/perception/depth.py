@@ -137,7 +137,7 @@ def project_depths_to_world(
         # Apply camera to rover offset
         rock_point_rover = apply_transform(CAM_TO_ROVER, rock_point_cam)
         # Rover to world frame conversion
-        rock_point_world = (rover_pose @ np.concatenate((rock_point_rover, [1])))[:3]
+        rock_point_world = apply_transform(rover_pose, rock_point_rover)
         world_points.append(rock_point_world)
     return world_points
 
