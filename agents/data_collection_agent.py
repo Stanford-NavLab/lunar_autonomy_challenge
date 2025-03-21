@@ -167,17 +167,15 @@ class DataCollectionAgent(AutonomousAgent):
         elif MODE == "waypoint":
             control = carla.VehicleVelocityControl(0.2, nominal_steering)
         elif MODE == "dynamics":
-            # TODO: separate this into a "dynamics data collection" option or something
-            # if self.step >= 100:
-            #     V = 0.2
-            #     W = -0.5
-            #     control = carla.VehicleVelocityControl(V, W)
-            # else:
-            #     control = carla.VehicleVelocityControl(0.0, 0.0)
+            if self.step >= 100:
+                V = 0.2
+                W = -0.5
+                control = carla.VehicleVelocityControl(V, W)
+            else:
+                control = carla.VehicleVelocityControl(0.0, 0.0)
 
-            # if self.step >= 400:
-            #     self.mission_complete()
-            pass
+            if self.step >= 400:
+                self.mission_complete()
 
         self.data_logger.log_data(self.step, control)
 

@@ -114,7 +114,7 @@ def compute_rock_radii(stereo_depth_results):
     return rock_radii
 
 
-def project_depths_to_world(
+def project_rock_depths_to_world(
     depth_results: list, rover_pose: np.ndarray, cam_name: str, cam_config: dict
 ) -> list:
     """
@@ -127,7 +127,7 @@ def project_depths_to_world(
 
     TODO: vectorize this
     """
-    world_points = []
+    rock_world_points = []
     CAM_TO_ROVER = get_cam_pose_rover(cam_name)
     K = get_camera_intrinsics(cam_name, cam_config)
     for result in depth_results:
@@ -138,8 +138,8 @@ def project_depths_to_world(
         rock_point_rover = apply_transform(CAM_TO_ROVER, rock_point_cam)
         # Rover to world frame conversion
         rock_point_world = apply_transform(rover_pose, rock_point_rover)
-        world_points.append(rock_point_world)
-    return world_points
+        rock_world_points.append(rock_point_world)
+    return rock_world_points
 
 
 def project_pixel_to_rover(
