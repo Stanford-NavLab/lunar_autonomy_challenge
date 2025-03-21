@@ -7,15 +7,11 @@ from lightglue import LightGlue, SuperPoint
 
 
 class StereoVisualOdometry:
-    def __init__(self, camera_matrix, dist_coeffs):
-        self.camera_matrix = camera_matrix
-        self.dist_coeffs = dist_coeffs
-        self.pnp = cv2.solvePnP
+    def __init__(self):
+        self.extractor = SuperPoint(max_num_keypoints=2048).eval().cuda()
+        self.matcher = LightGlue(features="superpoint").eval().cuda()
 
-        self.extractor = None
-        self.matcher = None
-
-    def initialize(self):
+    def initialize(self, left_image, right_image):
         # Initialize from first frame
         pass
 
