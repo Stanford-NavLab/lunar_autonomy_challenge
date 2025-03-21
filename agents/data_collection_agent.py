@@ -27,7 +27,7 @@ MAX_SPEED = 0.3
 SPEED_INCREMENT = 0.1
 TURN_RATE = 0.6
 
-MODE = "waypoint"  # {"teleop", "waypoint", "dynamics"}
+MODE = "teleop"  # {"teleop", "waypoint", "dynamics"}
 
 
 def get_entry_point():
@@ -56,14 +56,14 @@ class DataCollectionAgent(AutonomousAgent):
         self.cameras = params.CAMERA_CONFIG_INIT
         self.cameras["FrontLeft"] = {
             "active": True,
-            "light": 0.0,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
         }
         self.cameras["FrontRight"] = {
             "active": True,
-            "light": 0.0,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
@@ -120,7 +120,7 @@ class DataCollectionAgent(AutonomousAgent):
         self.mission_complete()
 
     def use_fiducials(self):
-        return True
+        return False
 
     def sensors(self):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
