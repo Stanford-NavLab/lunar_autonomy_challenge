@@ -94,11 +94,13 @@ def reprojection_residual(
     Visual landmark reprojection residual.
 
     Args:
-        point: 3D point in camera frame
-        pose: Rover pose in world frame
-        pixel: Pixel coordinates of the point in the image
-        camera: Camera calibration
-        sigma: Standard deviation of the residual
+        world_point: 3D point in the world frame
+        world_T_rover: Pose of the rover in the world frame
+        rover_T_cam: Pose of the camera in the rover frame
+        pixel: Detected pixel coordinates of the point
+        camera_cal: Camera calibration object
+        sigma: Standard deviation of the reprojection error
+        epsilon: Small number for singularity handling
     """
     point_rover = world_T_rover.inverse() * world_point
     point_cam = rover_T_cam.inverse() * point_rover
