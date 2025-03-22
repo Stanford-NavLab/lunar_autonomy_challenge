@@ -1,4 +1,4 @@
-"""Basic visual odometry based on pyslam"""
+"""Stereo Visual Odometry with LightGlue and 3D-2D PnP"""
 
 import numpy as np
 import cv2

@@ -32,9 +32,9 @@ class Planner:
         xy_position = pose[:2, 3]
         if np.linalg.norm(xy_position - waypoint) < WAYPOINT_REACHED_DIST_THRESHOLD:
             self.waypoint_idx += 1
-            if self.waypoint_idx >= len(self.waypoints):
+            if self.waypoint_idx >= len(self.waypoints):  # Finished the waypoints
                 self.waypoint_idx = 0
-                return self.waypoints[self.waypoint_idx], True
+                return None, True
             waypoint = self.waypoints[self.waypoint_idx]
             advanced = True
         if print_progress:

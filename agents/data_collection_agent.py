@@ -27,7 +27,7 @@ MAX_SPEED = 0.3
 SPEED_INCREMENT = 0.1
 TURN_RATE = 0.6
 
-MODE = "teleop"  # {"teleop", "waypoint", "dynamics"}
+MODE = "waypoint"  # {"teleop", "waypoint", "dynamics"}
 
 
 def get_entry_point():
@@ -69,42 +69,42 @@ class DataCollectionAgent(AutonomousAgent):
             "semantic": False,
         }
         self.cameras["Front"] = {
-            "active": True,
+            "active": False,
             "light": 0.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
         }
         self.cameras["BackLeft"] = {
-            "active": True,
+            "active": False,
             "light": 0.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
         }
         self.cameras["BackRight"] = {
-            "active": True,
+            "active": False,
             "light": 0.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
         }
         self.cameras["Back"] = {
-            "active": True,
+            "active": False,
             "light": 0.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
         }
         self.cameras["Left"] = {
-            "active": True,
+            "active": False,
             "light": 0.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
         }
         self.cameras["Right"] = {
-            "active": True,
+            "active": False,
             "light": 0.0,
             "width": 1280,
             "height": 720,
@@ -165,7 +165,10 @@ class DataCollectionAgent(AutonomousAgent):
         if MODE == "teleop":
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         elif MODE == "waypoint":
-            control = carla.VehicleVelocityControl(0.2, nominal_steering)
+            if self.step < 100:  # Wait for arms to raise before moving
+                control = carla.VehicleVelocityControl(0.0, 0.0)
+            else:
+                control = carla.VehicleVelocityControl(0.2, nominal_steering)
         elif MODE == "dynamics":
             if self.step >= 100:
                 V = 0.2

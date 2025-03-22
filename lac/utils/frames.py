@@ -98,8 +98,12 @@ def get_opencv_pose_rover(camera_name: str, cam_geoms: T.Dict[str, T.Any]) -> np
 
 def opencv_to_camera(points):
     """Convert points from OpenCV frame to camera frame."""
-    # TODO: add camera to rover transformation
     return OPENCV_TO_CAMERA_ACTIVE @ points
+
+
+def camera_to_opencv(points):
+    """Convert points from camera frame to OpenCV frame."""
+    return CAMERA_TO_OPENCV_ACTIVE @ points
 
 
 def apply_transform(T, points):

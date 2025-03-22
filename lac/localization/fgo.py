@@ -14,15 +14,17 @@ from symforce.opt.factor import Factor
 from symforce.opt.optimizer import Optimizer
 
 from lac.localization.symforce_util import (
-    odometry_residual,
-    bearing_residual,
-    imu_gyro_residual,
-    imu_accel_residual,
     make_pose,
     to_np_pose,
     copy_pose,
     flatten_list,
     odometry_lander_relpose_fgo,
+)
+from lac.localization.symforce_residuals import (
+    odometry_residual,
+    bearing_residual,
+    imu_gyro_residual,
+    imu_accel_residual,
 )
 from lac.params import DT, LUNAR_GRAVITY
 
