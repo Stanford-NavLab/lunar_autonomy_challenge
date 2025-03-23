@@ -7,6 +7,7 @@ import torch
 from lightglue import LightGlue, SuperPoint
 from lightglue.utils import rbd
 
+from lac.localization.slam.feature_tracker import FeatureTracker, prune_features
 from lac.perception.depth import project_pixel_to_rover
 from lac.utils.frames import (
     apply_transform,
@@ -14,8 +15,10 @@ from lac.utils.frames import (
     OPENCV_TO_CAMERA_PASSIVE,
     get_cam_pose_rover,
 )
-from lac.util import grayscale_to_3ch_tensor
-from lac.params import FL_X, STEREO_BASELINE, CAMERA_INTRINSICS
+from lac.params import CAMERA_INTRINSICS
+
+
+MIN_MATCH_SCORE = 0.5
 
 
 class StereoVisualOdometry:
@@ -27,55 +30,38 @@ class StereoVisualOdometry:
         self.extractor = SuperPoint(max_num_keypoints=2048).eval().cuda()
         self.matcher = LightGlue(features="superpoint").eval().cuda()
 
+        self.tracker = FeatureTracker(cam_config, max_keypoints=2048, max_stereo_matches=1000)
+
         self.feats0_left = None
         self.matches0_stereo = None
         self.points0_world = None
         self.rover_pose = None
 
-    def process_stereo(self, left_image: np.ndarray, right_image: np.ndarray):
-        """Process stereo pair to get features and depths"""
-        feats_left = self.extractor.extract(grayscale_to_3ch_tensor(left_image).cuda())
-        feats_right = self.extractor.extract(grayscale_to_3ch_tensor(right_image).cuda())
-        matches_stereo = self.matcher({"image0": feats_left, "image1": feats_right})
-        matches_stereo = rbd(matches_stereo)["matches"]
-        matched_kps_left = rbd(feats_left)["keypoints"][matches_stereo[..., 0]]
-        matched_kps_right = rbd(feats_right)["keypoints"][matches_stereo[..., 1]]
-        disparities = matched_kps_left[..., 0] - matched_kps_right[..., 0]
-        depths = FL_X * STEREO_BASELINE / disparities
-
-        return feats_left, feats_right, matches_stereo, depths
-
     def initialize(self, initial_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray):
         """Initialize world points and features"""
-        feats0_left, feats0_right, matches0_stereo, depths0 = self.process_stereo(
-            left_image, right_image
+        feats_left, feats_right, matches_stereo, depths = self.tracker.process_stereo(
+            left_image, right_image, min_score=MIN_MATCH_SCORE
         )
-        matched_kps0_left = rbd(feats0_left)["keypoints"][matches0_stereo[..., 0]]
+        matched_feats = prune_features(feats_left, matches_stereo[:, 0])
+        matched_pts_left = matched_feats["keypoints"][0]
+        points_world = self.tracker.project_stereo(initial_pose, matched_pts_left, depths)
 
-        matched_kps0_left = matched_kps0_left.cpu().numpy()
-        depths0 = depths0.cpu().numpy()
-
-        points0_rover = []
-        for pixel, depth in zip(matched_kps0_left, depths0):
-            point_rover = project_pixel_to_rover(pixel, depth, "FrontLeft", self.cam_config)
-            points0_rover.append(point_rover)
-        points0_rover = np.array(points0_rover)
-        points0_world = apply_transform(initial_pose, points0_rover)
-
-        self.feats0_left = feats0_left
-        self.matches0_stereo = matches0_stereo
-        self.points0_world = points0_world
+        self.feats0_left = feats_left
+        self.matches0_stereo = matches_stereo
+        self.points0_world = points_world
         self.rover_pose = initial_pose
 
     def track(self, left_image: np.ndarray, right_image: np.ndarray):
         """Frame-to-frame tracking"""
         # Process new frame
-        feats1_left, feats1_right, matches1_stereo, depths1 = self.process_stereo(
-            left_image, right_image
+        feats1_left, feats1_right, matches1_stereo, depths1 = self.tracker.process_stereo(
+            left_image, right_image, min_score=MIN_MATCH_SCORE
         )
         # Match with previous frame
-        matches01_left = self.matcher({"image0": self.feats0_left, "image1": feats1_left})
-        matches01_left = rbd(matches01_left)["matches"]
+        matches01_left = self.tracker.match_feats(
+            self.feats0_left, feats1_left, min_score=MIN_MATCH_SCORE
+        )
+
         stereo_indices = self.matches0_stereo[:, 0]
         frame_indices = matches01_left[:, 0]
 
@@ -102,6 +88,7 @@ class StereoVisualOdometry:
             iterationsCount=100,
         )
         if success:
+            # TODO: clean up this code
             R, _ = cv2.Rodrigues(rvec)
             T = np.hstack((R, tvec))
             est_pose = np.vstack((T, [0, 0, 0, 1]))

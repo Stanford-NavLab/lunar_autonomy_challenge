@@ -7,7 +7,7 @@ import torch
 from PIL import Image
 
 from lac.perception.segmentation import get_mask_centroids, centroid_matching
-from lac.perception.vision import project_pixel_to_3D, get_camera_intrinsics
+from lac.perception.vision import project_pixel_to_3D, project_pixels_to_3D, get_camera_intrinsics
 from lac.utils.frames import opencv_to_camera, get_cam_pose_rover, apply_transform
 import lac.params as params
 
@@ -151,6 +151,17 @@ def project_pixel_to_rover(
     point_cam = opencv_to_camera(point_opencv)
     point_rover = apply_transform(CAM_TO_ROVER, point_cam)
     return point_rover
+
+
+def project_pixels_to_rover(
+    pixels: np.ndarray, depths: np.ndarray, cam_name: str, cam_config: dict
+):
+    CAM_TO_ROVER = get_cam_pose_rover(cam_name)
+    K = get_camera_intrinsics(cam_name, cam_config)
+    points_opencv = project_pixels_to_3D(pixels, depths, K)
+    points_cam = opencv_to_camera(points_opencv)
+    points_rover = apply_transform(CAM_TO_ROVER, points_cam)
+    return points_rover
 
 
 def compute_stereo_depth(

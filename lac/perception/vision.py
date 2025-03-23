@@ -135,6 +135,26 @@ def project_pixel_to_3D(pixel, depth, K):
     return np.array([X, Y, Z])
 
 
+def project_pixels_to_3D(pixels, depths, K):
+    """
+    Batch version of projecting pixels to 3D using depth and camera intrinsics.
+
+    pixels : np.ndarray (N, 2) - Array of pixel coordinates (x, y)
+    depths : np.ndarray (N,) - Array of depth values corresponding to each pixel
+    K : np.ndarray (3, 3) - Camera intrinsics matrix
+
+    Returns:
+    np.ndarray (N, 3) - 3D points in camera frame for each pixel
+    """
+    fx, fy = K[0, 0], K[1, 1]
+    cx, cy = K[0, 2], K[1, 2]
+    pixel_offset = pixels - np.array([cx, cy])
+    X = pixel_offset[:, 0] * depths / fx
+    Y = pixel_offset[:, 1] * depths / fy
+    Z = depths
+    return np.column_stack((X, Y, Z))
+
+
 class FiducialLocalizer:
     def __init__(self, camera_config: dict):
         self.camera_config = camera_config
