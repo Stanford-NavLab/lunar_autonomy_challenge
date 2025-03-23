@@ -35,6 +35,10 @@ def get_poses_from_values(values: Values) -> list[sf.Pose3]:
     return poses
 
 
+def get_pose_idxs(values: Values) -> list[int]:
+    return [int(key.split("_")[-1]) for key in values.keys() if key.startswith("pose")]
+
+
 def cast_sf_pose(pose):
     """Cast a sym.pose3.Pose3 to sf.Pose3"""
     return sf.Pose3.from_storage(pose.to_storage())
@@ -51,7 +55,7 @@ class FactorGraph:
 
         rover_to_cam = get_cam_pose_rover("FrontLeft")
         self.values["rover_T_cam"] = make_pose(rover_to_cam)
-        self.values["reproj_sigma"] = 0.1
+        self.values["reproj_sigma"] = 2.0
         self.values["camera_cal"] = sf.LinearCameraCal(
             focal_length=(FL_X, FL_Y),
             principal_point=(IMG_WIDTH / 2, IMG_HEIGHT / 2),
@@ -143,7 +147,9 @@ class FactorGraph:
 
         """
         if window is None:
-            idxs = list(range(1, self.num_poses))  # Don't optimize the initial pose
+            # idxs = list(range(1, self.num_poses))  # Don't optimize the initial pose
+            idxs = get_pose_idxs(self.values)
+            idxs = set(idxs) - {0}
         else:
             idxs = list(range(window[0], window[1] + 1))
         optimized_keys = [f"pose_{i}" for i in idxs]
@@ -153,7 +159,11 @@ class FactorGraph:
             factors=factors_to_optimize,
             optimized_keys=optimized_keys,
             params=Optimizer.Params(
-                verbose=verbose, initial_lambda=1e4, iterations=100, lambda_down_factor=0.5
+                verbose=verbose,
+                initial_lambda=1.0,  # Initial LM damping factor
+                lambda_up_factor=4.0,  # damping factor increase upon failure to reduce cost
+                lambda_down_factor=0.25,  # damping factor decrease upon cost reduction
+                iterations=50,
             ),
         )
         result = optimizer.optimize(self.values)
