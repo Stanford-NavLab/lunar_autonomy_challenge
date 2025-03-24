@@ -16,13 +16,18 @@ import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
+from lac.planning.planner import Planner
+from lac.control.controller import waypoint_steering
 from lac.utils.data_logger import DataLogger
+from lac.util import transform_to_numpy
 import lac.params as params
 
 # Attributes for teleop sensitivity and max speed
 MAX_SPEED = 0.3
 SPEED_INCREMENT = 0.1
 TURN_RATE = 0.6
+
+MODE = "waypoint"  # {"teleop", "waypoint", "dynamics"}
 
 
 def get_entry_point():
@@ -42,6 +47,11 @@ class DataCollectionAgent(AutonomousAgent):
         """ Initialize a counter to keep track of the number of simulation steps. """
         self.step = 0
 
+        """ Planner """
+        initial_pose = transform_to_numpy(self.get_initial_position())
+        self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
+        self.planner = Planner(initial_pose)
+
         # Camera config
         self.cameras = params.CAMERA_CONFIG_INIT
         self.cameras["FrontLeft"] = {
@@ -58,9 +68,44 @@ class DataCollectionAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
+        self.cameras["Front"] = {
+            "active": False,
+            "light": 0.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
+        self.cameras["BackLeft"] = {
+            "active": False,
+            "light": 0.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
+        self.cameras["BackRight"] = {
+            "active": False,
+            "light": 0.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
+        self.cameras["Back"] = {
+            "active": False,
+            "light": 0.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
+        self.cameras["Left"] = {
+            "active": False,
+            "light": 0.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
         self.cameras["Right"] = {
-            "active": True,
-            "light": 1.0,
+            "active": False,
+            "light": 0.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
@@ -75,7 +120,7 @@ class DataCollectionAgent(AutonomousAgent):
         self.mission_complete()
 
     def use_fiducials(self):
-        return True
+        return False
 
     def sensors(self):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
@@ -108,20 +153,32 @@ class DataCollectionAgent(AutonomousAgent):
             self.data_logger.log_images(self.step, input_data)
             FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
             cv.imshow("Front left", FL_gray)
-            # R_img = input_data["Grayscale"][carla.SensorPosition.Right]
-            # cv.imshow("Right", R_img)
             cv.waitKey(1)
 
-        if self.step >= 100:
-            V = 0.2
-            W = -0.5
-            control = carla.VehicleVelocityControl(V, W)
-        else:
-            control = carla.VehicleVelocityControl(0.0, 0.0)
-
-        if self.step >= 400:
+        ground_truth_pose = transform_to_numpy(self.get_transform())
+        waypoint, _ = self.planner.get_waypoint(ground_truth_pose, print_progress=True)
+        if waypoint is None:
             self.mission_complete()
-        # control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+            return carla.VehicleVelocityControl(0.0, 0.0)
+        nominal_steering = waypoint_steering(waypoint, ground_truth_pose)
+
+        if MODE == "teleop":
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        elif MODE == "waypoint":
+            if self.step < 100:  # Wait for arms to raise before moving
+                control = carla.VehicleVelocityControl(0.0, 0.0)
+            else:
+                control = carla.VehicleVelocityControl(0.2, nominal_steering)
+        elif MODE == "dynamics":
+            if self.step >= 100:
+                V = 0.2
+                W = -0.5
+                control = carla.VehicleVelocityControl(V, W)
+            else:
+                control = carla.VehicleVelocityControl(0.0, 0.0)
+
+            if self.step >= 400:
+                self.mission_complete()
 
         self.data_logger.log_data(self.step, control)
 

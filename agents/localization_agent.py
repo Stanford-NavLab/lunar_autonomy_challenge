@@ -8,31 +8,30 @@ Localization agent
 
 """
 
-import carla
-import cv2 as cv
-import numpy as np
-from pynput import keyboard
 import signal
 
-from leaderboard.autoagents.autonomous_agent import AutonomousAgent
-
+import carla
+import cv2 as cv
+import lac.params as params
+import numpy as np
+from lac.control.controller import waypoint_steering
+from lac.localization.ekf import EKF, create_Q, get_pose_measurement_tag
+from lac.localization.imu_dynamics import propagate_state
+from lac.perception.vision import FiducialLocalizer
+from lac.planning.planner import Planner
 from lac.util import (
+    pos_rpy_to_pose,
     pose_to_pos_rpy,
     transform_to_numpy,
     transform_to_pos_rpy,
-    pos_rpy_to_pose,
 )
-from lac.planning.planner import Planner
-from lac.perception.vision import FiducialLocalizer
-from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
-from lac.localization.imu_dynamics import propagate_state
-from lac.control.controller import waypoint_steering
-from lac.utils.visualization import overlay_tag_detections
 from lac.utils.data_logger import DataLogger
-import lac.params as params
+from lac.utils.visualization import overlay_tag_detections
+from leaderboard.autoagents.autonomous_agent import AutonomousAgent
+from pynput import keyboard
 
 """ Agent parameters and settings """
-USE_FIDUCIALS = True
+USE_FIDUCIALS = False
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
 TELEOP = False  # Whether to use teleop control or autonomous control
@@ -63,7 +62,7 @@ class LocalizationAgent(AutonomousAgent):
         self.cameras = params.CAMERA_CONFIG_INIT
         self.cameras["FrontLeft"] = {
             "active": True,
-            "light": 1.0,
+            "light": 0.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
@@ -71,7 +70,7 @@ class LocalizationAgent(AutonomousAgent):
         if USE_FIDUCIALS:
             self.cameras["Right"] = {
                 "active": True,
-                "light": 1.0,
+                "light": 0.0,
                 "width": 1280,
                 "height": 720,
                 "semantic": False,
@@ -199,12 +198,12 @@ class LocalizationAgent(AutonomousAgent):
 
         """ Waypoint navigation """
         waypoint, advanced = self.planner.get_waypoint(nav_pose, print_progress=True)
-        if advanced:
-            self.data_logger.save_log()
-            np.savez(self.ekf_result_file, **self.ekf.get_results())
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
+        if advanced:
+            self.data_logger.save_log()
+            np.savez(self.ekf_result_file, **self.ekf.get_results())
         nominal_steering = waypoint_steering(waypoint, nav_pose)
 
         if TELEOP:
@@ -214,9 +213,6 @@ class LocalizationAgent(AutonomousAgent):
 
         # Data logging
         self.data_logger.log_data(self.step, control)
-        # if self.step % UPDATE_LOG_INTERVAL == 0:
-        #     self.data_logger.save_log()
-        #     np.savez(self.ekf_result_file, **ekf_result)
 
         print("\n-----------------------------------------------")
 

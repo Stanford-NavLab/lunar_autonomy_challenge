@@ -1,12 +1,87 @@
 """Computer vision utilities"""
 
-import cv2 as cv
+import cv2
 import numpy as np
 import apriltag
+import torch
+
+from lightglue import LightGlue, SuperPoint, match_pair
+from lightglue.utils import load_image, rbd
 
 from lac.perception.pnp import solve_tag_pnp
 from lac.utils.frames import invert_transform_mat, get_cam_pose_rover
 from lac.params import IMG_FOV_RAD
+
+
+def grayscale_to_3ch_tensor(np_image):
+    # Ensure the input is float32 (or float64 if needed)
+    np_image = np_image.astype(np.float32) / 255.0 if np_image.max() > 1 else np_image
+    # Add channel dimension and repeat across 3 channels
+    torch_tensor = torch.from_numpy(np_image).unsqueeze(0).repeat(3, 1, 1)
+    return torch_tensor
+
+
+class LightGlueMatcher:
+    def __init__(self):
+        self.extractor = SuperPoint(max_num_keypoints=2048).eval().cuda()  # load the extractor
+        self.matcher = LightGlue(features="superpoint").eval().cuda()  # load the matcher
+
+    def match(self, img0, img1):
+        """
+        Match keypoints between two images
+        """
+        image0 = grayscale_to_3ch_tensor(img0).cuda()
+        image1 = grayscale_to_3ch_tensor(img1).cuda()
+        feats0, feats1, matches01 = match_pair(self.extractor, self.matcher, image0, image1)
+        return feats0, feats1, matches01
+
+
+class StereoVIO:
+    def __init__(self, fl_x, baseline):
+        self.matcher = LightGlueMatcher()
+        self.fl_x = fl_x  # Focal length in x direction
+        self.baseline = baseline  # Stereo baseline
+        self.prev_feats = None
+        self.prev_depths = None
+
+    def process_stereo_pair(self, left_img, right_img):
+        # Match the stereo pair to get depths
+        feats0, feats1, matches01 = self.matcher.match(left_img, right_img)
+
+        # Extract matched points
+        points0 = feats0["keypoints"][matches01["matches"][:, 0]]
+        points1 = feats1["keypoints"][matches01["matches"][:, 1]]
+
+        # Calculate disparities and depths
+        disparities = (points0 - points1)[:, 0]  # X-coordinates only
+        depths = self.fl_x * self.baseline / disparities
+
+        # Store features and depths for frame-to-frame tracking
+        self.prev_feats = points0
+        self.prev_depths = depths
+
+    def track_frame(self, new_left_img, K):
+        if self.prev_feats is None:
+            raise ValueError("No previous frame to track!")
+
+        # Match previous left frame with current left frame
+        new_feats, _, matches = self.matcher.match(self.prev_feats, new_left_img)
+
+        # Extract matched keypoints
+        prev_pts = self.prev_feats[matches["matches"][:, 0]]
+        new_pts = new_feats["keypoints"][matches["matches"][:, 1]]
+
+        # Convert prev_pts to 3D points using the depths
+        prev_depths = self.prev_depths[matches["matches"][:, 0]]
+        prev_pts_h = np.hstack([prev_pts, np.ones((prev_pts.shape[0], 1))])
+        prev_pts_3d = (np.linalg.inv(K) @ prev_pts_h.T).T * prev_depths[:, None]
+
+        # Estimate pose with PnP
+        _, rvec, tvec, inliers = cv2.solvePnPRansac(
+            prev_pts_3d, new_pts, K, None, flags=cv2.SOLVEPNP_ITERATIVE
+        )
+
+        return rvec, tvec
 
 
 def get_camera_intrinsics(cam_name: str, camera_config: dict):
@@ -58,6 +133,26 @@ def project_pixel_to_3D(pixel, depth, K):
     Y = (y - cy) * depth / fy
     Z = depth
     return np.array([X, Y, Z])
+
+
+def project_pixels_to_3D(pixels, depths, K):
+    """
+    Batch version of projecting pixels to 3D using depth and camera intrinsics.
+
+    pixels : np.ndarray (N, 2) - Array of pixel coordinates (x, y)
+    depths : np.ndarray (N,) - Array of depth values corresponding to each pixel
+    K : np.ndarray (3, 3) - Camera intrinsics matrix
+
+    Returns:
+    np.ndarray (N, 3) - 3D points in camera frame for each pixel
+    """
+    fx, fy = K[0, 0], K[1, 1]
+    cx, cy = K[0, 2], K[1, 2]
+    pixel_offset = pixels - np.array([cx, cy])
+    X = pixel_offset[:, 0] * depths / fx
+    Y = pixel_offset[:, 1] * depths / fy
+    Z = depths
+    return np.column_stack((X, Y, Z))
 
 
 class FiducialLocalizer:

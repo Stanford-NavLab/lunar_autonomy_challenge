@@ -7,7 +7,7 @@ import torch
 from PIL import Image
 
 from lac.perception.segmentation import get_mask_centroids, centroid_matching
-from lac.perception.vision import project_pixel_to_3D, get_camera_intrinsics
+from lac.perception.vision import project_pixel_to_3D, project_pixels_to_3D, get_camera_intrinsics
 from lac.utils.frames import opencv_to_camera, get_cam_pose_rover, apply_transform
 import lac.params as params
 
@@ -114,7 +114,7 @@ def compute_rock_radii(stereo_depth_results):
     return rock_radii
 
 
-def project_depths_to_world(
+def project_rock_depths_to_world(
     depth_results: list, rover_pose: np.ndarray, cam_name: str, cam_config: dict
 ) -> list:
     """
@@ -127,7 +127,7 @@ def project_depths_to_world(
 
     TODO: vectorize this
     """
-    world_points = []
+    rock_world_points = []
     CAM_TO_ROVER = get_cam_pose_rover(cam_name)
     K = get_camera_intrinsics(cam_name, cam_config)
     for result in depth_results:
@@ -137,9 +137,9 @@ def project_depths_to_world(
         # Apply camera to rover offset
         rock_point_rover = apply_transform(CAM_TO_ROVER, rock_point_cam)
         # Rover to world frame conversion
-        rock_point_world = (rover_pose @ np.concatenate((rock_point_rover, [1])))[:3]
-        world_points.append(rock_point_world)
-    return world_points
+        rock_point_world = apply_transform(rover_pose, rock_point_rover)
+        rock_world_points.append(rock_point_world)
+    return rock_world_points
 
 
 def project_pixel_to_rover(
@@ -151,6 +151,17 @@ def project_pixel_to_rover(
     point_cam = opencv_to_camera(point_opencv)
     point_rover = apply_transform(CAM_TO_ROVER, point_cam)
     return point_rover
+
+
+def project_pixels_to_rover(
+    pixels: np.ndarray, depths: np.ndarray, cam_name: str, cam_config: dict
+):
+    CAM_TO_ROVER = get_cam_pose_rover(cam_name)
+    K = get_camera_intrinsics(cam_name, cam_config)
+    points_opencv = project_pixels_to_3D(pixels, depths, K)
+    points_cam = opencv_to_camera(points_opencv)
+    points_rover = apply_transform(CAM_TO_ROVER, points_cam)
+    return points_rover
 
 
 def compute_stereo_depth(

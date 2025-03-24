@@ -1,8 +1,9 @@
-import numpy as np
 import json
-from scipy.spatial.transform import Rotation
-from PIL import Image
+import torch
 import cv2 as cv
+import numpy as np
+from PIL import Image
+from scipy.spatial.transform import Rotation
 
 
 def load_data(data_path):
@@ -186,3 +187,11 @@ def rotations_rmse_from_poses(poses_a, poses_b):
     rots_a = get_rotations_from_poses(poses_a)
     rots_b = get_rotations_from_poses(poses_b)
     return rotations_rmse(rots_a, rots_b)
+
+
+def grayscale_to_3ch_tensor(np_image):
+    # Ensure the input is float32 (or float64 if needed)
+    np_image = np_image.astype(np.float32) / 255.0 if np_image.max() > 1 else np_image
+    # Add channel dimension and repeat across 3 channels
+    torch_tensor = torch.from_numpy(np_image).unsqueeze(0).repeat(3, 1, 1)
+    return torch_tensor

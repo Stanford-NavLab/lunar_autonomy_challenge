@@ -14,15 +14,17 @@ from symforce.opt.factor import Factor
 from symforce.opt.optimizer import Optimizer
 
 from lac.localization.symforce_util import (
-    odometry_residual,
-    bearing_residual,
-    imu_gyro_residual,
-    imu_accel_residual,
     make_pose,
     to_np_pose,
     copy_pose,
     flatten_list,
     odometry_lander_relpose_fgo,
+)
+from lac.localization.symforce_residuals import (
+    odometry_residual,
+    bearing_residual,
+    imu_gyro_residual,
+    imu_accel_residual,
 )
 from lac.params import DT, LUNAR_GRAVITY
 
@@ -49,7 +51,7 @@ class FactorGraph:
         self.values["imu_accel_sigma"] = 1e-5
         self.values["imu_gyro_sigma"] = 1e-5
         self.values["gravity"] = sf.V3(LUNAR_GRAVITY)
-        self.values["dt"] = sf.numeric_epsilon
+        self.values["dt"] = DT
         self.values["epsilon"] = sf.numeric_epsilon
 
         self.num_poses = 0
