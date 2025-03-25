@@ -174,7 +174,32 @@ def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, waypoint=No
                 **kwargs,
             )
         )
+          # Create parametric circles for all rocks in a single trac
+    if(color == "green"):
+        theta = np.linspace(0, 2 * np.pi, 100)
+        circle_x = np.cos(theta)
+        circle_y = np.sin(theta)
 
+        all_x = []
+        all_y = []
+        
+        for count,(x, y) in enumerate(path[:,:2]):
+            if count % 10 == 0:
+                all_x.extend(x + 0.5 * circle_x)
+                all_y.extend(y + 0.5 * circle_y)
+                all_x.append(None)  # Break between circles
+                all_y.append(None)
+
+        fig.add_trace(
+        go.Scatter(
+            x=all_y,  # Swapping x and y to match rover frame convention
+            y=all_x,
+            mode="lines",
+            line=dict(color=color, width=1),
+            name="Rover Boundaries",
+        )
+    )
+        
     fig.update_layout(
         xaxis=dict(
             title="Y axis (Left)",
