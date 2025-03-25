@@ -86,9 +86,12 @@ class GtsamFactorGraph:
 
 
 class GtsamVIO:
-    def __init__(self):
+    def __init__(self, window_size=3, fix_landmarks=True):
         self.factors: dict[int, list] = {}
-        self.initial_poses = {}
+        self.poses = {}
+        self.latest_pose_idx = 0
+        self.window_size = window_size
+        self.fix_landmarks = fix_landmarks
 
         self.projection_factors: dict[int, list] = {}
         self.pose_to_landmark_map: dict[int, np.ndarray] = {}
@@ -100,47 +103,60 @@ class GtsamVIO:
 
     def add_pose(self, i: int, pose: np.ndarray):
         """Add a pose to the graph"""
-        self.initial_poses[i] = pose
-        # self.initial_estimate.insert(X(i), Pose3(pose))
+        self.poses[i] = pose
+        self.latest_pose_idx = i
 
     def add_vision_factors(self, i: int, points: np.ndarray, pixels: np.ndarray, ids: np.ndarray):
-        """Add a group of vision factors to the graph"""
+        """Add a group of vision factors"""
         self.pose_to_landmark_map[i] = ids
         self.projection_factors[i] = []
 
         for j, id in enumerate(ids):
-            # Reprojection factor
             self.projection_factors[i].append(
                 GenericProjectionFactorCal3_S2(pixels[j], PIXEL_NOISE, X(i), L(id), K, ROVER_T_CAM)
             )
-            # Add landmark (point) to the graph
-            # NOTE: We add a position prior with low noise as a way of fixing the landmark. Not sure
-            # if GTSAM has a way of explicitly not optimizing the landmark positions
             if id not in self.landmark_ids:
                 self.landmark_ids.add(id)
                 self.landmarks[id] = points[j]
 
-    def optimize(self):
-        """Optimize the graph"""
-        window = [0, 1, 2]  # testing for now
+    def optimize(self, verbose=False):
+        """Sliding window optimization"""
+        if self.latest_pose_idx + 1 < self.window_size:
+            print("Not enough poses to optimize")
+            return
+
+        # Get the window of poses
+        window = list(range(self.latest_pose_idx - self.window_size + 1, self.latest_pose_idx + 1))
+
         # Build the graph
         graph = NonlinearFactorGraph()
         values = Values()
         active_landmarks = set()
         for i in window:
-            values.insert(X(i), Pose3(self.initial_poses[i]))
+            values.insert(X(i), Pose3(self.poses[i]))
             for factor in self.projection_factors[i]:
                 graph.push_back(factor)
             active_landmarks.update(self.pose_to_landmark_map[i])
 
         for id in active_landmarks:
             values.insert(L(id), self.landmarks[id])
+            if self.fix_landmarks:
+                graph.add(gtsam.NonlinearEqualityPoint3(L(id), self.landmarks[id]))
+            else:
+                graph.push_back(PriorFactorPoint3(L(id), self.landmarks[id], POINT_NOISE))
 
-        # Remove old landmarks
+        # TODO: Remove old landmarks
 
         # Optimize
         optimizer = LevenbergMarquardtOptimizer(graph, values, self.optimizer_params)
         result = optimizer.optimize()
+        if verbose:
+            print("initial error = {}".format(graph.error(values)))
+            print("final error = {}".format(graph.error(result)))
+
+        # Update the initial poses
+        for i in window:
+            self.poses[i] = result.atPose3(X(i)).matrix()
         return result
 
 

@@ -27,10 +27,8 @@ class StereoVisualOdometry:
     def __init__(self, cam_config: dict):
         self.cam_config = cam_config
 
-        self.extractor = SuperPoint(max_num_keypoints=2048).eval().cuda()
-        self.matcher = LightGlue(features="superpoint").eval().cuda()
-
         self.tracker = FeatureTracker(cam_config, max_keypoints=2048, max_stereo_matches=1000)
+        # self.tracker = FeatureTracker(cam_config)
 
         self.feats0_left = None
         self.matches0_stereo = None

@@ -109,7 +109,9 @@ class FeatureTracker:
         matched_kps_left = feats_left["keypoints"][0][matches[:, 0]]
         matched_kps_right = feats_right["keypoints"][0][matches[:, 1]]
         disparities = matched_kps_left[:, 0] - matched_kps_right[:, 0]
-        depths = FL_X * STEREO_BASELINE / disparities
+        depths = FL_X * STEREO_BASELINE / (disparities + 1e-8)  # Avoid division by zero
+
+        # TODO: filter out depths that are too large
 
         return feats_left, feats_right, matches, depths
 
@@ -117,6 +119,7 @@ class FeatureTracker:
         """Project stereo pixel-depth pairs to world points"""
         pixels = pixels.cpu().numpy()
         depths = depths.cpu().numpy()
+        # TODO: check for invalid-valued pixels/depths
         points_rover = project_pixels_to_rover(pixels, depths, "FrontLeft", self.cam_config)
         points_world = apply_transform(pose, points_rover)
         return points_world
@@ -153,6 +156,11 @@ class FeatureTracker:
         self.prev_pts = next_pts_tracked
         self.prev_feats = tracked_feats
         self.world_points = self.world_points[tracked]
+
+    def track_lightglue(self, next_image: np.ndarray):
+        """Track keypoints using LightGlue"""
+        # TODO
+        pass
 
     def track_keyframe(
         self, curr_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray
