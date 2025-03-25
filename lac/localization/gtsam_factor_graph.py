@@ -1,10 +1,20 @@
+"""
+
+Notes on GTSAM:
+
+
+
+"""
+
 import numpy as np
 import gtsam
+import gtsam_unstable
 from gtsam.symbol_shorthand import B, V, X, L
 
 from gtsam import (
     Cal3_S2,
     DoglegOptimizer,
+    LevenbergMarquardtOptimizer,
     GenericProjectionFactorCal3_S2,
     NonlinearFactorGraph,
     PriorFactorPoint3,
@@ -37,7 +47,9 @@ class GtsamFactorGraph:
 
         self.landmark_ids = set()
 
-        self.optimizer_params = gtsam.DoglegParams()
+        # self.optimizer_params = gtsam.DoglegParams()
+        self.optimizer_params = gtsam.LevenbergMarquardtParams()
+        self.optimizer_params.setVerbosity("TERMINATION")
 
     def add_pose(self, i: int, pose: np.ndarray):
         """Add a pose to the graph"""
@@ -65,6 +77,120 @@ class GtsamFactorGraph:
 
     def optimize(self):
         """Optimize the graph"""
-        optimizer = DoglegOptimizer(self.graph, self.initial_estimate, self.optimizer_params)
+        # optimizer = DoglegOptimizer(self.graph, self.initial_estimate, self.optimizer_params)
+        optimizer = LevenbergMarquardtOptimizer(
+            self.graph, self.initial_estimate, self.optimizer_params
+        )
         result = optimizer.optimize()
         return result
+
+
+class GtsamVIO:
+    def __init__(self):
+        self.factors: dict[int, list] = {}
+        self.initial_poses = {}
+
+        self.projection_factors: dict[int, list] = {}
+        self.pose_to_landmark_map: dict[int, np.ndarray] = {}
+        self.landmarks = {}
+
+        self.landmark_ids = set()
+        self.optimizer_params = gtsam.LevenbergMarquardtParams()
+        self.optimizer_params.setVerbosity("DETAIL")
+
+    def add_pose(self, i: int, pose: np.ndarray):
+        """Add a pose to the graph"""
+        self.initial_poses[i] = pose
+        # self.initial_estimate.insert(X(i), Pose3(pose))
+
+    def add_vision_factors(self, i: int, points: np.ndarray, pixels: np.ndarray, ids: np.ndarray):
+        """Add a group of vision factors to the graph"""
+        self.pose_to_landmark_map[i] = ids
+        self.projection_factors[i] = []
+
+        for j, id in enumerate(ids):
+            # Reprojection factor
+            self.projection_factors[i].append(
+                GenericProjectionFactorCal3_S2(pixels[j], PIXEL_NOISE, X(i), L(id), K, ROVER_T_CAM)
+            )
+            # Add landmark (point) to the graph
+            # NOTE: We add a position prior with low noise as a way of fixing the landmark. Not sure
+            # if GTSAM has a way of explicitly not optimizing the landmark positions
+            if id not in self.landmark_ids:
+                self.landmark_ids.add(id)
+                self.landmarks[id] = points[j]
+
+    def optimize(self):
+        """Optimize the graph"""
+        window = [0, 1, 2]  # testing for now
+        # Build the graph
+        graph = NonlinearFactorGraph()
+        values = Values()
+        active_landmarks = set()
+        for i in window:
+            values.insert(X(i), Pose3(self.initial_poses[i]))
+            for factor in self.projection_factors[i]:
+                graph.push_back(factor)
+            active_landmarks.update(self.pose_to_landmark_map[i])
+
+        for id in active_landmarks:
+            values.insert(L(id), self.landmarks[id])
+
+        # Remove old landmarks
+
+        # Optimize
+        optimizer = LevenbergMarquardtOptimizer(graph, values, self.optimizer_params)
+        result = optimizer.optimize()
+        return result
+
+
+class GtsamSmootherVIO:
+    def __init__(self):
+        self.factors = NonlinearFactorGraph()
+        self.values = Values()
+        self.timestamps = gtsam_unstable.FixedLagSmootherKeyTimestampMap()
+
+        self.smoother_lag = 3.0
+        self.smoother = gtsam_unstable.BatchFixedLagSmoother(self.smoother_lag)
+
+        self.landmark_ids = set()
+        self.landmark_last_observed = {}  # Track last observation timestamp
+
+    def add_pose(self, i: int, pose: np.ndarray):
+        """Add a pose timestamped with i"""
+        self.values.insert(X(i), Pose3(pose))
+        self.timestamps.insert((X(i), i))
+
+    def add_pose_prior(self, i: int, pose: np.ndarray, sigma: np.ndarray = POSE_SIGMA):
+        """Add a pose prior to the graph"""
+        pose_noise = gtsam.noiseModel.Diagonal.Sigmas(sigma)
+        self.factors.push_back(PriorFactorPose3(X(i), Pose3(pose), pose_noise))
+
+    def add_vision_factors(self, i: int, points: np.ndarray, pixels: np.ndarray, ids: np.ndarray):
+        """Add a group of vision factors to the graph"""
+        for j, id in enumerate(ids):
+            # Reprojection factor
+            self.factors.push_back(
+                GenericProjectionFactorCal3_S2(pixels[j], PIXEL_NOISE, X(i), L(id), K, ROVER_T_CAM)
+            )
+            # Add landmark (point) to the graph
+            # NOTE: We add a position prior with low noise as a way of fixing the landmark. Not sure
+            # if GTSAM has a way of explicitly not optimizing the landmark positions
+            if id not in self.landmark_ids:
+                self.landmark_ids.add(id)
+                self.values.insert(L(id), points[j])
+                self.factors.push_back(PriorFactorPoint3(L(id), points[j], POINT_NOISE))
+
+            # Update last observed timestamp
+            self.landmark_last_observed[id] = i
+
+    def solve(self, i: int):
+        """Run the batch smoother"""
+        self.smoother.update(self.factors, self.values, self.timestamps)
+        curr_pose_est = self.smoother.calculateEstimatePose3(X(i))
+
+        self.timestamps.clear()
+        self.values.clear()
+        self.factors.resize(0)
+
+        return curr_pose_est.matrix()
