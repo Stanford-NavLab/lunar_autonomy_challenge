@@ -22,7 +22,7 @@ from lac.utils.frames import (
     apply_transform,
 )
 from lac.util import grayscale_to_3ch_tensor
-from lac.params import FL_X, STEREO_BASELINE
+from lac.params import FL_X, STEREO_BASELINE, MAX_DEPTH
 
 EXTRACTOR_MAX_KEYPOINTS = 512
 MAX_TRACKED_POINTS = 100
@@ -111,7 +111,11 @@ class FeatureTracker:
         disparities = matched_kps_left[:, 0] - matched_kps_right[:, 0]
         depths = FL_X * STEREO_BASELINE / (disparities + 1e-8)  # Avoid division by zero
 
-        # TODO: filter out depths that are too large
+        # Filter out depths that are too large
+        outliers = depths > MAX_DEPTH
+        if torch.sum(outliers) > 0:
+            matches = matches[~outliers]
+            depths = depths[~outliers]
 
         return feats_left, feats_right, matches, depths
 

@@ -47,7 +47,6 @@ class GtsamFactorGraph:
 
         self.landmark_ids = set()
 
-        # self.optimizer_params = gtsam.DoglegParams()
         self.optimizer_params = gtsam.LevenbergMarquardtParams()
         self.optimizer_params.setVerbosity("TERMINATION")
 
@@ -68,8 +67,6 @@ class GtsamFactorGraph:
                 GenericProjectionFactorCal3_S2(pixels[j], PIXEL_NOISE, X(i), L(id), K, ROVER_T_CAM)
             )
             # Add landmark (point) to the graph
-            # NOTE: We add a position prior with low noise as a way of fixing the landmark. Not sure
-            # if GTSAM has a way of explicitly not optimizing the landmark positions
             if id not in self.landmark_ids:
                 self.landmark_ids.add(id)
                 self.initial_estimate.insert(L(id), points[j])
@@ -77,7 +74,6 @@ class GtsamFactorGraph:
 
     def optimize(self):
         """Optimize the graph"""
-        # optimizer = DoglegOptimizer(self.graph, self.initial_estimate, self.optimizer_params)
         optimizer = LevenbergMarquardtOptimizer(
             self.graph, self.initial_estimate, self.optimizer_params
         )

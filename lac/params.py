@@ -25,6 +25,16 @@ IMG_FOV_RAD = 1.22173  # [rad] (70 degrees)
 MAX_IMG_WIDTH = 2448
 MAX_IMG_HEIGHT = 2048
 
+SCENE_MAX_X = 20.0  # [m]
+SCENE_MIN_X = -20.0  # [m]
+SCENE_MAX_Y = 20.0  # [m]
+SCENE_MIN_Y = -20.0  # [m]
+SCENE_MAX_Z = 10.0  # [m]  (could probably reduce this, based on max height of lander)
+SCENE_MIN_Z = 0.0  # [m]
+SCENE_BBOX = np.array(
+    [[SCENE_MIN_X, SCENE_MIN_Y, SCENE_MIN_Z], [SCENE_MAX_X, SCENE_MAX_Y, SCENE_MAX_Z]]
+)
+
 """-------------------------------------- Data Structures --------------------------------------"""
 
 # GEOMETRY_DICT = json.load(open(os.path.expanduser(LAC_BASE_PATH + "/docs/geometry.json")))
