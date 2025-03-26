@@ -61,9 +61,11 @@ class SLAM:
                 GenericProjectionFactorCal3_S2(pixels[j], PIXEL_NOISE, X(i), L(id), K, ROVER_T_CAM)
             )
             if id not in self.landmark_ids:
-                if in_bbox(points[j], SCENE_BBOX):  # Don't add landmarks outside scene bbox
-                    self.landmark_ids.add(id)
-                    self.landmarks[id] = points[j]
+                # if in_bbox(points[j], SCENE_BBOX):  # Don't add landmarks outside scene bbox
+                #     self.landmark_ids.add(id)
+                #     self.landmarks[id] = points[j]
+                self.landmark_ids.add(id)
+                self.landmarks[id] = points[j]
 
     def optimize(self, window: list, verbose: bool = False):
         """Optimize over window of poses"""
@@ -101,12 +103,12 @@ class SLAM:
                 self.landmarks[id] = result.atPoint3(L(id))
             else:
                 print(f"Landmark {id} optimized outside scene bbox")
-                # Remove landmarks outside scene bbox
-                del self.landmarks[id]
-                # TODO: Remove associated factors
-                for key in self.pose_to_landmark_map:
-                    self.pose_to_landmark_map[key] = [
-                        x for x in self.pose_to_landmark_map[key] if x != id
-                    ]
+                # # Remove landmarks outside scene bbox
+                # del self.landmarks[id]
+                # # TODO: Remove associated factors
+                # for key in self.pose_to_landmark_map:
+                #     self.pose_to_landmark_map[key] = [
+                #         x for x in self.pose_to_landmark_map[key] if x != id
+                #     ]
 
         return result

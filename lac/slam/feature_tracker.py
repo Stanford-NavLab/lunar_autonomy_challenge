@@ -164,6 +164,8 @@ class FeatureTracker:
     def track_lightglue(self, next_image: np.ndarray):
         """Track keypoints using LightGlue"""
         # TODO
+        next_feats = self.extract_feats(next_image)
+        matches = self.match_feats(self.prev_feats, next_feats)
         pass
 
     def track_keyframe(
