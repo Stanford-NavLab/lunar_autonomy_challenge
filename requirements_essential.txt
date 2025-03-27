@@ -1,0 +1,9 @@
+plotly==6.0.0
+pandas==2.2.3
+scipy==1.15.1
+nbformat==5.10.4
+ipykernel==6.29.5
+opencv-python==4.10.0.84
+pillow==11.1.0
+pynput==1.7.7
+rerun-sdk==0.22.1
