@@ -1,12 +1,14 @@
 import json
 import torch
-import cv2 as cv
+import cv2
 import numpy as np
 from PIL import Image
 from scipy.spatial.transform import Rotation
+from pathlib import Path
+import os
 
 
-def load_data(data_path):
+def load_data(data_path: str | Path):
     """Load data from data log file."""
     json_data = json.load(open(f"{data_path}/data_log.json"))
     initial_pose = np.array(json_data["initial_pose"])
@@ -21,6 +23,29 @@ def load_data(data_path):
     imu_data = np.array(imu_data)
 
     return initial_pose, lander_pose, poses, imu_data, cam_config
+
+
+def load_stereo_images(data_path: str | Path):
+    """Load stereo images from data log file."""
+    left_imgs = {}
+    right_imgs = {}
+
+    left_path = Path(data_path) / "FrontLeft"
+    right_path = Path(data_path) / "FrontRight"
+
+    for img_name in os.listdir(left_path):
+        left_imgs[int(img_name.split(".")[0])] = cv2.imread(
+            str(left_path / img_name), cv2.IMREAD_GRAYSCALE
+        )
+
+    for img_name in os.listdir(right_path):
+        right_imgs[int(img_name.split(".")[0])] = cv2.imread(
+            str(right_path / img_name), cv2.IMREAD_GRAYSCALE
+        )
+
+    assert len(left_imgs.keys()) == len(right_imgs.keys())
+
+    return left_imgs, right_imgs
 
 
 def transform_to_pos_rpy(transform):
@@ -138,7 +163,7 @@ def np_img_to_PIL_rgb(img_array):
 
 def mask_centroid(mask: np.ndarray) -> tuple:
     """Compute the centroid of a binary mask."""
-    M = cv.moments(mask)
+    M = cv2.moments(mask)
     cx = int(M["m10"] / M["m00"])
     cy = int(M["m01"] / M["m00"])
     return cx, cy

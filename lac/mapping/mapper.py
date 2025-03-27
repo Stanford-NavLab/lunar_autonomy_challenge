@@ -3,7 +3,7 @@
 import numpy as np
 from scipy.interpolate import griddata
 
-from lac.perception.depth import project_depths_to_world
+from lac.perception.depth import project_rock_depths_to_world
 from lac.utils.frames import apply_transform
 from lac.util import pos_rpy_to_pose
 from lac.params import WHEEL_RIG_POINTS
@@ -86,7 +86,7 @@ class Mapper:
             if step >= len(poses):
                 continue
             pose = poses[step]
-            rock_points_world = project_depths_to_world(
+            rock_points_world = project_rock_depths_to_world(
                 detections, pose, "FrontLeft", camera_config
             )
             for point in rock_points_world:

@@ -75,13 +75,13 @@ class DataLogger:
             if config["active"]:
                 img = input_data["Grayscale"][getattr(carla.SensorPosition, cam_name)]
                 cv.imwrite(
-                    f"output/{self.agent_name}/{self.run_name}/{cam_name}/{step}.png",
+                    f"output/{self.agent_name}/{self.run_name}/{cam_name}/{step:06}.png",
                     img,
                 )
                 if config["semantic"]:
                     semantic_img = input_data["Semantic"][getattr(carla.SensorPosition, cam_name)]
                     cv.imwrite(
-                        f"output/{self.agent_name}/{self.run_name}/{cam_name}_semantic/{step}.png",
+                        f"output/{self.agent_name}/{self.run_name}/{cam_name}_semantic/{step:06}.png",
                         semantic_img,
                     )
 

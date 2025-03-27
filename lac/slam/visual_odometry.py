@@ -7,7 +7,7 @@ import torch
 from lightglue import LightGlue, SuperPoint
 from lightglue.utils import rbd
 
-from lac.localization.slam.feature_tracker import FeatureTracker, prune_features
+from lac.slam.feature_tracker import FeatureTracker, prune_features
 from lac.perception.depth import project_pixel_to_rover
 from lac.utils.frames import (
     apply_transform,
@@ -26,9 +26,6 @@ class StereoVisualOdometry:
 
     def __init__(self, cam_config: dict):
         self.cam_config = cam_config
-
-        self.extractor = SuperPoint(max_num_keypoints=2048).eval().cuda()
-        self.matcher = LightGlue(features="superpoint").eval().cuda()
 
         self.tracker = FeatureTracker(cam_config, max_keypoints=2048, max_stereo_matches=1000)
 
@@ -50,6 +47,10 @@ class StereoVisualOdometry:
         self.matches0_stereo = matches_stereo
         self.points0_world = points_world
         self.rover_pose = initial_pose
+
+    def get_pose(self):
+        """Get the current pose estimate"""
+        return self.rover_pose
 
     def track(self, left_image: np.ndarray, right_image: np.ndarray):
         """Frame-to-frame tracking"""
@@ -76,7 +77,7 @@ class StereoVisualOdometry:
 
         # PnP
         points3D = points0_world_common
-        points2D = rbd(feats1_left)["keypoints"][frame_common[:, 1]].cpu().numpy()
+        points2D = feats1_left["keypoints"][0][frame_common[:, 1]].cpu().numpy()
 
         success, rvec, tvec, inliers = cv2.solvePnPRansac(
             objectPoints=points3D,
@@ -98,7 +99,7 @@ class StereoVisualOdometry:
             cam_to_rover = invert_transform_mat(rover_to_cam)
             rover_pose = w_T_c @ cam_to_rover
 
-            matched_kps1_left = rbd(feats1_left)["keypoints"][matches1_stereo[..., 0]]
+            matched_kps1_left = feats1_left["keypoints"][0][matches1_stereo[..., 0]]
             matched_kps1_left = matched_kps1_left.cpu().numpy()
             depths1 = depths1.cpu().numpy()
 
