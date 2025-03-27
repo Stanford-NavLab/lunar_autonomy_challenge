@@ -23,6 +23,7 @@ from lac.utils.frames import get_cam_pose_rover, CAMERA_TO_OPENCV_PASSIVE
 # 0.3 rad std on roll,pitch,yaw and 0.1m on x,y,z
 POSE_SIGMA = np.array([0.3, 0.3, 0.3, 0.1, 0.1, 0.1])
 PIXEL_NOISE = gtsam.noiseModel.Isotropic.Sigma(2, 1.0)  # one pixel in u and v
+HUBER_PIXEL_NOISE = gtsam.noiseModel.Robust(gtsam.noiseModel.mEstimator.Huber(1.5), PIXEL_NOISE)
 POINT_NOISE = gtsam.noiseModel.Isotropic.Sigma(3, 1e-2)
 
 # Camera intrinsics
@@ -45,7 +46,8 @@ class SLAM:
         self.landmark_ids = set()
 
         self.optimizer_params = gtsam.LevenbergMarquardtParams()
-        self.optimizer_params.setVerbosity("TERMINATION")
+        # self.optimizer_params = gtsam.GncLMParams()
+        # self.optimizer_params.setVerbosity("TERMINATION")
 
     def add_pose(self, i: int, pose: np.ndarray):
         """Add a pose to the graph"""
@@ -53,19 +55,23 @@ class SLAM:
 
     def add_vision_factors(self, i: int, points: np.ndarray, pixels: np.ndarray, ids: np.ndarray):
         """Add a group of vision factors"""
-        self.pose_to_landmark_map[i] = ids
+        self.pose_to_landmark_map[i] = []
         self.projection_factors[i] = []
 
         for j, id in enumerate(ids):
-            self.projection_factors[i].append(
-                GenericProjectionFactorCal3_S2(pixels[j], PIXEL_NOISE, X(i), L(id), K, ROVER_T_CAM)
-            )
-            if id not in self.landmark_ids:
-                # if in_bbox(points[j], SCENE_BBOX):  # Don't add landmarks outside scene bbox
-                #     self.landmark_ids.add(id)
-                #     self.landmarks[id] = points[j]
-                self.landmark_ids.add(id)
-                self.landmarks[id] = points[j]
+            if in_bbox(points[j], SCENE_BBOX):  # Don't add landmarks outside scene bbox
+                self.pose_to_landmark_map[i].append(id)
+                self.projection_factors[i].append(
+                    GenericProjectionFactorCal3_S2(
+                        pixels[j], PIXEL_NOISE, X(i), L(id), K, ROVER_T_CAM
+                    )
+                )
+                if id not in self.landmark_ids:
+                    # if in_bbox(points[j], SCENE_BBOX):  # Don't add landmarks outside scene bbox
+                    #     self.landmark_ids.add(id)
+                    #     self.landmarks[id] = points[j]
+                    self.landmark_ids.add(id)
+                    self.landmarks[id] = points[j]
 
     def optimize(self, window: list, verbose: bool = False):
         """Optimize over window of poses"""
@@ -84,10 +90,13 @@ class SLAM:
 
         for id in active_landmarks:
             values.insert(L(id), self.landmarks[id])
-            graph.push_back(PriorFactorPoint3(L(id), self.landmarks[id], POINT_NOISE))
+            # if window[0] == 0:
+            #     # Constrain initial landmarks
+            #     graph.push_back(PriorFactorPoint3(L(id), self.landmarks[id], POINT_NOISE))
 
         # Optimize
         optimizer = LevenbergMarquardtOptimizer(graph, values, self.optimizer_params)
+        # optimizer = gtsam.GncLMOptimizer(graph, values, self.optimizer_params)
         result = optimizer.optimize()
         if verbose:
             print("initial error = {}".format(graph.error(values)))
