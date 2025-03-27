@@ -27,7 +27,7 @@ MAX_SPEED = 0.3
 SPEED_INCREMENT = 0.1
 TURN_RATE = 0.6
 
-MODE = "waypoint"  # {"teleop", "waypoint", "dynamics"}
+MODE = "teleop"  # {"teleop", "waypoint", "dynamics"}
 
 
 def get_entry_point():
@@ -69,11 +69,11 @@ class DataCollectionAgent(AutonomousAgent):
             "semantic": True,
         }
         self.cameras["Front"] = {
-            "active": False,
-            "light": 0.0,
+            "active": True,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["BackLeft"] = {
             "active": False,
