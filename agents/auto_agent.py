@@ -22,13 +22,13 @@ from lac.util import (
     transform_to_numpy,
     transform_to_pos_rpy,
 )
-from lac.perception.segmentation import Segmentation
+from lac.perception.segmentation import UnetSegmentation
 from lac.perception.depth import (
     stereo_depth_from_segmentation,
     compute_rock_coords_rover_frame,
     compute_rock_radii,
 )
-from lac.control.controller import waypoint_steering, ArcPlanner
+from lac.control.controller import ArcPlanner
 from lac.planning.planner import Planner
 from lac.utils.visualization import (
     overlay_mask,
@@ -58,7 +58,7 @@ class AutoAgent(AutonomousAgent):
         self.current_w = 0.0
 
         """ Perception modules """
-        self.segmentation = Segmentation()
+        self.segmentation = UnetSegmentation()
 
         """ Initialize a counter to keep track of the number of simulation steps. """
         self.step = 0
@@ -143,32 +143,16 @@ class AutoAgent(AutonomousAgent):
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
-        nominal_steering = waypoint_steering(waypoint, nav_pose)
-
-        # TODO: version of planning without rock avoidance
-        # rock_coords = []
-        # rock_radii = []
-        # control, path, waypoint_local = self.arc_planner.plan_arc(
-        #         waypoint, nav_pose, rock_coords, rock_radii
-        #     )
-        # self.current_v, self.current_w = control
-        # if self.image_available():
-        #     FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-        #     overlay = draw_steering_arc(FL_gray, self.current_w, color=(255, 0, 0))
-        #     cv.imshow("Rock segmentation", overlay)
-        #     cv.waitKey(1)
-
 
         """ Rock segmentation """
-        if self.step % (params.FRAME_RATE // IMAGE_PROCESS_RATE) == 0:  # This runs at 1 Hz
+        # if self.step % (params.FRAME_RATE // IMAGE_PROCESS_RATE) == 0:  # This runs at 1 Hz
+        if self.image_available():
             FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
             FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
-            FL_rgb_PIL = Image.fromarray(FL_gray).convert("RGB")
-            FR_rgb_PIL = Image.fromarray(FR_gray).convert("RGB")
 
             # Run segmentation
-            left_seg_masks, left_seg_full_mask = self.segmentation.segment_rocks(FL_rgb_PIL)
-            right_seg_masks, right_seg_full_mask = self.segmentation.segment_rocks(FR_rgb_PIL)
+            left_seg_masks, left_seg_full_mask = self.segmentation.segment_rocks(FL_gray)
+            right_seg_masks, right_seg_full_mask = self.segmentation.segment_rocks(FR_gray)
 
             # Stereo rock depth
             stereo_depth_results = stereo_depth_from_segmentation(
@@ -180,7 +164,6 @@ class AutoAgent(AutonomousAgent):
             rock_radii = compute_rock_radii(stereo_depth_results)
 
             # Path planning
-            # TODO: set self.current_v and self.current_w based on output of Arc Planner
             control, path, waypoint_local = self.arc_planner.plan_arc(
                 waypoint, nav_pose, rock_coords, rock_radii
             )
@@ -199,7 +182,6 @@ class AutoAgent(AutonomousAgent):
                 cv.waitKey(1)
 
         control = carla.VehicleVelocityControl(self.current_v, self.current_w)
-        # control = carla.VehicleVelocityControl(0.2, nominal_steering)
 
         """ Data logging """
         if LOG_DATA:

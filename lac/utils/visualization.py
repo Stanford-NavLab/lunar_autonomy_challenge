@@ -20,6 +20,9 @@ def color_mask(mask: np.ndarray, color) -> np.ndarray:
     color : tuple (3) - RGB color
 
     """
+    # Ensure mask has 3 channels
+    if len(mask.shape) == 2:
+        mask = 255 * cv.cvtColor(mask.astype(np.uint8), cv.COLOR_GRAY2RGB)
     mask = mask * np.array(color)
     return mask
 

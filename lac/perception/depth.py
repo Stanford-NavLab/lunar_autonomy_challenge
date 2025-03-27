@@ -6,7 +6,10 @@ from transformers import pipeline
 import torch
 from PIL import Image
 
-from lac.perception.segmentation import get_mask_centroids, centroid_matching
+from lac.perception.segmentation_util import (
+    get_mask_centroids,
+    centroid_matching,
+)
 from lac.perception.vision import project_pixel_to_3D, project_pixels_to_3D, get_camera_intrinsics
 from lac.utils.frames import opencv_to_camera, get_cam_pose_rover, apply_transform
 import lac.params as params

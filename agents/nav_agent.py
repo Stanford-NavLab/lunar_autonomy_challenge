@@ -22,7 +22,7 @@ from lac.util import (
     transform_to_numpy,
     transform_to_pos_rpy,
 )
-from lac.perception.segmentation import Segmentation
+from lunar_autonomy_challenge.lac.perception.segmentation_util import Segmentation
 from lac.perception.depth import (
     stereo_depth_from_segmentation,
 )

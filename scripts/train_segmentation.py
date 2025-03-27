@@ -14,8 +14,8 @@ torch.backends.cudnn.benchmark = True
 
 # Paths
 data_path = "/home/shared/data_raw/LAC/data_collection_1"
-img_dir = os.path.join(data_path, 'front_left')
-mask_dir = os.path.join(data_path, 'front_left_semantic')
+img_dir = os.path.join(data_path, "front_left")
+mask_dir = os.path.join(data_path, "front_left_semantic")
 
 # Semantic mapping (RGB)
 semantic_colors = {
@@ -29,12 +29,14 @@ semantic_colors = {
 color_map = np.zeros((256, 256, 3), dtype=np.uint8)
 color_to_index = {tuple(k): v for k, v in semantic_colors.items()}
 
+
 def rgb_to_class(mask_rgb):
     mask_np = np.array(mask_rgb)
     class_mask = np.zeros(mask_np.shape[:2], dtype=np.uint8)
     for rgb, idx in color_to_index.items():
         class_mask[np.all(mask_np == rgb, axis=-1)] = idx
     return class_mask
+
 
 class SegDataset(Dataset):
     def __init__(self, filenames):
@@ -52,8 +54,11 @@ class SegDataset(Dataset):
 
         img_tensor = to_tensor(resize(Image.fromarray(img), (256, 256)))
         mask_class = rgb_to_class(mask)
-        mask_tensor = torch.from_numpy(np.array(resize(Image.fromarray(mask_class), (256, 256), Image.NEAREST))).long()
+        mask_tensor = torch.from_numpy(
+            np.array(resize(Image.fromarray(mask_class), (256, 256), Image.NEAREST))
+        ).long()
         return img_tensor, mask_tensor
+
 
 # File split
 all_filenames = [f"{i}.png" for i in range(34, 1794)]
@@ -70,22 +75,32 @@ train_loader = DataLoader(train_ds, batch_size=4, shuffle=True, num_workers=24, 
 test_loader = DataLoader(test_ds, batch_size=4, num_workers=24, pin_memory=True)
 
 model_names = [
-    'Unet', 'UnetPlusPlus', 'FPN', 'PSPNet',
-    'DeepLabV3', 'DeepLabV3Plus', 'Linknet',
-    'MAnet', 'PAN'
+    "Unet",
+    "UnetPlusPlus",
+    "FPN",
+    "PSPNet",
+    "DeepLabV3",
+    "DeepLabV3Plus",
+    "Linknet",
+    "MAnet",
+    "PAN",
 ]
 
-device = torch.device('cuda')
+device = torch.device("cuda")
 results = {}
 
 for name in model_names:
     print(f"\n==> Training {name}")
-    model = getattr(smp, name)(
-        encoder_name='resnet34',
-        encoder_weights='imagenet',
-        in_channels=3,
-        classes=5,
-    ).to(device).to(memory_format=torch.channels_last)
+    model = (
+        getattr(smp, name)(
+            encoder_name="resnet34",
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=5,
+        )
+        .to(device)
+        .to(memory_format=torch.channels_last)
+    )
 
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
@@ -106,7 +121,7 @@ for name in model_names:
             scaler.step(optimizer)
             scaler.update()
             total_loss += loss.item()
-        print(f"Epoch {epoch+1}: Loss = {total_loss / len(train_loader):.4f}")
+        print(f"Epoch {epoch + 1}: Loss = {total_loss / len(train_loader):.4f}")
 
     # Evaluation
     model.eval()
@@ -124,7 +139,7 @@ for name in model_names:
 
     # Visualization (only first batch)
     with torch.no_grad():
-        for images, masks in  test_loader:
+        for images, masks in test_loader:
             images = images.to(device)
             outputs = model(images)
             preds = torch.argmax(outputs, dim=1).cpu()
@@ -140,17 +155,21 @@ for name in model_names:
                 axs[i, 2].imshow(preds[i])
                 axs[i, 2].set_title("Prediction")
                 for ax in axs[i]:
-                    ax.axis('off')
+                    ax.axis("off")
             plt.tight_layout()
             plt.savefig(f"./segmentation_output/{name}_segmentation_batch.png")
             plt.close()
             break
 
-    results[name] = {
-        'test_loss': eval_loss / len(test_loader),
-        'secs_per_image': secs_per_image
-    }
+    results[name] = {"test_loss": eval_loss / len(test_loader), "secs_per_image": secs_per_image}
 
 print("\n=== Results ===")
 for model_name, metrics in results.items():
-    print(f"{model_name:15s} | Loss: {metrics['test_loss']:.4f} | Secs/img: {metrics['secs_per_image']:.4f}")
+    print(
+        f"{model_name:15s} | Loss: {metrics['test_loss']:.4f} | Secs/img: {metrics['secs_per_image']:.4f}"
+    )
+
+# Save model weights
+model_path = f"model_{name}.pth"
+torch.save(model.state_dict(), model_path)
+print(f"Model saved to {model_path}")
