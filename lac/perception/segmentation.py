@@ -1,102 +1,101 @@
-"Semantic and instance segmentation"
+"""Wrapper for finetuned Unet++ segmentation model."""
 
 import numpy as np
-from PIL import Image
-from lang_sam import LangSAM
+import cv2
 import torch
-import cv2 as cv
+from torchvision.transforms.functional import to_tensor, resize
+from PIL import Image
+import segmentation_models_pytorch as smp
+from pathlib import Path
+from enum import Enum
 
-from lac.util import mask_centroid
-from lac.params import ROCK_MASK_MAX_AREA, ROCK_BRIGHTNESS_THRESHOLD
+from lac.params import LAC_BASE_PATH
 
 
-class Segmentation:
-    def __init__(self):
-        self.model = LangSAM()
+class SemanticClasses(Enum):
+    FIDUCIALS = 0
+    ROCKS = 1
+    LANDER = 2
+    GROUND = 3
+    SKY = 4
 
-    def segment_rocks(self, image: Image):
+
+class UnetSegmentation:
+    def __init__(self, model_path=None):
+        if model_path is None:
+            model_path = (
+                Path(LAC_BASE_PATH)
+                / "lunar_autonomy_challenge"
+                / "models"
+                / "model_UnetPlusPlus.pth"
+            )
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = (
+            smp.UnetPlusPlus(
+                encoder_name="resnet34",
+                encoder_weights="imagenet",
+                in_channels=3,
+                classes=5,
+            )
+            .to(self.device)
+            .to(memory_format=torch.channels_last)
+        )
+        self.model.load_state_dict(
+            torch.load(model_path, map_location=self.device, weights_only=True)
+        )
+        self.model.eval()
+
+        self.downscale_factor = 2
+
+    def predict(self, image: np.ndarray):
         """
-        image : RGB PIL Image
+        Predict the segmentation mask for a given image.
+        Args:
+            image: Input image as a numpy array.
+        Returns:
+            Segmentation mask as a numpy array.
         """
-        text_prompt = "rock."
-        results = self.model.predict([image], [text_prompt])
+        img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        H, W, _ = img.shape
+        H_ds = (H // self.downscale_factor) // 32 * 32
+        W_ds = (W // self.downscale_factor) // 32 * 32
 
-        full_mask = np.zeros_like(image, dtype=np.uint8).copy()
-        image_np = np.array(image.convert("L"))
+        img_resized = resize(Image.fromarray(img), (H_ds, W_ds))
+        img_tensor = to_tensor(img_resized).to(self.device).unsqueeze(0)
+
+        with torch.no_grad():
+            output = self.model(img_tensor)
+
+        # TODO: get confidence values from output and return them
+
+        pred = output.argmax(1).squeeze().cpu()
+        pred_resized = cv2.resize(pred.numpy(), (W, H), interpolation=cv2.INTER_NEAREST)
+
+        return pred_resized
+
+    def segment_rocks(self, image: np.ndarray):
+        """
+        Segment rocks in the input image using the trained Unet++ model.
+        Args:
+            image: Input image as a numpy array.
+        Returns:
+            List of masks for each detected rock
+        """
+        pred = self.predict(image)
+        rock_mask = pred == SemanticClasses.ROCKS.value
+
+        # Identify unique rock masks
+        num_labels, labels = cv2.connectedComponents(rock_mask.astype(np.uint8))
+
+        MIN_ROCK_MASK_AREA = 100  # Minimum area to be considered a valid rock segmentation
+
         masks = []
-        for mask in results[0]["masks"]:
-            if (
-                mask.sum() < ROCK_MASK_MAX_AREA
-                and image_np[mask.astype(bool)].mean() > ROCK_BRIGHTNESS_THRESHOLD
-            ):
+        full_mask = np.zeros_like(rock_mask, dtype=np.uint8)
+
+        for label in range(1, num_labels):
+            mask = labels == label
+            if np.sum(mask) > MIN_ROCK_MASK_AREA:
                 masks.append(mask)
-                full_mask[mask.astype(bool)] = 255
+                full_mask[mask] = 1
 
         return masks, full_mask
-
-
-def get_mask_centroids(masks):
-    """
-    seg_results : dict - Results from the segmentation model
-    """
-    mask_centroids = []
-    for mask in masks:
-        mask = mask.astype(np.uint8)
-        mask_centroids.append(mask_centroid(mask))
-    mask_centroids = np.array(mask_centroids)
-    # Sort by y-coordinate
-    if len(mask_centroids) > 1:
-        mask_centroids = mask_centroids[np.argsort(mask_centroids[:, 1])]
-    return mask_centroids
-
-
-def centroid_matching(left_centroids, right_centroids, max_y_diff=5, max_x_diff=300):
-    """
-    Matches left centroids to right centroids based on the closest y-coordinate difference.
-    Ensures that each right centroid is matched only once, optimizing globally.
-
-    left_centroids : np.ndarray (N, 2) - Centroids from the left image
-    right_centroids : np.ndarray (M, 2) - Centroids from the right image
-    max_y_diff : int - Maximum allowed y-coordinate difference for a valid match
-    max_x_diff : int - Maximum allowed x-coordinate difference for a valid match
-
-    TODO: the max_y_diff should depend on roll of the camera
-    TODO: the max_x_diff should depend on size of the mask and on y-value. Large rocks can have a
-    large x_diff when close up, but small rocks should not have large x_diff when far away
-
-    """
-    matches = []
-
-    assert left_centroids.shape[1] == 2, "Left centroids should have shape (N, 2)"
-    assert right_centroids.shape[1] == 2, "Right centroids should have shape (M, 2)"
-
-    # Compute all pairwise differences
-    y_diffs = np.abs(left_centroids[:, None, 1] - right_centroids[None, :, 1])
-    x_diffs = np.abs(left_centroids[:, None, 0] - right_centroids[None, :, 0])
-
-    # Create a list of candidate matches (left_idx, right_idx, y_diff, x_diff)
-    candidates = [
-        (i, j, y_diffs[i, j], x_diffs[i, j])
-        for i in range(len(left_centroids))
-        for j in range(len(right_centroids))
-    ]
-
-    # Sort candidates by y-coordinate difference
-    candidates.sort(key=lambda x: x[2])
-
-    used_left = set()
-    used_right = set()
-
-    for left_idx, right_idx, y_diff, x_diff in candidates:
-        if (
-            y_diff < max_y_diff
-            and x_diff < max_x_diff
-            and left_idx not in used_left
-            and right_idx not in used_right
-        ):
-            # matches.append((left_centroids[left_idx], right_centroids[right_idx]))
-            matches.append((left_idx, right_idx))
-            used_left.add(left_idx)
-            used_right.add(right_idx)
-
-    return matches
