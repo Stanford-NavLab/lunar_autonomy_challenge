@@ -148,6 +148,7 @@ class DataCollectionAgent(AutonomousAgent):
         if self.step == 0:
             self.initialize()
         self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
+        print("\nStep: ", self.step)
 
         if self.image_available():
             self.data_logger.log_images(self.step, input_data)
@@ -155,16 +156,16 @@ class DataCollectionAgent(AutonomousAgent):
             cv.imshow("Front left", FL_gray)
             cv.waitKey(1)
 
-        ground_truth_pose = transform_to_numpy(self.get_transform())
-        waypoint, _ = self.planner.get_waypoint(ground_truth_pose, print_progress=True)
-        if waypoint is None:
-            self.mission_complete()
-            return carla.VehicleVelocityControl(0.0, 0.0)
-        nominal_steering = waypoint_steering(waypoint, ground_truth_pose)
-
         if MODE == "teleop":
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         elif MODE == "waypoint":
+            ground_truth_pose = transform_to_numpy(self.get_transform())
+            waypoint, _ = self.planner.get_waypoint(ground_truth_pose, print_progress=True)
+            if waypoint is None:
+                self.mission_complete()
+                return carla.VehicleVelocityControl(0.0, 0.0)
+            nominal_steering = waypoint_steering(waypoint, ground_truth_pose)
+
             if self.step < 100:  # Wait for arms to raise before moving
                 control = carla.VehicleVelocityControl(0.0, 0.0)
             else:

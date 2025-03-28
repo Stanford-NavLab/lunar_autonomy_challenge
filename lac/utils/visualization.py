@@ -61,6 +61,17 @@ def overlay_stereo_rock_depths(left_image, depth_results):
     return overlay
 
 
+def overlay_points(image, points):
+    """
+    left_image : np.ndarray (H, W, 3) - RGB image
+    pooints : np.ndarray (N, 2) - points to overlay
+    """
+    overlay = image.copy()
+    for point in points:
+        cv.circle(overlay, tuple(point.astype(int)), 5, (0, 255, 0), -1)
+    return overlay
+
+
 def overlay_tag_detections(image_gray, detections):
     """
     image_gray : np.ndarray (H, W) - grayscale image

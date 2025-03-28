@@ -9,7 +9,7 @@ Full agent
 """
 
 import carla
-import cv2 as cv
+import cv2
 import numpy as np
 import json
 from PIL import Image
@@ -34,6 +34,7 @@ from lac.utils.visualization import (
     overlay_mask,
     draw_steering_arc,
     overlay_stereo_rock_depths,
+    overlay_points,
 )
 from lac.utils.data_logger import DataLogger
 import lac.params as params
@@ -89,6 +90,10 @@ class RockMapAgent(AutonomousAgent):
         """ Path planner """
         # TODO: initialize ArcPlanner
         self.arc_planner = ArcPlanner()
+
+        """ Rock stuff """
+        self.prev_left_img = None
+        self.prev_pts = None
 
         """ Data logging """
         if LOG_DATA:
@@ -164,6 +169,19 @@ class RockMapAgent(AutonomousAgent):
             rock_radii = compute_rock_radii(stereo_depth_results)
 
             # TODO: add optical flow tracks
+            left_centroids = [result["left_centroid"] for result in stereo_depth_results]
+            if self.prev_pts is not None:
+                print(f"inputs: {self.prev_left_img.shape}, {FL_gray.shape}, {self.prev_pts.shape}")
+                next_pts, status, err = cv2.calcOpticalFlowPyrLK(
+                    self.prev_left_img, FL_gray, self.prev_pts.astype(np.float32), None
+                )
+                next_pts_tracked = next_pts[status.squeeze() == 1]
+                self.prev_pts = next_pts_tracked
+            else:
+                if self.step >= 80 and len(left_centroids) > 0:
+                    # Initialize optical flow points
+                    self.prev_pts = np.array(left_centroids)
+            self.prev_left_img = FL_gray
 
             # Path planning
             control, path, waypoint_local = self.arc_planner.plan_arc(
@@ -179,11 +197,16 @@ class RockMapAgent(AutonomousAgent):
             if DISPLAY_IMAGES:
                 overlay = overlay_mask(FL_gray, left_seg_full_mask, color=(0, 0, 1))
                 overlay = draw_steering_arc(overlay, self.current_w, color=(255, 0, 0))
-                overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
-                cv.imshow("Rock segmentation", overlay)
-                cv.waitKey(1)
+                if self.prev_pts is not None:
+                    print(self.prev_pts.shape)
+                    overlay = overlay_points(overlay, self.prev_pts)
+                cv2.imshow("Rock segmentation", overlay)
+                cv2.waitKey(1)
 
-        control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        if self.step <= 80:
+            control = carla.VehicleVelocityControl(0.0, 0.0)
+        else:
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         """ Data logging """
         if LOG_DATA:
@@ -200,4 +223,4 @@ class RockMapAgent(AutonomousAgent):
             self.data_logger.save_log()
 
         if DISPLAY_IMAGES:
-            cv.destroyAllWindows()
+            cv2.destroyAllWindows()
