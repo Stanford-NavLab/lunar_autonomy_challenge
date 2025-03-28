@@ -35,6 +35,19 @@ SCENE_BBOX = np.array(
     [[SCENE_MIN_X, SCENE_MIN_Y, SCENE_MIN_Z], [SCENE_MAX_X, SCENE_MAX_Y, SCENE_MAX_Z]]
 )
 
+# Lander dimensions
+LANDER_WIDTH = 3  # [m]
+LANDER_GLOBAL = np.array([
+    [-LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0], # top left 
+    [LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0],  # top right
+    [-LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0, 1.0], # bottom left
+    [LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0, 1.0]]) # bottom right
+# LANDER_GLOBAL = np.array([
+#     [LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0], # top left 
+#     [LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0, 1.0],  # top right
+#     [-LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0], # bottom left
+#     [-LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0, 1.0]]) # bottom right
+
 """-------------------------------------- Data Structures --------------------------------------"""
 
 # GEOMETRY_DICT = json.load(open(os.path.expanduser(LAC_BASE_PATH + "/docs/geometry.json")))

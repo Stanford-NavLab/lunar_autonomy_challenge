@@ -18,7 +18,7 @@ SPIRAL_STEP = 0.5  # [m]
 class Planner:
     def __init__(self, initial_pose: np.ndarray):
         # TODO: generate waypoints based on starting pose
-        self.waypoints = gen_square_spiral(SPIRAL_MAX, SPIRAL_MIN, SPIRAL_STEP)
+        self.waypoints = gen_square_spiral(initial_pose, SPIRAL_MAX, SPIRAL_MIN, SPIRAL_STEP)
         self.waypoint_idx = 0
 
     def get_waypoint(self, pose: np.ndarray, print_progress: bool = False) -> np.ndarray | None:

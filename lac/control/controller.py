@@ -127,7 +127,7 @@ class ArcPlanner:
         rock_coords: np.ndarray,
         rock_radii: list,
     ):
-        """Plan an arc to a waypoint while avoiding rocks
+        """Plan an arc to a waypoint while avoiding rocks and lander
 
         Given rock coordinates and radii in rover local frame, select the path with lowest cost
         (distance to waypoint) that also avoids rocks.
@@ -136,6 +136,25 @@ class ArcPlanner:
         # Transform global waypoint to local frame
         waypoint_local = np.array([waypoint[0], waypoint[1], 0.0, 1.0])
         waypoint_local = invert_transform_mat(current_pose) @ waypoint_local
+
+        # TODO: Kaila fix this. Not correct.
+        # Transform lander global position to rover local frame
+        lander_global = params.LANDER_GLOBAL.T
+        lander_local = np.dot(invert_transform_mat(current_pose), lander_global).T
+
+        # Obtain bounding box of lander
+        min_x = np.min(lander_local[:, 0])
+        max_x = np.max(lander_local[:, 0])
+        min_y = np.min(lander_local[:, 1])
+        max_y = np.max(lander_local[:, 1])
+
+        lander_bbox = np.array([min_x, max_x, min_y, max_y])
+
+        # print(current_pose)
+
+        # print(lander_local)
+
+        # print(lander_bbox)
 
         # Distance to waypoint cost
         path_costs = np.linalg.norm(
@@ -149,6 +168,19 @@ class ArcPlanner:
             arc = self.np_candidate_arcs[i]
             valid = True
             for j in range(len(arc)):
+                # Check in arc is inside lander's bounding box
+                # if (
+                #     # X bounds
+                #     arc[j][0] >= lander_bbox[0]
+                #     and arc[j][0] <= lander_bbox[1]
+                #     # Y bounds
+                #     and arc[j][1] >= lander_bbox[2]
+                #     and arc[j][1] <= lander_bbox[3]
+                # ):
+                #     path_costs[i] += 1000
+                #     valid = False
+                #     break
+                # Check if arc is inside any rocks
                 for rock, radius in zip(rock_coords, rock_radii):
                     if radius > params.ROCK_MIN_RADIUS:
                         if np.linalg.norm(arc[j][:2] - rock[:2]) - ROVER_RADIUS <= radius:
