@@ -4,9 +4,6 @@ import numpy as np
 import cv2
 import torch
 
-from lightglue import LightGlue, SuperPoint
-from lightglue.utils import rbd
-
 from lac.slam.feature_tracker import FeatureTracker, prune_features
 from lac.perception.depth import project_pixel_to_rover
 from lac.utils.frames import (
@@ -33,6 +30,7 @@ class StereoVisualOdometry:
         self.matches0_stereo = None
         self.points0_world = None
         self.rover_pose = None
+        self.pose_delta = None
 
     def initialize(self, initial_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray):
         """Initialize world points and features"""
@@ -109,6 +107,8 @@ class StereoVisualOdometry:
                 points1_rover.append(point_rover)
             points1_rover = np.array(points1_rover)
             points1_world = apply_transform(rover_pose, points1_rover)
+
+            self.pose_delta = invert_transform_mat(self.rover_pose) @ rover_pose
 
             self.feats0_left = feats1_left
             self.matches0_stereo = matches1_stereo

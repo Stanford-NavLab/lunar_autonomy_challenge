@@ -117,6 +117,8 @@ class FeatureTracker:
             matches = matches[~outliers]
             depths = depths[~outliers]
 
+        # TODO: should we just return the matched left and right feats?
+
         return feats_left, feats_right, matches, depths
 
     def project_stereo(self, pose: np.ndarray, pixels: torch.Tensor, depths: torch.Tensor):
