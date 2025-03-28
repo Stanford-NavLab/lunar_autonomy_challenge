@@ -22,7 +22,13 @@ from lac.util import (
     transform_to_numpy,
     transform_to_pos_rpy,
 )
-from lac.control.controller import waypoint_steering
+from lac.perception.segmentation import UnetSegmentation
+from lac.perception.depth import (
+    stereo_depth_from_segmentation,
+    compute_rock_coords_rover_frame,
+    compute_rock_radii,
+)
+from lac.control.controller import waypoint_steering, ArcPlanner
 from lac.planning.planner import Planner
 from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
 from lac.localization.imu_dynamics import propagate_state
@@ -53,6 +59,9 @@ class RecoveryAgent(AutonomousAgent):
         """Controller variables"""
         self.current_v = 0.0
         self.current_w = 0.0
+
+        """ Perception modules """
+        self.segmentation = UnetSegmentation()
 
         """ Initialize a counter to keep track of the number of simulation steps. """
         self.step = 0
@@ -85,6 +94,9 @@ class RecoveryAgent(AutonomousAgent):
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
         self.planner = Planner(initial_pose)
+
+        """ Path planner """
+        self.arc_planner = ArcPlanner()
 
         """ Localization """
         # Initialize EKF
@@ -137,11 +149,9 @@ class RecoveryAgent(AutonomousAgent):
                 "use_semantic": config["semantic"],
             }
         return sensors
-    
-
-    def run_nominal_step(self, input_data):
-        self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
-
+        
+    # No longer used:
+    def run_nominal_step(self):
         ground_truth_pose = transform_to_numpy(self.get_transform())
         nav_pose = ground_truth_pose
 
@@ -155,19 +165,20 @@ class RecoveryAgent(AutonomousAgent):
         control = carla.VehicleVelocityControl(0.2, nominal_steering)
         return control
     
-    def run_backup_maneuver(self, input_data):
+    def run_backup_maneuver(self):
         print("Running backup maneuver")
         frame_rate = params.FRAME_RATE
         self.backup_counter += 1
         if self.backup_counter <= frame_rate * 3: # Go backwards for 3 seconds
             control = carla.VehicleVelocityControl(-0.2, 0.0)
-        elif self.backup_counter <= frame_rate * 4: # Rotate 90 degrees in 1 second
-            control = carla.VehicleVelocityControl(0.0, -np.pi/2)
-        elif self.backup_counter <= frame_rate * 5: # Move in an arc around the rock for 1 second
-            control = carla.VehicleVelocityControl(0.2, np.pi/2)
+        elif self.backup_counter <= frame_rate * 5: # Rotate 90 deg/s for 2 seconds (overcorrecting because it isn't rotating in 1 second)
+            control = carla.VehicleVelocityControl(0.0, np.pi/2)
+        elif self.backup_counter <= frame_rate * 7: # Move in an arc around the rock for 2 seconds (overcorrecting because it isn't rotating in 1 second)
+            control = carla.VehicleVelocityControl(0.2, -np.pi/2)
         else:
             self.backup_counter = 0
-            control = self.run_nominal_step(input_data)
+            # control = self.run_nominal_step()
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         return control
     
     def check_stuck(self, rov_vel):
@@ -185,29 +196,14 @@ class RecoveryAgent(AutonomousAgent):
     def run_step(self, input_data):  # This runs at 20 Hz
         if self.step == 0:
             self.initialize()
+        # Moved from nominal_step to run_step!!!
+        self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
         print("\nStep: ", self.step)
 
+        # Obtain and save history of ground truth poses
         ground_truth_pose = transform_to_numpy(self.get_transform())
+        nav_pose = ground_truth_pose
         self.gt_poses.append(ground_truth_pose)
-
-        ''' WHEN USING EKF TO CHECK IF THE ROVER IS STUCK:
-        # """ EKF predict step """
-        # imu_data = self.get_imu_data()
-        # a_k = imu_data[:3]
-        # omega_k = imu_data[3:]
-
-        # def dyn_func(x):
-        #     return propagate_state(x, a_k, omega_k, params.DT, with_stm=True, use_numdiff=False)
-
-        # self.ekf.predict(self.step, dyn_func, self.Q_EKF)
-        # self.ekf.smooth()
-        # self.current_pose = self.ekf.get_pose(self.step)
-        # ekf_result = self.ekf.get_results()
-        # ekf_cur_state = ekf_result["xhat_smooth"][-1]
-        # self.ekf_states.append(ekf_cur_state) 
-        # position_error = self.current_pose[:3, 3] - ground_truth_pose[:3, 3]
-        '''
-
         gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
 
         Rerun.log_3d_trajectory(
@@ -220,7 +216,7 @@ class RecoveryAgent(AutonomousAgent):
         # Obtain velocity estimate from ground truth poses
         rov_vel = np.zeros(3)
         print("rov_vel: ", rov_vel)
-        if self.step > 0:
+        if self.step > 1:
             dt = params.DT
             rov_vel = (gt_trajectory[-1] - gt_trajectory[-2]) / dt
             print("rov_vel: ", rov_vel)
@@ -230,13 +226,62 @@ class RecoveryAgent(AutonomousAgent):
             Rerun.log_2d_seq_scalar("trajectory_error/vz", self.step, rov_vel[2])
             Rerun.log_2d_seq_scalar("trajectory_error/v", self.step, np.linalg.norm(rov_vel))
 
+
+        """ Waypoint navigation """
+        waypoint, advanced = self.planner.get_waypoint(nav_pose, print_progress=True)
+        if waypoint is None:
+            self.mission_complete()
+            return carla.VehicleVelocityControl(0.0, 0.0)
+        nominal_steering = waypoint_steering(waypoint, nav_pose)
+
+
+        """ Rock segmentation """
+        if self.image_available():
+        # if self.step % (params.FRAME_RATE // IMAGE_PROCESS_RATE) == 0:  # This runs at 1 Hz
+            FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+            FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
+
+            # Run segmentation
+            left_seg_masks, left_seg_full_mask = self.segmentation.segment_rocks(FL_gray)
+            right_seg_masks, right_seg_full_mask = self.segmentation.segment_rocks(FR_gray)
+
+            # Stereo rock depth
+            stereo_depth_results = stereo_depth_from_segmentation(
+                left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
+            )
+            rock_coords = compute_rock_coords_rover_frame(
+                stereo_depth_results, "FrontLeft", self.cameras
+            )
+            rock_radii = compute_rock_radii(stereo_depth_results)
+
+            # Path planning
+            # TODO: set self.current_v and self.current_w based on output of Arc Planner
+            control, path, waypoint_local = self.arc_planner.plan_arc(
+                waypoint, nav_pose, rock_coords, rock_radii
+            )
+            self.current_v, self.current_w = control
+            print(f"Control: linear = {self.current_v}, angular = {self.current_w}")
+            print(f"Waypoint_local: {waypoint_local}")
+
+            if LOG_DATA:
+                self.data_logger.log_images(self.step, input_data)
+
+            if DISPLAY_IMAGES:
+                overlay = overlay_mask(FL_gray, left_seg_full_mask, color=(0, 0, 1))
+                overlay = draw_steering_arc(overlay, self.current_w, color=(255, 0, 0))
+                overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
+                cv.imshow("Rock segmentation", overlay)
+                cv.waitKey(1)
+
+
         """ Waypoint navigation """
         # If agent is stuck, perform backup maneuver
         if self.backup_counter > 0 or self.check_stuck(rov_vel):
             print("Agent is stuck.")
-            control = self.run_backup_maneuver(input_data)
+            control = self.run_backup_maneuver()
         else:
-            control = self.run_nominal_step(input_data)
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+            # control = self.run_nominal_step()
 
         """ Data logging """
         if LOG_DATA:

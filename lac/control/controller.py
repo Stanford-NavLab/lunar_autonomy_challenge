@@ -150,10 +150,11 @@ class ArcPlanner:
             valid = True
             for j in range(len(arc)):
                 for rock, radius in zip(rock_coords, rock_radii):
-                    if np.linalg.norm(arc[j][:2] - rock[:2]) - ROVER_RADIUS <= radius:
-                        path_costs[i] += 1000
-                        valid = False
-                        break
+                    if radius > params.ROCK_MIN_RADIUS:
+                        if np.linalg.norm(arc[j][:2] - rock[:2]) - ROVER_RADIUS <= radius:
+                            path_costs[i] += 1000
+                            valid = False
+                            break
             if valid:
                 return self.vw[i], arc, waypoint_local
 
