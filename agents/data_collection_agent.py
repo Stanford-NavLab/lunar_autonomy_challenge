@@ -23,9 +23,9 @@ from lac.util import transform_to_numpy
 import lac.params as params
 
 # Attributes for teleop sensitivity and max speed
-MAX_SPEED = 0.3
-SPEED_INCREMENT = 0.1
-TURN_RATE = 0.6
+MAX_SPEED = 0.2
+SPEED_INCREMENT = 0.05
+TURN_RATE = 0.3
 
 MODE = "teleop"  # {"teleop", "waypoint", "dynamics"}
 

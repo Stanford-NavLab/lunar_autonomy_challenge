@@ -55,7 +55,7 @@ def stereo_depth_from_segmentation(left_seg_masks, right_seg_masks, baseline, fo
     disparities = [
         left_rock_centroids[match[0]][0] - right_rock_centroids[match[1]][0] for match in matches
     ]
-    depths = (focal_length_x * baseline) / disparities
+    depths = (focal_length_x * baseline) / (disparities + 1e-8)  # Avoid division by zero
 
     results = []
     for i, match in enumerate(matches):
