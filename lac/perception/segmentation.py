@@ -82,18 +82,20 @@ class UnetSegmentation:
             List of masks for each detected rock
         """
         pred = self.predict(image)
-        full_mask = pred == SemanticClasses.ROCKS.value
+        rock_mask = pred == SemanticClasses.ROCKS.value
 
         # Identify unique rock masks
-        num_labels, labels = cv2.connectedComponents(full_mask.astype(np.uint8))
+        num_labels, labels = cv2.connectedComponents(rock_mask.astype(np.uint8))
 
         MIN_ROCK_MASK_AREA = 100  # Minimum area to be considered a valid rock segmentation
 
         masks = []
+        full_mask = np.zeros_like(rock_mask, dtype=np.uint8)
 
         for label in range(1, num_labels):
             mask = labels == label
             if np.sum(mask) > MIN_ROCK_MASK_AREA:
                 masks.append(mask)
+                full_mask[mask] = 1
 
         return masks, full_mask
