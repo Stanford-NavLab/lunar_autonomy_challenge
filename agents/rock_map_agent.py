@@ -17,16 +17,21 @@ import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
+import random
+from norfair import Detection, Tracker
+
 from lac.util import (
     pose_to_pos_rpy,
     transform_to_numpy,
     transform_to_pos_rpy,
 )
+from lac.slam.rock_tracker import RockTracker
 from lac.perception.segmentation import UnetSegmentation
 from lac.perception.depth import (
     stereo_depth_from_segmentation,
     compute_rock_coords_rover_frame,
     compute_rock_radii,
+    project_pixel_to_rover,
 )
 from lac.control.controller import ArcPlanner
 from lac.planning.planner import Planner
@@ -50,6 +55,11 @@ LOG_DATA = True  # Whether to log data
 
 def get_entry_point():
     return "RockMapAgent"
+
+
+def int_to_color(i):
+    random.seed(i)  # seed RNG with the integer
+    return tuple(random.randint(0, 255) for _ in range(3))  # RGB tuple
 
 
 class RockMapAgent(AutonomousAgent):
@@ -94,6 +104,11 @@ class RockMapAgent(AutonomousAgent):
         """ Rock stuff """
         self.prev_left_img = None
         self.prev_pts = None
+        self.tracked_rocks = {}  # ID: pixel centroid
+        self.rock_detections = {}  # ID: [3D point detections]
+        self.rock_tracking_initialized = False
+        self.tracker = Tracker(distance_function="euclidean", distance_threshold=30)
+        self.rock_tracker = RockTracker(self.cameras)
 
         """ Data logging """
         if LOG_DATA:
@@ -156,32 +171,38 @@ class RockMapAgent(AutonomousAgent):
             FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
 
             # Run segmentation
-            left_seg_masks, left_seg_full_mask = self.segmentation.segment_rocks(FL_gray)
-            right_seg_masks, right_seg_full_mask = self.segmentation.segment_rocks(FR_gray)
+            left_seg_masks, left_seg_labels = self.segmentation.segment_rocks(FL_gray)
+            right_seg_masks, right_seg_labels = self.segmentation.segment_rocks(FR_gray)
+            left_seg_full_mask = np.clip(left_seg_labels, 0, 1)
 
             # Stereo rock depth
             stereo_depth_results = stereo_depth_from_segmentation(
                 left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
             )
+            left_centroids = [result["left_centroid"] for result in stereo_depth_results]
+            if self.step == 80:
+                # Initialize tracking
+                for i, result in enumerate(stereo_depth_results):
+                    self.tracked_rocks[i] = result["left_centroid"]
+                    rock_world_point = project_pixel_to_rover(
+                        result["left_centroid"], result["depth"], "FrontLeft", self.cameras
+                    )
+                    self.rock_detections[i] = [rock_world_point]
+                self.rock_tracking_initialized = True
+
             rock_coords = compute_rock_coords_rover_frame(
                 stereo_depth_results, "FrontLeft", self.cameras
             )
             rock_radii = compute_rock_radii(stereo_depth_results)
 
-            # TODO: add optical flow tracks
-            left_centroids = [result["left_centroid"] for result in stereo_depth_results]
-            if self.prev_pts is not None:
-                print(f"inputs: {self.prev_left_img.shape}, {FL_gray.shape}, {self.prev_pts.shape}")
-                next_pts, status, err = cv2.calcOpticalFlowPyrLK(
-                    self.prev_left_img, FL_gray, self.prev_pts.astype(np.float32), None
-                )
-                next_pts_tracked = next_pts[status.squeeze() == 1]
-                self.prev_pts = next_pts_tracked
-            else:
-                if self.step >= 80 and len(left_centroids) > 0:
-                    # Initialize optical flow points
-                    self.prev_pts = np.array(left_centroids)
-            self.prev_left_img = FL_gray
+            # Track 2D detections
+            if self.rock_tracking_initialized:
+                detections = [Detection(p) for p in left_centroids]
+                tracked_objects = self.tracker.update(detections)
+
+            rock_points, left_rock_matched_pts = self.rock_tracker.detect_rocks(
+                ground_truth_pose, FL_gray, FR_gray
+            )
 
             # Path planning
             control, path, waypoint_local = self.arc_planner.plan_arc(
@@ -197,9 +218,21 @@ class RockMapAgent(AutonomousAgent):
             if DISPLAY_IMAGES:
                 overlay = overlay_mask(FL_gray, left_seg_full_mask, color=(0, 0, 1))
                 overlay = draw_steering_arc(overlay, self.current_w, color=(255, 0, 0))
-                if self.prev_pts is not None:
-                    print(self.prev_pts.shape)
-                    overlay = overlay_points(overlay, self.prev_pts)
+                if self.rock_tracking_initialized:
+                    # print(self.prev_pts.shape)
+                    overlay = overlay_points(overlay, left_rock_matched_pts.cpu().numpy(), size=3)
+                    # for obj in tracked_objects:
+                    #     # Plot each tracked point with a unique color
+                    #     print(f"last_detection: {obj.last_detection.points}")
+                    #     color = int_to_color(obj.id)
+                    #     cv2.circle(
+                    #         overlay,
+                    #         tuple(obj.last_detection.points[0].astype(int)),
+                    #         5,
+                    #         color,
+                    #         -1,
+                    #     )
+
                 cv2.imshow("Rock segmentation", overlay)
                 cv2.waitKey(1)
 

@@ -10,9 +10,9 @@ import numpy as np
 from lac.util import gen_square_spiral
 from lac.params import WAYPOINT_REACHED_DIST_THRESHOLD
 
-SPIRAL_MAX = 3.75  # [m]
-SPIRAL_MIN = 2.75  # [m]
-SPIRAL_STEP = 0.5  # [m]
+SPIRAL_MAX = 13.5  # [m]
+SPIRAL_MIN = 3.5  # [m]
+SPIRAL_STEP = 2.0  # [m]
 
 
 class Planner:

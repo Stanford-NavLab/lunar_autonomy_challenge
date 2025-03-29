@@ -47,6 +47,7 @@ TARGET_SPEED = 0.15  # [m/s]
 IMAGE_PROCESS_RATE = 10  # [Hz]
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
+ENABLE_RERUN = False  # Whether to enable Rerun dashboard
 LOG_DATA = True  # Whether to log data
 
 
@@ -119,13 +120,6 @@ class RecoveryAgent(AutonomousAgent):
         """ Path planner """
         self.arc_planner = ArcPlanner()
 
-        """ Localization """
-        # Initialize EKF
-        init_pos, init_rpy = transform_to_pos_rpy(self.get_initial_position())
-        v0 = np.zeros(3)
-        init_state = np.hstack((init_pos, v0, init_rpy)).T
-        self.Q_EKF = create_Q(params.DT, params.EKF_Q_SIGMA_A, params.EKF_Q_SIGMA_ANGLE)
-        self.ekf = EKF(init_state, params.EKF_P0, store=True)
         self.current_pose = initial_pose
 
         """ Data logging """
@@ -137,8 +131,8 @@ class RecoveryAgent(AutonomousAgent):
                 f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/rock_detections.json"
             )
 
-        Rerun.init_vo()
-        # self.ekf_states = []
+        if ENABLE_RERUN:
+            Rerun.init_vo()
         self.gt_poses = [initial_pose]
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
@@ -230,12 +224,13 @@ class RecoveryAgent(AutonomousAgent):
         self.gt_poses.append(ground_truth_pose)
         gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
 
-        Rerun.log_3d_trajectory(
-            self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255]
-        )
-        # Rerun.log_2d_seq_scalar("ground_truth_pose/x", self.step, ground_truth_pose[0, 3])
-        # Rerun.log_2d_seq_scalar("ground_truth_pose/y", self.step, ground_truth_pose[1, 3])
-        # Rerun.log_2d_seq_scalar("ground_truth_pose/z", self.step, ground_truth_pose[2, 3])
+        if ENABLE_RERUN:
+            Rerun.log_3d_trajectory(
+                self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255]
+            )
+            # Rerun.log_2d_seq_scalar("ground_truth_pose/x", self.step, ground_truth_pose[0, 3])
+            # Rerun.log_2d_seq_scalar("ground_truth_pose/y", self.step, ground_truth_pose[1, 3])
+            # Rerun.log_2d_seq_scalar("ground_truth_pose/z", self.step, ground_truth_pose[2, 3])
 
         # Obtain velocity estimate from ground truth poses
         rov_vel = np.zeros(3)
@@ -245,17 +240,17 @@ class RecoveryAgent(AutonomousAgent):
             rov_vel = (gt_trajectory[-1] - gt_trajectory[-2]) / dt
             print("rov_vel: ", rov_vel)
             print("rov_vel[0]: ", rov_vel[0])
-            Rerun.log_2d_seq_scalar("trajectory_error/vx", self.step, rov_vel[0])
-            Rerun.log_2d_seq_scalar("trajectory_error/vy", self.step, rov_vel[1])
-            Rerun.log_2d_seq_scalar("trajectory_error/vz", self.step, rov_vel[2])
-            Rerun.log_2d_seq_scalar("trajectory_error/v", self.step, np.linalg.norm(rov_vel))
+            if ENABLE_RERUN:
+                Rerun.log_2d_seq_scalar("trajectory_error/vx", self.step, rov_vel[0])
+                Rerun.log_2d_seq_scalar("trajectory_error/vy", self.step, rov_vel[1])
+                Rerun.log_2d_seq_scalar("trajectory_error/vz", self.step, rov_vel[2])
+                Rerun.log_2d_seq_scalar("trajectory_error/v", self.step, np.linalg.norm(rov_vel))
 
         """ Waypoint navigation """
         waypoint, advanced = self.planner.get_waypoint(nav_pose, print_progress=True)
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
-        nominal_steering = waypoint_steering(waypoint, nav_pose)
 
         """ Rock segmentation """
         if self.image_available():
@@ -277,7 +272,6 @@ class RecoveryAgent(AutonomousAgent):
             rock_radii = compute_rock_radii(stereo_depth_results)
 
             # Path planning
-            # TODO: set self.current_v and self.current_w based on output of Arc Planner
             control, path, waypoint_local = self.arc_planner.plan_arc(
                 waypoint, nav_pose, rock_coords, rock_radii
             )
@@ -301,7 +295,10 @@ class RecoveryAgent(AutonomousAgent):
             print("Agent is stuck.")
             control = self.run_backup_maneuver()
         else:
-            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+            if self.step < 100:  # Wait for arms to raise before moving
+                control = carla.VehicleVelocityControl(0.0, 0.0)
+            else:
+                control = carla.VehicleVelocityControl(self.current_v, self.current_w)
             # control = self.run_nominal_step()
 
         """ Data logging """

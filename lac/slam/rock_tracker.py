@@ -5,7 +5,7 @@ import cv2
 import torch
 
 from lac.slam.feature_tracker import FeatureTracker, prune_features
-from lac.perception.segmentation import UnetSegmentation
+from lac.perception.segmentation import UnetSegmentation, SemanticClasses
 
 from lac.perception.depth import project_pixels_to_rover
 from lac.utils.frames import (
@@ -22,8 +22,10 @@ class RockTracker:
     def detect_rocks(self, pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray):
         """Process stereo pair to get features and depths"""
         # Segmentation
-        left_masks, left_full_mask = self.segmentation.segment_rocks(left_image)
-        right_masks, right_full_mask = self.segmentation.segment_rocks(right_image)
+        left_masks, left_labels = self.segmentation.segment_rocks(left_image)
+        right_masks, right_labels = self.segmentation.segment_rocks(right_image)
+        left_full_mask = np.clip(left_labels, 0, 1).astype(np.uint8)
+        right_full_mask = np.clip(right_labels, 0, 1).astype(np.uint8)
 
         # Feature matching
         left_feats, right_feats, matches, depths = self.tracker.process_stereo(
@@ -57,4 +59,4 @@ class RockTracker:
 
         rock_points = self.tracker.project_stereo(pose, left_rock_matched_pts, depths_rock_matched)
 
-        return rock_points
+        return rock_points, left_rock_matched_pts

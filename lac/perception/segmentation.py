@@ -90,12 +90,10 @@ class UnetSegmentation:
         MIN_ROCK_MASK_AREA = 100  # Minimum area to be considered a valid rock segmentation
 
         masks = []
-        full_mask = np.zeros_like(rock_mask, dtype=np.uint8)
 
         for label in range(1, num_labels):
             mask = labels == label
             if np.sum(mask) > MIN_ROCK_MASK_AREA:
                 masks.append(mask)
-                full_mask[mask] = 1
 
-        return masks, full_mask
+        return masks, labels
