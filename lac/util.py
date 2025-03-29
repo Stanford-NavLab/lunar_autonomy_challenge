@@ -187,11 +187,12 @@ def mask_centroid(mask: np.ndarray) -> tuple:
     return cx, cy
 
 
-def gen_square_spiral(max_val, min_val, step):
+def gen_square_spiral(initial_pose, max_val, min_val, step):
     """
     Generate an Nx2 numpy array of 2D coordinates following a square spiral.
 
     Parameters:
+      initial_pose (np.array): The initial pose of the rover.
       max_val (float): The half-side length of the outermost square.
       min_val (float): The half-side length of the innermost square.
       step (float): The decrement between successive squares.
@@ -199,6 +200,10 @@ def gen_square_spiral(max_val, min_val, step):
     Returns:
       np.array: An (N x 2) numpy array containing the 2D coordinates.
     """
+    initial_xy = np.array(initial_pose[:1, 3])
+    # Have the starting waypoint to be the one closest to the rover's initial position
+
+    # TODO: (Kaila) Still need to implement this
     points = []
     r = max_val
     # Use a small tolerance to account for floating point comparisons.

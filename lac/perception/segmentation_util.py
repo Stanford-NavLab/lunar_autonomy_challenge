@@ -1,8 +1,19 @@
 """Utils for segmentation"""
 
 import numpy as np
+import cv2
 
 from lac.util import mask_centroid
+
+
+def dilate_mask(mask, amount=1):
+    """
+    Dilate binary mask using a square kernel.
+    """
+    size = 2 * amount + 1
+    kernel = np.ones((size, size), np.uint8)
+    dilated_mask = cv2.dilate(mask, kernel, iterations=1)
+    return dilated_mask
 
 
 def get_mask_centroids(masks):

@@ -10,15 +10,15 @@ import numpy as np
 from lac.util import gen_square_spiral
 from lac.params import WAYPOINT_REACHED_DIST_THRESHOLD
 
-SPIRAL_MAX = 3.75  # [m]
-SPIRAL_MIN = 2.75  # [m]
-SPIRAL_STEP = 0.5  # [m]
+SPIRAL_MAX = 13.5  # [m]
+SPIRAL_MIN = 3.5  # [m]
+SPIRAL_STEP = 2.0  # [m]
 
 
 class Planner:
     def __init__(self, initial_pose: np.ndarray):
         # TODO: generate waypoints based on starting pose
-        self.waypoints = gen_square_spiral(SPIRAL_MAX, SPIRAL_MIN, SPIRAL_STEP)
+        self.waypoints = gen_square_spiral(initial_pose, SPIRAL_MAX, SPIRAL_MIN, SPIRAL_STEP)
         self.waypoint_idx = 0
 
     def get_waypoint(self, pose: np.ndarray, print_progress: bool = False) -> np.ndarray | None:
