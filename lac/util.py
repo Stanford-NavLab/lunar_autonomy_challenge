@@ -6,6 +6,7 @@ from PIL import Image
 from scipy.spatial.transform import Rotation
 from pathlib import Path
 import os
+from tqdm import tqdm
 
 
 def load_data(data_path: str | Path):
@@ -33,19 +34,36 @@ def load_stereo_images(data_path: str | Path):
     left_path = Path(data_path) / "FrontLeft"
     right_path = Path(data_path) / "FrontRight"
 
-    for img_name in os.listdir(left_path):
-        left_imgs[int(img_name.split(".")[0])] = cv2.imread(
-            str(left_path / img_name), cv2.IMREAD_GRAYSCALE
-        )
+    for img_name in tqdm(os.listdir(left_path), desc="FrontLeft"):
+        left_imgs[int(img_name.split(".")[0])] = cv2.imread(str(left_path / img_name), cv2.IMREAD_GRAYSCALE)
 
-    for img_name in os.listdir(right_path):
-        right_imgs[int(img_name.split(".")[0])] = cv2.imread(
-            str(right_path / img_name), cv2.IMREAD_GRAYSCALE
-        )
+    for img_name in tqdm(os.listdir(right_path), desc="FrontRight"):
+        right_imgs[int(img_name.split(".")[0])] = cv2.imread(str(right_path / img_name), cv2.IMREAD_GRAYSCALE)
 
     assert len(left_imgs.keys()) == len(right_imgs.keys())
 
     return left_imgs, right_imgs
+
+
+def load_side_images(data_path: str | Path):
+    """Load side images from data log file."""
+    side_left_imgs = {}
+    side_right_imgs = {}
+
+    side_left_imgs_path = Path(data_path) / "Left"
+    side_right_imgs_path = Path(data_path) / "Right"
+
+    for img_name in tqdm(os.listdir(side_left_imgs_path), desc="Left"):
+        side_left_imgs[int(img_name.split(".")[0])] = cv2.imread(
+            str(side_left_imgs_path / img_name), cv2.IMREAD_GRAYSCALE
+        )
+    for img_name in tqdm(os.listdir(side_right_imgs_path), desc="Right"):
+        side_right_imgs[int(img_name.split(".")[0])] = cv2.imread(
+            str(side_right_imgs_path / img_name), cv2.IMREAD_GRAYSCALE
+        )
+
+    assert len(side_left_imgs.keys()) == len(side_right_imgs.keys())
+    return side_left_imgs, side_right_imgs
 
 
 def transform_to_pos_rpy(transform):

@@ -57,21 +57,15 @@ class StereoVisualOdometry:
             left_image, right_image, min_score=MIN_MATCH_SCORE
         )
         # Match with previous frame
-        matches01_left = self.tracker.match_feats(
-            self.feats0_left, feats1_left, min_score=MIN_MATCH_SCORE
-        )
+        matches01_left = self.tracker.match_feats(self.feats0_left, feats1_left, min_score=MIN_MATCH_SCORE)
 
         stereo_indices = self.matches0_stereo[:, 0]
         frame_indices = matches01_left[:, 0]
 
         # Find overlapping matches between frame 0 stereo and frame 0-1 matches
-        common_indices = torch.tensor(
-            list(set(stereo_indices.cpu().numpy()) & set(frame_indices.cpu().numpy()))
-        ).cuda()
+        common_indices = torch.tensor(list(set(stereo_indices.cpu().numpy()) & set(frame_indices.cpu().numpy()))).cuda()
         frame_common = matches01_left[torch.isin(frame_indices, common_indices)]
-        points0_world_common = self.points0_world[
-            torch.isin(stereo_indices, common_indices).cpu().numpy()
-        ]
+        points0_world_common = self.points0_world[torch.isin(stereo_indices, common_indices).cpu().numpy()]
 
         # PnP
         points3D = points0_world_common
