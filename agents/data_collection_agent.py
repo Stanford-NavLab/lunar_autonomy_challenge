@@ -27,7 +27,8 @@ MAX_SPEED = 0.2
 SPEED_INCREMENT = 0.05
 TURN_RATE = 0.3
 
-MODE = "teleop"  # {"teleop", "waypoint", "dynamics"}
+MODE = "waypoint"  # {"teleop", "waypoint", "dynamics"}
+DISPLAY_IMAGES = False  # Set to False to disable image display
 
 
 def get_entry_point():
@@ -50,7 +51,7 @@ class DataCollectionAgent(AutonomousAgent):
         """ Planner """
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(initial_pose)
+        self.planner = Planner(initial_pose, spiral_min=3.5, spiral_max=13.5, spiral_step=2.0)
 
         # Camera config
         self.cameras = params.CAMERA_CONFIG_INIT
@@ -59,21 +60,21 @@ class DataCollectionAgent(AutonomousAgent):
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": True,
+            "semantic": False,
         }
         self.cameras["FrontRight"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": True,
+            "semantic": False,
         }
         self.cameras["Front"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": True,
+            "semantic": False,
         }
         self.cameras["BackLeft"] = {
             "active": False,
@@ -101,14 +102,14 @@ class DataCollectionAgent(AutonomousAgent):
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": True,
+            "semantic": False,
         }
         self.cameras["Right"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": True,
+            "semantic": False,
         }
         agent_name = get_entry_point()
         self.data_logger = DataLogger(self, agent_name, self.cameras)
@@ -152,9 +153,10 @@ class DataCollectionAgent(AutonomousAgent):
 
         if self.image_available():
             self.data_logger.log_images(self.step, input_data)
-            FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-            cv.imshow("Front left", FL_gray)
-            cv.waitKey(1)
+            if DISPLAY_IMAGES:
+                FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
+                cv.imshow("Front left", FL_gray)
+                cv.waitKey(1)
 
         if MODE == "teleop":
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
@@ -191,7 +193,8 @@ class DataCollectionAgent(AutonomousAgent):
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""
-        cv.destroyAllWindows()
+        if DISPLAY_IMAGES:
+            cv.destroyAllWindows()
 
     def on_press(self, key):
         """This is the callback executed when a key is pressed. If the key pressed is either the up or down arrow, this method will add

@@ -6,6 +6,7 @@ import torch
 
 from lac.slam.feature_tracker import FeatureTracker, prune_features
 from lac.perception.segmentation import UnetSegmentation, SemanticClasses
+from lac.perception.segmentation_util import dilate_mask
 
 from lac.perception.depth import project_pixels_to_rover
 from lac.utils.frames import (
@@ -19,7 +20,7 @@ class RockTracker:
         self.segmentation = UnetSegmentation()
         self.tracker = FeatureTracker(cam_config)
 
-    def detect_rocks(self, pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray):
+    def detect_rocks(self, left_image: np.ndarray, right_image: np.ndarray):
         """Process stereo pair to get features and depths"""
         # Segmentation
         left_masks, left_labels = self.segmentation.segment_rocks(left_image)
@@ -38,25 +39,49 @@ class RockTracker:
         right_matched_pts = right_matched_feats["keypoints"][0]
 
         # Find matching points within segmentations
-        kernel = np.ones((5, 5), np.uint8)
-        left_full_mask_dilated = cv2.dilate(left_full_mask, kernel, iterations=1)
-        right_full_mask_dilated = cv2.dilate(right_full_mask, kernel, iterations=1)
+        # kernel = np.ones((5, 5), np.uint8)
+        left_full_mask_dilated = dilate_mask(left_full_mask, pixels=2)
+        right_full_mask_dilated = dilate_mask(right_full_mask, pixels=2)
 
-        rock_pt_idxs = []
+        # rock_pt_idxs = []
+        rock_pt_idxs = {}
+        MAX_DEPTH = 5.0
 
+        # for i in range(len(left_matched_pts)):
+        #     x_left, y_left = left_matched_pts[i]
+        #     x_right, y_right = right_matched_pts[i]
+        #     if (
+        #         left_full_mask_dilated[int(y_left), int(x_left)]
+        #         and right_full_mask_dilated[int(y_right), int(x_right)]
+        #     ):
+        #         rock_pt_idxs.append(i)
         for i in range(len(left_matched_pts)):
+            if depths[i] > MAX_DEPTH:
+                continue
             x_left, y_left = left_matched_pts[i]
             x_right, y_right = right_matched_pts[i]
+            id = left_labels[int(y_left), int(x_left)]
             if (
-                left_full_mask_dilated[int(y_left), int(x_left)]
-                and right_full_mask_dilated[int(y_right), int(x_right)]
+                left_full_mask_dilated[int(y_left), int(x_left)] != 0
+                and right_full_mask_dilated[int(y_right), int(x_right)] != 0
             ):
-                rock_pt_idxs.append(i)
+                if id not in rock_pt_idxs:
+                    rock_pt_idxs[id] = []
+                rock_pt_idxs[id].append(i)
 
-        left_rock_matched_pts = left_matched_pts[rock_pt_idxs]
-        right_rock_matched_pts = right_matched_pts[rock_pt_idxs]
-        depths_rock_matched = depths[rock_pt_idxs]
+        rock_detections = {}
 
-        rock_points = self.tracker.project_stereo(pose, left_rock_matched_pts, depths_rock_matched)
+        for i, (id, idxs) in enumerate(rock_pt_idxs.items()):
+            rock_detections[i] = {
+                "left_keypoints": left_matched_pts[idxs],
+                "right_keypoints": right_matched_pts[idxs],
+                "depths": depths[idxs],
+            }
 
-        return rock_points, left_rock_matched_pts
+        # left_rock_matched_pts = left_matched_pts[rock_pt_idxs]
+        # right_rock_matched_pts = right_matched_pts[rock_pt_idxs]
+        # depths_rock_matched = depths[rock_pt_idxs]
+
+        # rock_points = self.tracker.project_stereo(pose, left_rock_matched_pts, depths_rock_matched)
+
+        return rock_detections, left_full_mask

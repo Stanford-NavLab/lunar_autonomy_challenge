@@ -95,5 +95,7 @@ class UnetSegmentation:
             mask = labels == label
             if np.sum(mask) > MIN_ROCK_MASK_AREA:
                 masks.append(mask)
+            else:
+                labels[mask] = 0  # Remove small masks
 
         return masks, labels

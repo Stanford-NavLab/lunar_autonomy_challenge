@@ -7,7 +7,7 @@ Generates waypoints for the agent to follow, and tracks the agent's progress.
 
 import numpy as np
 
-from lac.util import gen_square_spiral
+from lac.util import gen_square_spiral, gen_square_spiral_inside_out, gen_spiral
 from lac.params import WAYPOINT_REACHED_DIST_THRESHOLD
 
 SPIRAL_MAX = 13.5  # [m]
@@ -16,9 +16,19 @@ SPIRAL_STEP = 2.0  # [m]
 
 
 class Planner:
-    def __init__(self, initial_pose: np.ndarray):
+    def __init__(
+        self,
+        initial_pose: np.ndarray,
+        spiral_min=SPIRAL_MIN,
+        spiral_max=SPIRAL_MAX,
+        spiral_step=SPIRAL_STEP,
+    ):
         # TODO: generate waypoints based on starting pose
-        self.waypoints = gen_square_spiral(initial_pose, SPIRAL_MAX, SPIRAL_MIN, SPIRAL_STEP)
+        # self.waypoints = gen_square_spiral(initial_pose, SPIRAL_MAX, SPIRAL_MIN, SPIRAL_STEP)
+        # self.waypoints = gen_square_spiral_inside_out(
+        #     initial_pose, spiral_min, spiral_max, spiral_step
+        # )
+        self.waypoints = gen_spiral(initial_pose, spiral_min, spiral_max, spiral_step)
         self.waypoint_idx = 0
 
     def get_waypoint(self, pose: np.ndarray, print_progress: bool = False) -> np.ndarray | None:
