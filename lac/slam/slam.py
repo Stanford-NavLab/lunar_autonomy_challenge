@@ -121,3 +121,15 @@ class SLAM:
                 #     ]
 
         return result
+
+
+class RockSLAM:
+    def __init__(self):
+        self.poses = {}
+        self.rocks_positions = {}  # id -> point (3D centroid)
+        self.rock_features = {}
+        self.landmark_ids = set()
+
+        self.optimizer_params = gtsam.LevenbergMarquardtParams()
+        # self.optimizer_params = gtsam.GncLMParams()
+        # self.optimizer_params.setVerbosity("TERMINATION")

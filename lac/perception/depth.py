@@ -168,6 +168,18 @@ def project_pixels_to_rover(
     return points_rover
 
 
+def project_pixel_to_world(
+    rover_pose: np.ndarray, pixel: tuple | np.ndarray, depth: float, cam_name: str, cam_config: dict
+):
+    CAM_TO_ROVER = get_cam_pose_rover(cam_name)
+    K = get_camera_intrinsics(cam_name, cam_config)
+    point_opencv = project_pixel_to_3D(pixel, depth, K)
+    point_cam = opencv_to_camera(point_opencv)
+    point_rover = apply_transform(CAM_TO_ROVER, point_cam)
+    point_world = apply_transform(rover_pose, point_rover)
+    return point_world
+
+
 def compute_stereo_depth(
     img_left: np.ndarray,
     img_right: np.ndarray,

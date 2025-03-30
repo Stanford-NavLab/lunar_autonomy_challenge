@@ -3,6 +3,16 @@
 import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
+import matplotlib.colors
+
+
+def int_to_color(i, cmap_name="tab20", hex=False):
+    cmap = plt.get_cmap(cmap_name)
+    color = cmap(i % cmap.N)
+    if hex:
+        return matplotlib.colors.rgb2hex(color[:3])  # Plotly uses hex colors
+    else:
+        return tuple(int(c * 255) for c in color[:3])
 
 
 def cv_display_text(text, height=300, width=500, font_scale=1, color=(255, 255, 255), thickness=2):

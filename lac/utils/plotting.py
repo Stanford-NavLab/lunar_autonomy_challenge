@@ -174,16 +174,16 @@ def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, waypoint=No
                 **kwargs,
             )
         )
-          # Create parametric circles for all rocks in a single trac
-    if(color == "green"):
+        # Create parametric circles for all rocks in a single trac
+    if color == "green":
         theta = np.linspace(0, 2 * np.pi, 100)
         circle_x = np.cos(theta)
         circle_y = np.sin(theta)
 
         all_x = []
         all_y = []
-        
-        for count,(x, y) in enumerate(path[:,:2]):
+
+        for count, (x, y) in enumerate(path[:, :2]):
             if count % 10 == 0:
                 all_x.extend(x + 0.5 * circle_x)
                 all_y.extend(y + 0.5 * circle_y)
@@ -191,15 +191,15 @@ def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, waypoint=No
                 all_y.append(None)
 
         fig.add_trace(
-        go.Scatter(
-            x=all_y,  # Swapping x and y to match rover frame convention
-            y=all_x,
-            mode="lines",
-            line=dict(color=color, width=1),
-            name="Rover Boundaries",
+            go.Scatter(
+                x=all_y,  # Swapping x and y to match rover frame convention
+                y=all_x,
+                mode="lines",
+                line=dict(color=color, width=1),
+                name="Rover Boundaries",
+            )
         )
-    )
-        
+
     fig.update_layout(
         xaxis=dict(
             title="Y axis (Left)",
@@ -238,6 +238,35 @@ def plot_surface(grid, fig=None, colorscale="Viridis", no_axes=False, showscale=
             z=grid[:, :, 2],
             colorscale=colorscale,
             showscale=showscale,
+            **kwargs,
+        )
+    )
+    fig.update_layout(width=1600, height=900, scene_aspectmode="data")
+    if no_axes:
+        fig.update_layout(
+            scene=dict(
+                xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)
+            )
+        )
+    return fig
+
+
+def plot_rock_map(grid, fig=None, no_axes=False, **kwargs):
+    """
+    grid is NxNx4 array where 4th channel is rock presence (0 or 1)
+
+    """
+    if fig is None:
+        fig = go.Figure()
+    fig.add_trace(
+        go.Surface(
+            x=grid[:, :, 0],
+            y=grid[:, :, 1],
+            z=grid[:, :, 2],
+            surfacecolor=grid[:, :, 3].astype(int),
+            colorscale=[[0, "gray"], [1, "red"]],
+            showscale=False,
+            hoverinfo="none",
             **kwargs,
         )
     )
