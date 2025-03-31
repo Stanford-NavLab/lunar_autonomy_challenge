@@ -13,3 +13,4 @@ pillow==11.1.0
 pynput==1.7.7
 rerun-sdk==0.22.1
 gtsam==4.2
+norfair==2.2.0

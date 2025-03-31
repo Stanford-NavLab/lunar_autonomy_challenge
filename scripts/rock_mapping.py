@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors
 import plotly.graph_objects as go
 
+from lac.slam.rock_tracker import RockTracker
 from lac.perception.segmentation import UnetSegmentation
 from lac.perception.depth import stereo_depth_from_segmentation, project_pixel_to_world
 from lac.utils.visualization import (
@@ -37,6 +38,7 @@ if __name__ == "__main__":
 
     segmentation = UnetSegmentation()
     tracker = Tracker(distance_function="euclidean", distance_threshold=100, hit_counter_max=5)
+    rock_tracker = RockTracker(cam_config)
 
     rock_detections = {}
     frames = sorted(int(img_name.split(".")[0]) for img_name in os.listdir(left_path))
@@ -49,32 +51,36 @@ if __name__ == "__main__":
         left_img = cv2.imread(str(left_path / img_name), cv2.IMREAD_GRAYSCALE)
         right_img = cv2.imread(str(right_path / img_name), cv2.IMREAD_GRAYSCALE)
 
-        left_seg_masks, left_seg_labels = segmentation.segment_rocks(left_img)
-        right_seg_masks, right_seg_labels = segmentation.segment_rocks(right_img)
-        left_seg_full_mask = np.clip(left_seg_labels, 0, 1)
+        # left_seg_masks, left_seg_labels = segmentation.segment_rocks(left_img)
+        # right_seg_masks, right_seg_labels = segmentation.segment_rocks(right_img)
+        # left_seg_full_mask = np.clip(left_seg_labels, 0, 1)
 
-        stereo_depth_results = stereo_depth_from_segmentation(
-            left_seg_masks, right_seg_masks, STEREO_BASELINE, FL_X
+        # stereo_depth_results = stereo_depth_from_segmentation(
+        #     left_seg_masks, right_seg_masks, STEREO_BASELINE, FL_X
+        # )
+
+        # detections = []
+        # centroids = []
+        # for result in stereo_depth_results:
+        #     centroid = result["left_centroid"]
+        #     depth = result["depth"]
+        #     if depth < 5.0:
+        #         rock_point_world_frame = project_pixel_to_world(
+        #             poses[frame], centroid, result["depth"], "FrontLeft", cam_config
+        #         )
+        #         centroids.append(centroid)
+        #         detections.append(Detection(points=centroid, data=rock_point_world_frame))
+        # tracked_objects = tracker.update(detections)
+
+        # for rock in tracked_objects:
+        #     centroid_pixel = rock.last_detection.points[0]
+        #     if rock.id not in rock_detections:
+        #         rock_detections[rock.id] = []
+        #     rock_detections[rock.id].append(rock.last_detection.data)
+
+        rock_points, left_rock_matched_pts, left_seg_full_mask = rock_tracker.detect_rocks(
+            poses[frame], left_img, right_img
         )
-
-        detections = []
-        centroids = []
-        for result in stereo_depth_results:
-            centroid = result["left_centroid"]
-            depth = result["depth"]
-            if depth < 5.0:
-                rock_point_world_frame = project_pixel_to_world(
-                    poses[frame], centroid, result["depth"], "FrontLeft", cam_config
-                )
-                centroids.append(centroid)
-                detections.append(Detection(points=centroid, data=rock_point_world_frame))
-        tracked_objects = tracker.update(detections)
-
-        for rock in tracked_objects:
-            centroid_pixel = rock.last_detection.points[0]
-            if rock.id not in rock_detections:
-                rock_detections[rock.id] = []
-            rock_detections[rock.id].append(rock.last_detection.data)
 
         if VIZUALIZE:
             overlay = overlay_mask(left_img, left_seg_full_mask, color=(0, 0, 1))

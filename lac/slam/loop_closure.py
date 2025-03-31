@@ -26,7 +26,7 @@ def estimate_loop_closure_pose(
     matched_pts_left1 = matched_feats1["keypoints"][0]
     points_local1 = tracker.project_stereo(np.eye(4), matched_pts_left1, depths1)
 
-    matches12_left = tracker.match_feats(feats_left1, feats_left2)
+    matches12_left = tracker.match_feats(feats_left1, feats_left2, min_score=0.6)
 
     stereo_indices = stereo_matches1[:, 0]
     frame_indices = matches12_left[:, 0]

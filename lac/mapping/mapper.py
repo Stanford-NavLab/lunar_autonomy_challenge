@@ -2,6 +2,7 @@
 
 import numpy as np
 from scipy.interpolate import griddata
+from scipy.stats import binned_statistic_2d
 
 from lac.perception.depth import project_rock_depths_to_world
 from lac.utils.frames import apply_transform
@@ -19,6 +20,20 @@ def grid_to_points(grid: np.ndarray, remove_missing=True) -> np.ndarray:
     points = grid[:, :, :3].reshape(-1, 3)
     points = points[points[:, 2] != -np.inf]
     return np.array(points)
+
+
+def bin_points_to_grid(points: np.ndarray) -> np.ndarray:
+    x, y, z = points[:, 0], points[:, 1], points[:, 2]
+    x_min, x_max = -13.5, 13.5
+    y_min, y_max = -13.5, 13.5
+    N = 180
+
+    grid_medians, x_edges, y_edges, _ = binned_statistic_2d(
+        x, y, z, statistic="median", bins=N, range=[[x_min, x_max], [y_min, y_max]]
+    )
+    # Set Nans to -np.inf
+    grid_medians[np.isnan(grid_medians)] = -np.inf
+    return grid_medians
 
 
 def interpolate_heights(height_array: np.ndarray) -> np.ndarray:
@@ -45,7 +60,7 @@ def interpolate_heights(height_array: np.ndarray) -> np.ndarray:
     z_nn = griddata((x_known, y_known), z_known, (x_all, y_all), method="nearest")
     z_interp[np.isnan(z_interp)] = z_nn[np.isnan(z_interp)]
 
-    height_array_interpolated = np.zeros_like(height_array)
+    height_array_interpolated = height_array.copy()
     height_array_interpolated[..., 0] = x_all.reshape(N, N)
     height_array_interpolated[..., 1] = y_all.reshape(N, N)
     height_array_interpolated[..., 2] = z_interp.reshape(N, N)

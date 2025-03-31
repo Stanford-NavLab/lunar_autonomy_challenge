@@ -5,6 +5,7 @@ import typing as T
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
@@ -20,6 +21,60 @@ def plot_heatmap(data, fig=None, colorscale="Viridis", no_axes=False):
     if no_axes:
         fig.update_layout(xaxis=dict(visible=False), yaxis=dict(visible=False))
     return fig
+
+
+def plot_heightmaps(ground_map, agent_map):
+    fig = make_subplots(
+        rows=1,
+        cols=3,
+        subplot_titles=["Ground truth map", "Agent Map", "Error"],
+        horizontal_spacing=0.1,
+    )
+    error = ground_map[:, :, 2] - agent_map[:, :, 2]
+    fig.add_trace(
+        go.Heatmap(z=ground_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1
+    )
+    fig.add_trace(
+        go.Heatmap(z=agent_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2
+    )
+    fig.add_trace(go.Heatmap(z=error, colorscale="Viridis", colorbar=dict(x=1.0)), row=1, col=3)
+    fig.update_layout(
+        width=1400,  # Adjust the figure width
+        height=505,  # Adjust the figure height
+        xaxis=dict(scaleanchor="y"),
+        xaxis2=dict(scaleanchor="y2"),
+        xaxis3=dict(scaleanchor="y3"),
+    )
+    fig.show()
+
+
+def plot_rock_maps(ground_map, agent_map):
+    """
+    rock_map is NxNx4 array where 4th channel is rock presence (0 or 1)
+
+    """
+    fig = make_subplots(
+        rows=1,
+        cols=3,
+        subplot_titles=["Ground truth map", "Agent Map", "Error"],
+        horizontal_spacing=0.1,
+    )
+    error = ground_map[:, :, 3] - agent_map[:, :, 3]
+    fig.add_trace(
+        go.Heatmap(z=ground_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1
+    )
+    fig.add_trace(
+        go.Heatmap(z=agent_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2
+    )
+    fig.add_trace(go.Heatmap(z=error, colorscale="Viridis", colorbar=dict(x=1.0)), row=1, col=3)
+    fig.update_layout(
+        width=1400,  # Adjust the figure width
+        height=505,  # Adjust the figure height
+        xaxis=dict(scaleanchor="y"),
+        xaxis2=dict(scaleanchor="y2"),
+        xaxis3=dict(scaleanchor="y3"),
+    )
+    fig.show()
 
 
 def plot_rocks_rover_frame(rock_points, rock_radii, waypoint=None, fig=None, color="red", **kwargs):

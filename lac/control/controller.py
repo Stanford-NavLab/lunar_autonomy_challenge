@@ -6,7 +6,7 @@ import cv2 as cv
 
 from lac.perception.depth import project_pixel_to_rover
 from lac.control.dynamics import arc, dubins_traj
-from lac.utils.frames import invert_transform_mat
+from lac.utils.frames import invert_transform_mat, apply_transform
 from lac.util import mask_centroid, wrap_angle, pose_to_pos_rpy
 import lac.params as params
 
@@ -104,25 +104,22 @@ class ArcPlanner:
                 self.candidate_arcs.append(new_arc)
                 self.root_vw.append((v, w))
 
-
         concatenated_arcs = []
         for count, root_arc in enumerate(self.root_arcs):
             last_state = root_arc[-1]  # Extract last state [x, y, theta]
-
 
             for v in self.speeds:
                 for w in self.omegas:
                     new_arc = dubins_traj(last_state, [v, w], NUM_ARC_POINTS, params.DT)
                     concatenated_arcs.append(np.concatenate((root_arc, new_arc)))
                     self.vw.append(self.root_vw[count])
- 
 
         self.candidate_arcs = concatenated_arcs
         self.np_candidate_arcs = np.array(self.candidate_arcs)
 
     def plan_arc(
         self,
-        waypoint: np.ndarray,
+        waypoint_global: np.ndarray,
         current_pose: np.ndarray,
         rock_coords: np.ndarray,
         rock_radii: list,
@@ -134,15 +131,15 @@ class ArcPlanner:
 
         """
         # Transform global waypoint to local frame
-        waypoint_local = np.array([waypoint[0], waypoint[1], 0.0, 1.0])
-        waypoint_local = invert_transform_mat(current_pose) @ waypoint_local
+        pose_inv = invert_transform_mat(current_pose)
+        waypoint_local = pose_inv @ np.array([waypoint_global[0], waypoint_global[1], 0.0, 1.0])
 
         # TODO: Kaila fix this. Not correct.
         # Transform lander global position to rover local frame
-        lander_global = params.LANDER_GLOBAL.T
-        lander_local = np.dot(invert_transform_mat(current_pose), lander_global).T
+        lander_local = apply_transform(pose_inv, params.LANDER_GLOBAL)
 
         # Obtain bounding box of lander
+        # TODO: check against oriented lander box (instead of axis-aligned overbounding box)
         min_x = np.min(lander_local[:, 0])
         max_x = np.max(lander_local[:, 0])
         min_y = np.min(lander_local[:, 1])
@@ -150,40 +147,33 @@ class ArcPlanner:
 
         lander_bbox = np.array([min_x, max_x, min_y, max_y])
 
-        # print(current_pose)
-
-        # print(lander_local)
-
-        # print(lander_bbox)
-
         # Distance to waypoint cost
         path_costs = np.linalg.norm(
             self.np_candidate_arcs[:, -1, :2] - (waypoint_local[:2]), axis=1
         )
 
         sorted_indices = np.argsort(path_costs)
-        ROVER_RADIUS = 0.5  # [m]
-        
+
         for i in sorted_indices:
             arc = self.np_candidate_arcs[i]
             valid = True
             for j in range(len(arc)):
                 # Check in arc is inside lander's bounding box
-                # if (
-                #     # X bounds
-                #     arc[j][0] >= lander_bbox[0]
-                #     and arc[j][0] <= lander_bbox[1]
-                #     # Y bounds
-                #     and arc[j][1] >= lander_bbox[2]
-                #     and arc[j][1] <= lander_bbox[3]
-                # ):
-                #     path_costs[i] += 1000
-                #     valid = False
-                #     break
+                if (
+                    # X bounds
+                    arc[j][0] >= lander_bbox[0]
+                    and arc[j][0] <= lander_bbox[1]
+                    # Y bounds
+                    and arc[j][1] >= lander_bbox[2]
+                    and arc[j][1] <= lander_bbox[3]
+                ):
+                    path_costs[i] += 1000
+                    valid = False
+                    break
                 # Check if arc is inside any rocks
                 for rock, radius in zip(rock_coords, rock_radii):
                     if radius > params.ROCK_MIN_RADIUS:
-                        if np.linalg.norm(arc[j][:2] - rock[:2]) - ROVER_RADIUS <= radius:
+                        if np.linalg.norm(arc[j][:2] - rock[:2]) - params.ROVER_RADIUS <= radius:
                             path_costs[i] += 1000
                             valid = False
                             break
@@ -191,3 +181,4 @@ class ArcPlanner:
                 return self.vw[i], arc, waypoint_local
 
         # TODO: handle case if no paths are valid
+        return None, None, None

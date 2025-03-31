@@ -11,9 +11,9 @@ Full agent
 import carla
 import cv2 as cv
 import numpy as np
-import json
-from PIL import Image
 import signal
+from norfair import Detection, Tracker
+from scipy.stats import binned_statistic_2d
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
@@ -22,16 +22,18 @@ from lac.util import (
     transform_to_numpy,
     transform_to_pos_rpy,
 )
-from lunar_autonomy_challenge.lac.perception.segmentation_util import Segmentation
+from lac.perception.segmentation import UnetSegmentation, SemanticClasses
 from lac.perception.depth import (
     stereo_depth_from_segmentation,
+    project_pixel_to_world,
+    compute_rock_coords_rover_frame,
+    compute_rock_radii,
 )
-from lac.perception.vision import FiducialLocalizer
-from lac.control.controller import waypoint_steering, rock_avoidance_steering
+from lac.slam.visual_odometry import StereoVisualOdometry
+from lac.slam.feature_tracker import FeatureTracker
+from lac.control.controller import ArcPlanner
 from lac.planning.planner import Planner
-from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
-from lac.localization.imu_dynamics import propagate_state
-from lac.mapping.mapper import Mapper
+from lac.mapping.mapper import bin_points_to_grid, interpolate_heights
 from lac.utils.visualization import (
     overlay_mask,
     draw_steering_arc,
@@ -44,12 +46,12 @@ import lac.params as params
 
 """ Agent parameters and settings """
 EVAL = False  # Whether running in evaluation mode (disable ground truth)
-USE_FIDUCIALS = True
+USE_FIDUCIALS = False
 
-TARGET_SPEED = 0.15  # [m/s]
-IMAGE_PROCESS_RATE = 10  # [Hz]
-EARLY_STOP_STEP = 3000  # Number of steps before stopping the mission (0 for no early stop)
-USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
+TARGET_SPEED = 0.1  # [m/s]
+EARLY_STOP_STEP = 0  # Number of steps before stopping the mission (0 for no early stop)
+USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
+ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
 LOG_DATA = True  # Whether to log data
@@ -70,10 +72,16 @@ class NavAgent(AutonomousAgent):
         self.steer_delta = 0.0
 
         """ Perception modules """
-        self.segmentation = Segmentation()
+        self.segmentation = UnetSegmentation()
 
         """ Initialize a counter to keep track of the number of simulation steps. """
         self.step = 0
+
+        """ Initialize a counter for backup maneuvers. """
+        self.backup_counter = 0
+
+        """ Initialize a counter for how long the rover is stuck. """
+        self.stuck_counter = 0
 
         """ Camera config """
         self.cameras = params.CAMERA_CONFIG_INIT
@@ -91,45 +99,43 @@ class NavAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
-        if USE_FIDUCIALS:
-            self.cameras["Right"] = {
-                "active": True,
-                "light": 1.0,
-                "width": 1280,
-                "height": 720,
-                "semantic": False,
-            }
+        # self.cameras["Right"] = {
+        #     "active": True,
+        #     "light": 1.0,
+        #     "width": 1280,
+        #     "height": 720,
+        #     "semantic": False,
+        # }
         self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
-        """ Rock mapping """
-        self.all_rock_detections = []
-
         """ Planner """
-        initial_pose = transform_to_numpy(self.get_initial_position())
-        self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(initial_pose)
+        self.initial_pose = transform_to_numpy(self.get_initial_position())
+        self.lander_pose = self.initial_pose @ transform_to_numpy(
+            self.get_initial_lander_position()
+        )
+        self.planner = Planner(self.initial_pose, spiral_min=3.5, spiral_max=3.5, spiral_step=1.0)
 
-        """ Localization """
-        self.fid_localizer = FiducialLocalizer(self.cameras)
-        # Initialize EKF
-        init_pos, init_rpy = transform_to_pos_rpy(self.get_initial_position())
-        v0 = np.zeros(3)
-        init_state = np.hstack((init_pos, v0, init_rpy)).T
-        self.Q_EKF = create_Q(params.DT, params.EKF_Q_SIGMA_A, params.EKF_Q_SIGMA_ANGLE)
-        self.ekf = EKF(init_state, params.EKF_P0, store=True)
-        self.current_pose = initial_pose
+        """ State variables """
+        self.current_pose = self.initial_pose
+        self.current_velocity = np.zeros(3)
 
-        """ Mapping """
-        self.mapper = Mapper(self.get_geometric_map())
+        """ SLAM """
+        self.svo = StereoVisualOdometry(self.cameras)
+        self.svo_poses = [self.initial_pose]
+        self.feature_tracker = FeatureTracker(self.cameras)
+        self.tracker = Tracker(
+            distance_function="euclidean", distance_threshold=100, hit_counter_max=5
+        )
+        self.ground_points = []
+        self.rock_detections = {}
+
+        """ Path planner """
+        self.arc_planner = ArcPlanner()
 
         """ Data logging """
         if LOG_DATA:
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.cameras)
-            self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
-            self.rock_detections_file = (
-                f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/rock_detections.json"
-            )
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
 
@@ -141,6 +147,19 @@ class NavAgent(AutonomousAgent):
         # Move the arms out of the way
         self.set_front_arm_angle(params.ARM_ANGLE_STATIC_RAD)
         self.set_back_arm_angle(params.ARM_ANGLE_STATIC_RAD)
+
+        # Initialize the map
+        g_map = self.get_geometric_map()
+        map_array = g_map.get_map_array()
+        map_array[:, :, 2] = self.initial_pose[2, 3]  # Height
+        map_array[:, :, 3] = 1.0  # Rocks
+        # TODO: clear a patch of no rock around the initial pose and lander
+        i, j = g_map.get_cell_indexes(self.initial_pose[0, 3], self.initial_pose[1, 3])
+        r = int(params.ROVER_RADIUS / params.CELL_WIDTH)
+        map_array[i - r : i + r, j - r : j + r, 3] = 0.0
+        i, j = g_map.get_cell_indexes(0, 0)
+        r = int(params.LANDER_WIDTH / (2 * params.CELL_WIDTH))
+        map_array[i - r : i + r, j - r : j + r, 3] = 0.0
 
     def image_available(self):
         return self.step % 2 == 0  # Image data is available every other step
@@ -161,6 +180,37 @@ class NavAgent(AutonomousAgent):
             }
         return sensors
 
+    def run_backup_maneuver(self):
+        print("Running backup maneuver")
+        frame_rate = params.FRAME_RATE
+        self.backup_counter += 1
+        if self.backup_counter <= frame_rate * 3:  # Go backwards for 3 seconds
+            control = carla.VehicleVelocityControl(-0.2, 0.0)
+        elif (
+            self.backup_counter <= frame_rate * 5
+        ):  # Rotate 90 deg/s for 2 seconds (overcorrecting because it isn't rotating in 1 second)
+            control = carla.VehicleVelocityControl(0.0, np.pi / 2)
+        elif (
+            self.backup_counter <= frame_rate * 7
+        ):  # Move in an arc around the rock for 2 seconds (overcorrecting because it isn't rotating in 1 second)
+            control = carla.VehicleVelocityControl(0.2, -np.pi / 2)
+        else:
+            self.backup_counter = 0
+            # control = self.run_nominal_step()
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        return control
+
+    def check_stuck(self):
+        # Agent is stuck if the velocity is less than 0.1 m/s
+        if self.step < ARM_RAISE_WAIT_FRAMES + 10:
+            return False
+        is_stuck = np.linalg.norm(self.current_velocity) < 0.05
+        if is_stuck:
+            self.stuck_counter += 1
+        else:
+            self.stuck_counter = 0
+        return is_stuck and self.stuck_counter >= params.FRAME_RATE  # 1 second
+
     def run_step(self, input_data):
         if self.step == 0:
             self.initialize()
@@ -174,60 +224,6 @@ class NavAgent(AutonomousAgent):
         if not EVAL:
             ground_truth_pose = transform_to_numpy(self.get_transform())
 
-        """ EKF predict step """
-        imu_data = self.get_imu_data()
-        a_k = imu_data[:3]
-        omega_k = imu_data[3:]
-
-        def dyn_func(x):
-            return propagate_state(x, a_k, omega_k, params.DT, with_stm=True, use_numdiff=False)
-
-        self.ekf.predict(self.step, dyn_func, self.Q_EKF)
-
-        """ Image processing """
-        if self.image_available():
-            if self.use_fiducials():
-                images_gray = {}
-                fid_measurements = []
-                for cam in self.active_cameras:
-                    images_gray[cam] = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
-                    pose_measurements, detections = self.fid_localizer.estimate_rover_pose(
-                        images_gray[cam], cam, self.lander_pose
-                    )
-                    for pose in pose_measurements.values():
-                        meas = np.concatenate(pose_to_pos_rpy(pose))
-                        fid_measurements.append(meas)
-
-                    if DISPLAY_IMAGES and cam == "Right":
-                        overlay = overlay_tag_detections(images_gray[cam], detections)
-                        cv.imshow(cam, overlay)
-
-                """ EKF update step """
-                n_meas = len(fid_measurements)
-                fid_measurements = np.array(fid_measurements).flatten()
-
-                def meas_func(x):
-                    return get_pose_measurement_tag(x, n_meas)
-
-                self.ekf.update(self.step, fid_measurements, meas_func)
-
-            if LOG_DATA:
-                self.data_logger.log_images(self.step, input_data)
-
-        # if self.step % params.EKF_SMOOTHING_INTERVAL == 0:
-        #     self.ekf.smooth()
-        self.ekf.smooth()
-
-        # ekf_result = self.ekf.get_results()
-        # ekf_state = ekf_result["xhat_smooth"][-1]
-        # self.current_pose = pos_rpy_to_pose(ekf_state[:3], ekf_state[-3:])
-        self.current_pose = self.ekf.get_pose(self.step)
-        if not EVAL:
-            print(
-                "Position error: ",
-                np.linalg.norm(self.current_pose[:3, 3] - ground_truth_pose[:3, 3]),
-            )
-
         if USE_GROUND_TRUTH_NAV:
             nav_pose = ground_truth_pose
         else:
@@ -235,53 +231,120 @@ class NavAgent(AutonomousAgent):
 
         """ Waypoint navigation """
         waypoint, advanced = self.planner.get_waypoint(nav_pose, print_progress=True)
-        # if advanced:
-        #     self.mapper.wheel_contact_update(self.ekf.get_smoothed_poses())
-        #     self.mapper.finalize_heights()
-        #     self.mapper.rock_projection_update(self.ekf.get_smoothed_poses(), self.cameras)
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
-        nominal_steering = waypoint_steering(waypoint, nav_pose)
 
-        """ Rock segmentation """
-        if self.step % (params.FRAME_RATE // IMAGE_PROCESS_RATE) == 0:
+        """ Image processing """
+        if self.image_available():
             FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
             FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
-            FL_rgb_PIL = Image.fromarray(FL_gray).convert("RGB")
-            FR_rgb_PIL = Image.fromarray(FR_gray).convert("RGB")
 
-            # Run segmentation
-            left_seg_masks, left_seg_full_mask = self.segmentation.segment_rocks(FL_rgb_PIL)
-            right_seg_masks, right_seg_full_mask = self.segmentation.segment_rocks(FR_rgb_PIL)
+            if self.step >= ARM_RAISE_WAIT_FRAMES:
+                # VO
+                if self.step == ARM_RAISE_WAIT_FRAMES:
+                    self.svo.initialize(self.current_pose, FL_gray, FR_gray)
+                else:
+                    self.svo.track(FL_gray, FR_gray)
+                self.svo_poses.append(self.svo.get_pose())
+                self.current_velocity = (
+                    self.svo.get_pose()[:3, 3] - self.current_pose[:3, 3]
+                ) / params.DT
+                self.current_pose = self.svo.get_pose()
 
-            # Stereo rock depth
-            stereo_depth_results = stereo_depth_from_segmentation(
-                left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
-            )
-            self.mapper.add_rock_detections(self.step, stereo_depth_results)
-
-            # Hazard avoidance
-            self.steer_delta = rock_avoidance_steering(stereo_depth_results, self.cameras)
-
-            if DISPLAY_IMAGES:
-                overlay = overlay_mask(FL_gray, left_seg_full_mask, color=(0, 0, 1))
-                overlay = draw_steering_arc(overlay, nominal_steering, color=(255, 0, 0))
-                overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
-                overlay = draw_steering_arc(
-                    overlay, nominal_steering + self.steer_delta, color=(0, 255, 0)
+                # Run segmentation
+                left_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(
+                    FL_gray, output_pred=True
                 )
-                cv.imshow("Rock segmentation", overlay)
-                cv.waitKey(1)
+                right_seg_masks, right_labels = self.segmentation.segment_rocks(FR_gray)
+                left_full_mask = np.clip(left_labels, 0, 1).astype(np.uint8)
 
-        target_speed = TARGET_SPEED
-        if self.steer_delta != 0:
-            target_speed = 0.1
-        control = carla.VehicleVelocityControl(target_speed, nominal_steering + self.steer_delta)
+                # Stereo rock depth
+                stereo_depth_results = stereo_depth_from_segmentation(
+                    left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
+                )
+                rock_coords = compute_rock_coords_rover_frame(stereo_depth_results, self.cameras)
+                rock_radii = compute_rock_radii(stereo_depth_results)
+
+                # Rock tracking
+                detections = []
+                centroids = []
+                for i, result in enumerate(stereo_depth_results):
+                    centroid = result["left_centroid"]
+                    depth = result["depth"]
+                    if depth < 5.0:
+                        rock_point_world_frame = project_pixel_to_world(
+                            self.current_pose, centroid, result["depth"], "FrontLeft", self.cameras
+                        )
+                        centroids.append(centroid)
+                        detections.append(
+                            Detection(
+                                points=centroid,
+                                data={"point": rock_point_world_frame, "radius": rock_radii[i]},
+                            )
+                        )
+                tracked_objects = self.tracker.update(detections)
+                for rock in tracked_objects:
+                    if rock.id not in self.rock_detections:
+                        self.rock_detections[rock.id] = {"points": [], "radii": []}
+                    self.rock_detections[rock.id]["points"].append(
+                        rock.last_detection.data["point"]
+                    )
+                    self.rock_detections[rock.id]["radii"].append(
+                        rock.last_detection.data["radius"]
+                    )
+
+                # Feature matching depth
+                feats_left, feats_right, matches, depths = self.feature_tracker.process_stereo(
+                    FL_gray, FR_gray, return_matched_feats=True
+                )
+
+                # Extract ground points
+                left_ground_mask = left_pred == SemanticClasses.GROUND.value
+                kps_left = feats_left["keypoints"][0].cpu().numpy()
+                ground_idxs = []
+                for i, kp in enumerate(kps_left):
+                    if left_ground_mask[int(kp[1]), int(kp[0])]:
+                        ground_idxs.append(i)
+                ground_kps = kps_left[ground_idxs]
+                ground_depths = depths[ground_idxs]
+                ground_points_world = self.feature_tracker.project_stereo(
+                    self.current_pose, ground_kps, ground_depths
+                )
+                self.ground_points.append(ground_points_world)
+
+                # Path planning
+                control, path, waypoint_local = self.arc_planner.plan_arc(
+                    waypoint, nav_pose, rock_coords, rock_radii
+                )
+                if control is not None:
+                    self.current_v, self.current_w = control
+                else:
+                    print("No safe paths found!")
+
+                if DISPLAY_IMAGES:
+                    overlay = overlay_mask(FL_gray, left_full_mask, color=(0, 0, 1))
+                    overlay = draw_steering_arc(overlay, self.current_w, color=(255, 0, 0))
+                    overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
+                    cv.imshow("Rock segmentation", overlay)
+                    cv.waitKey(1)
+
+            if LOG_DATA:
+                self.data_logger.log_images(self.step, input_data)
+
+        """ Control """
+        if self.step < ARM_RAISE_WAIT_FRAMES:  # Wait for arms to raise before moving
+            control = carla.VehicleVelocityControl(0.0, 0.0)
+        # If agent is stuck, perform backup maneuver
+        elif self.backup_counter > 0 or self.check_stuck():
+            print("Agent is stuck.")
+            control = self.run_backup_maneuver()
+        else:
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         """ Data logging """
         if LOG_DATA:
-            self.data_logger.log_data(self.step, control)
+            self.data_logger.log_data(self.step, control, self.current_pose)
 
         print("\n-----------------------------------------------")
 
@@ -289,13 +352,37 @@ class NavAgent(AutonomousAgent):
 
     def finalize(self):
         print("Running finalize")
-        self.mapper.wheel_contact_update(self.ekf.get_smoothed_poses())
-        self.mapper.finalize_heights()
-        self.mapper.rock_projection_update(self.ekf.get_smoothed_poses(), self.cameras)
+
+        # Set the map
+        g_map = self.get_geometric_map()
+        map_array = g_map.get_map_array()
+
+        # Heights
+        if len(self.ground_points) > 0:
+            all_ground_points = np.concatenate(self.ground_points, axis=0)
+            ground_grid = bin_points_to_grid(all_ground_points)
+            map_array[:, :, 2] = ground_grid
+            map_array[:] = interpolate_heights(map_array)
+
+            map_array[:, :, 3] = ground_grid == -np.inf
+
+            if LOG_DATA:
+                np.save(
+                    f"output/{get_entry_point()}/{params.DEFAULT_RUN_NAME}/ground_points.npy",
+                    all_ground_points,
+                )
+
+        # Rocks
+        # map_array[:, :, 3] = 0.0
+        # for id, detections in self.rock_detections.items():
+        #     points = np.array(detections["points"])
+        #     avg_point = np.median(points, axis=0)
+        #     radii = np.array(detections["radii"])
+        #     avg_radius = np.median(radii)
+        #     g_map.set_rock(avg_point[0], avg_point[1], True)
 
         if LOG_DATA:
             self.data_logger.save_log()
-            np.savez(self.ekf_result_file, **self.ekf.get_results())
 
         if DISPLAY_IMAGES:
             cv.destroyAllWindows()

@@ -26,8 +26,12 @@ def load_data(data_path: str | Path):
     return initial_pose, lander_pose, poses, imu_data, cam_config
 
 
-def load_stereo_images(data_path: str | Path, step: int = 1):
-    """Load stereo images from data log file."""
+def load_stereo_images(data_path: str | Path):
+    """Load stereo images from data log file.
+
+    NOTE: this takes up a lot of RAM for large datasets. Use primarily for smaller datasets in notebooks
+
+    """
     left_imgs = {}
     right_imgs = {}
 
@@ -35,17 +39,12 @@ def load_stereo_images(data_path: str | Path, step: int = 1):
     right_path = Path(data_path) / "FrontRight"
 
     for img_name in tqdm(os.listdir(left_path), desc="FrontLeft"):
-        name = int(img_name.split(".")[0])
-        if name % step == 0:
-            left_imgs[name] = cv2.imread(str(left_path / img_name), cv2.IMREAD_GRAYSCALE)
+        left_imgs[int(img_name.split(".")[0])] = cv2.imread(str(left_path / img_name), cv2.IMREAD_GRAYSCALE)
 
     for img_name in tqdm(os.listdir(right_path), desc="FrontRight"):
-        name = int(img_name.split(".")[0])
-        if name % step == 0:
-            right_imgs[name] = cv2.imread(str(right_path / img_name), cv2.IMREAD_GRAYSCALE)
+        right_imgs[int(img_name.split(".")[0])] = cv2.imread(str(right_path / img_name), cv2.IMREAD_GRAYSCALE)
 
     assert len(left_imgs.keys()) == len(right_imgs.keys())
-
     return left_imgs, right_imgs
 
 
@@ -57,17 +56,23 @@ def load_side_images(data_path: str | Path, step: int = 1):
     side_left_imgs_path = Path(data_path) / "Left"
     side_right_imgs_path = Path(data_path) / "Right"
 
-    for img_name in tqdm(os.listdir(side_left_imgs_path), desc="Left"):
-        name = int(img_name.split(".")[0])
-        if name % step == 0:
-            side_left_imgs[name] = cv2.imread(str(side_left_imgs_path / img_name), cv2.IMREAD_GRAYSCALE)
+    try:
+        for img_name in tqdm(os.listdir(side_left_imgs_path), desc="Left"):
+            side_left_imgs[int(img_name.split(".")[0])] = cv2.imread(
+                str(side_left_imgs_path / img_name), cv2.IMREAD_GRAYSCALE
+            )
+    except FileNotFoundError:
+        print(f"Left images path not found: {side_left_imgs_path}")
 
-    for img_name in tqdm(os.listdir(side_right_imgs_path), desc="Right"):
-        name = int(img_name.split(".")[0])
-        if name % step == 0:
-            side_right_imgs[name] = cv2.imread(str(side_right_imgs_path / img_name), cv2.IMREAD_GRAYSCALE)
+    try:
+        for img_name in tqdm(os.listdir(side_right_imgs_path), desc="Right"):
+            side_right_imgs[int(img_name.split(".")[0])] = cv2.imread(
+                str(side_right_imgs_path / img_name), cv2.IMREAD_GRAYSCALE
+            )
 
-    assert len(side_left_imgs.keys()) == len(side_right_imgs.keys())
+    except FileNotFoundError:
+        print(f"Right images path not found: {side_right_imgs_path}")
+
     return side_left_imgs, side_right_imgs
 
 
@@ -184,7 +189,7 @@ def np_img_to_PIL_rgb(img_array):
     return Image.fromarray(img_array).convert("RGB")
 
 
-def mask_centroid(mask: np.ndarray) -> tuple:
+def mask_centroid(mask: np.ndarray) -> tuple | None:
     """Compute the centroid of a binary mask."""
     M = cv2.moments(mask)
     cx = int(M["m10"] / M["m00"])
@@ -219,6 +224,75 @@ def gen_square_spiral(initial_pose, max_val, min_val, step):
         points.append([r, -r])  # bottom-right
         points.append([-r, -r])  # bottom-left
         r -= step
+    return np.array(points)
+
+
+def gen_square_spiral_inside_out(initial_pose, min_val, max_val, step):
+    """
+    Generate an Nx2 numpy array of 2D coordinates following a square spiral.
+
+    Parameters:
+      initial_pose (np.array): The initial pose of the rover.
+      max_val (float): The half-side length of the outermost square.
+      min_val (float): The half-side length of the innermost square.
+      step (float): The decrement between successive squares.
+
+    Returns:
+      np.array: An (N x 2) numpy array containing the 2D coordinates.
+    """
+    points = []
+    r = min_val
+    # Use a small tolerance to account for floating point comparisons.
+    while r <= max_val + 1e-8:
+        # Order: top-left, top-right, bottom-right, bottom-left.
+        points.append([-r, r])  # top-left
+        points.append([r, r])  # top-right
+        points.append([r, -r])  # bottom-right
+        points.append([-r, -r])  # bottom-left
+        r += step
+    return np.array(points)
+
+
+def gen_spiral(initial_pose, min_val, max_val, step):
+    """
+    Generate an Nx2 numpy array of 2D coordinates following a square spiral,
+    ensuring that the last waypoint is repeated, and the next ring starts at
+    the next diagonal position.
+
+    Parameters:
+      initial_pose (np.array): The initial pose of the rover.
+      max_val (float): The half-side length of the outermost square.
+      min_val (float): The half-side length of the innermost square.
+      step (float): The decrement between successive squares.
+
+    Returns:
+      np.array: An (N x 2) numpy array containing the 2D coordinates.
+    """
+    points = []
+    r = min_val
+    default_order = np.array([[-1, 1], [1, 1], [1, -1], [-1, -1]])
+
+    def get_starting_direction_order(initial_pose):
+        signs = np.sign(initial_pose[:2, 3])
+        start_index = np.argwhere((default_order == signs).all(axis=1)).flatten()[0]
+        return np.roll(default_order, -start_index, axis=0)
+
+    direction_order = get_starting_direction_order(initial_pose)
+
+    while r <= max_val + 1e-8:
+        # Compute the four corners of the current square ring
+        corners = r * direction_order
+
+        # Add corners in order
+        points.extend(corners)
+
+        # Repeat the first waypoint
+        points.append(corners[0])
+
+        # Cycle the direction
+        direction_order = np.roll(direction_order, -1, axis=0)
+        r += step
+
     return np.array(points)
 
 

@@ -46,7 +46,7 @@ import lac.params as params
 TARGET_SPEED = 0.15  # [m/s]
 IMAGE_PROCESS_RATE = 10  # [Hz]
 
-DISPLAY_IMAGES = True  # Whether to display the camera views
+DISPLAY_IMAGES = False  # Whether to display the camera views
 ENABLE_RERUN = False  # Whether to enable Rerun dashboard
 LOG_DATA = True  # Whether to log data
 
@@ -80,47 +80,45 @@ class RecoveryAgent(AutonomousAgent):
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": True,
+            "semantic": False,
         }
         self.cameras["FrontRight"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": True,
+            "semantic": False,
         }
         self.cameras["Front"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": True,
+            "semantic": False,
         }
         self.cameras["Left"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": True,
+            "semantic": False,
         }
         self.cameras["Right"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": True,
+            "semantic": False,
         }
         self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
         """ Planner """
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(initial_pose)
+        self.planner = Planner(initial_pose, spiral_min=3.5, spiral_max=13.5, spiral_step=2.0)
 
         """ Path planner """
         self.arc_planner = ArcPlanner()
-
-        self.current_pose = initial_pose
 
         """ Data logging """
         if LOG_DATA:
@@ -266,9 +264,7 @@ class RecoveryAgent(AutonomousAgent):
             stereo_depth_results = stereo_depth_from_segmentation(
                 left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
             )
-            rock_coords = compute_rock_coords_rover_frame(
-                stereo_depth_results, "FrontLeft", self.cameras
-            )
+            rock_coords = compute_rock_coords_rover_frame(stereo_depth_results, self.cameras)
             rock_radii = compute_rock_radii(stereo_depth_results)
 
             # Path planning
@@ -289,17 +285,15 @@ class RecoveryAgent(AutonomousAgent):
                 cv.imshow("Rock segmentation", overlay)
                 cv.waitKey(1)
 
-        """ Waypoint navigation """
+        """ Control """
+        if self.step < 100:  # Wait for arms to raise before moving
+            control = carla.VehicleVelocityControl(0.0, 0.0)
         # If agent is stuck, perform backup maneuver
-        if self.backup_counter > 0 or self.check_stuck(rov_vel):
+        elif self.backup_counter > 0 or self.check_stuck(rov_vel):
             print("Agent is stuck.")
             control = self.run_backup_maneuver()
         else:
-            if self.step < 100:  # Wait for arms to raise before moving
-                control = carla.VehicleVelocityControl(0.0, 0.0)
-            else:
-                control = carla.VehicleVelocityControl(self.current_v, self.current_w)
-            # control = self.run_nominal_step()
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         """ Data logging """
         if LOG_DATA:

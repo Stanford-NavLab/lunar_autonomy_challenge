@@ -50,7 +50,7 @@ class DataLogger:
                 if config["semantic"]:
                     os.makedirs(f"output/{self.agent_name}/{self.run_name}/{cam_name}_semantic")
 
-    def log_data(self, step: int, control: carla.VehicleVelocityControl):
+    def log_data(self, step: int, control: carla.VehicleVelocityControl, est_pose=None):
         """
         step - current step in the simulation
         """
@@ -65,6 +65,8 @@ class DataLogger:
             "linear_speed": self.agent.get_linear_speed(),
             "angular_speed": self.agent.get_angular_speed(),
         }
+        if est_pose is not None:
+            log_entry["est_pose"] = est_pose.tolist()
         self.frames.append(log_entry)
 
     def log_images(self, step: int, input_data: dict):

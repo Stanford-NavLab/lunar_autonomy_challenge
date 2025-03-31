@@ -23,6 +23,9 @@ from lac.utils.frames import get_cam_pose_rover, CAMERA_TO_OPENCV_PASSIVE
 # 0.3 rad std on roll,pitch,yaw and 0.1m on x,y,z
 POSE_SIGMA = np.array([0.3, 0.3, 0.3, 0.1, 0.1, 0.1])
 PIXEL_NOISE = gtsam.noiseModel.Isotropic.Sigma(2, 1.0)  # one pixel in u and v
+ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
+    np.array([0.00087, 0.00087, 0.00087, 0.005, 0.005, 0.005])
+)
 HUBER_PIXEL_NOISE = gtsam.noiseModel.Robust(gtsam.noiseModel.mEstimator.Huber(1.5), PIXEL_NOISE)
 POINT_NOISE = gtsam.noiseModel.Isotropic.Sigma(3, 1e-2)
 
@@ -40,6 +43,7 @@ class SLAM:
         self.poses = {}
 
         self.projection_factors: dict[int, list] = {}
+        self.odometry_factors = {}
         self.pose_to_landmark_map: dict[int, np.ndarray] = {}
         self.landmarks = {}
 
@@ -52,6 +56,12 @@ class SLAM:
     def add_pose(self, i: int, pose: np.ndarray):
         """Add a pose to the graph"""
         self.poses[i] = pose
+
+    def add_odometry_factor(self, i: int, odometry: np.ndarray):
+        """Add an odometry factor to the graph"""
+        self.odometry_factors[i] = gtsam.BetweenFactorPose3(
+            X(i - 1), X(i), Pose3(odometry), ODOMETRY_NOISE
+        )
 
     def add_vision_factors(self, i: int, points: np.ndarray, pixels: np.ndarray, ids: np.ndarray):
         """Add a group of vision factors"""
@@ -84,8 +94,11 @@ class SLAM:
             # Fix first pose
             if i == window[0]:
                 graph.add(gtsam.NonlinearEqualityPose3(X(i), Pose3(self.poses[i])))
+            else:
+                graph.add(self.odometry_factors[i])
+
             for factor in self.projection_factors[i]:
-                graph.push_back(factor)
+                graph.add(factor)
             active_landmarks.update(self.pose_to_landmark_map[i])
 
         for id in active_landmarks:

@@ -6,11 +6,11 @@ import cv2
 from lac.util import mask_centroid
 
 
-def dilate_mask(mask, amount=1):
+def dilate_mask(mask, pixels=1):
     """
     Dilate binary mask using a square kernel.
     """
-    size = 2 * amount + 1
+    size = 2 * pixels + 1
     kernel = np.ones((size, size), np.uint8)
     dilated_mask = cv2.dilate(mask, kernel, iterations=1)
     return dilated_mask
@@ -22,8 +22,8 @@ def get_mask_centroids(masks, sorted=False):
     """
     mask_centroids = []
     for mask in masks:
-        mask = mask.astype(np.uint8)
-        mask_centroids.append(mask_centroid(mask))
+        centroid = mask_centroid(mask.astype(np.uint8))
+        mask_centroids.append(centroid)
     mask_centroids = np.array(mask_centroids)
     # Sort by y-coordinate
     if len(mask_centroids) > 1 and sorted:
