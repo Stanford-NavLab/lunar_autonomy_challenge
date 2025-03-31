@@ -267,32 +267,32 @@ class NavAgent(AutonomousAgent):
                 rock_radii = compute_rock_radii(stereo_depth_results)
 
                 # Rock tracking
-                detections = []
-                centroids = []
-                for i, result in enumerate(stereo_depth_results):
-                    centroid = result["left_centroid"]
-                    depth = result["depth"]
-                    if depth < 5.0:
-                        rock_point_world_frame = project_pixel_to_world(
-                            self.current_pose, centroid, result["depth"], "FrontLeft", self.cameras
-                        )
-                        centroids.append(centroid)
-                        detections.append(
-                            Detection(
-                                points=centroid,
-                                data={"point": rock_point_world_frame, "radius": rock_radii[i]},
-                            )
-                        )
-                tracked_objects = self.tracker.update(detections)
-                for rock in tracked_objects:
-                    if rock.id not in self.rock_detections:
-                        self.rock_detections[rock.id] = {"points": [], "radii": []}
-                    self.rock_detections[rock.id]["points"].append(
-                        rock.last_detection.data["point"]
-                    )
-                    self.rock_detections[rock.id]["radii"].append(
-                        rock.last_detection.data["radius"]
-                    )
+                # detections = []
+                # centroids = []
+                # for i, result in enumerate(stereo_depth_results):
+                #     centroid = result["left_centroid"]
+                #     depth = result["depth"]
+                #     if depth < 5.0:
+                #         rock_point_world_frame = project_pixel_to_world(
+                #             self.current_pose, centroid, result["depth"], "FrontLeft", self.cameras
+                #         )
+                #         centroids.append(centroid)
+                #         detections.append(
+                #             Detection(
+                #                 points=centroid,
+                #                 data={"point": rock_point_world_frame, "radius": rock_radii[i]},
+                #             )
+                #         )
+                # tracked_objects = self.tracker.update(detections)
+                # for rock in tracked_objects:
+                #     if rock.id not in self.rock_detections:
+                #         self.rock_detections[rock.id] = {"points": [], "radii": []}
+                #     self.rock_detections[rock.id]["points"].append(
+                #         rock.last_detection.data["point"]
+                #     )
+                #     self.rock_detections[rock.id]["radii"].append(
+                #         rock.last_detection.data["radius"]
+                #     )
 
                 # Feature matching depth
                 feats_left, feats_right, matches, depths = self.feature_tracker.process_stereo(
@@ -364,7 +364,7 @@ class NavAgent(AutonomousAgent):
             map_array[:, :, 2] = ground_grid
             map_array[:] = interpolate_heights(map_array)
 
-            map_array[:, :, 3] = ground_grid == -np.inf
+            # map_array[:, :, 3] = ground_grid == -np.inf
 
             if LOG_DATA:
                 np.save(
