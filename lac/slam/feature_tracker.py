@@ -101,6 +101,7 @@ class FeatureTracker:
         right_image: np.ndarray,
         max_matches: int = None,
         min_score: float = None,
+        return_matched_feats: bool = False,
     ):
         """Process stereo pair to get features and depths"""
         feats_left = self.extract_feats(left_image)
@@ -118,13 +119,21 @@ class FeatureTracker:
             depths = depths[~outliers]
 
         # TODO: should we just return the matched left and right feats?
+        if return_matched_feats:
+            matched_feats_left = prune_features(feats_left, matches[:, 0])
+            matched_feats_right = prune_features(feats_right, matches[:, 1])
+            return matched_feats_left, matched_feats_right, matches, depths
+        else:
+            return feats_left, feats_right, matches, depths
 
-        return feats_left, feats_right, matches, depths
-
-    def project_stereo(self, pose: np.ndarray, pixels: torch.Tensor, depths: torch.Tensor):
+    def project_stereo(
+        self, pose: np.ndarray, pixels: np.ndarray | torch.Tensor, depths: np.ndarray | torch.Tensor
+    ):
         """Project stereo pixel-depth pairs to world points"""
-        pixels = pixels.cpu().numpy()
-        depths = depths.cpu().numpy()
+        if isinstance(pixels, torch.Tensor):
+            pixels = pixels.cpu().numpy()
+        if isinstance(depths, torch.Tensor):
+            depths = depths.cpu().numpy()
         # TODO: check for invalid-valued pixels/depths
         points_rover = project_pixels_to_rover(pixels, depths, "FrontLeft", self.cam_config)
         points_world = apply_transform(pose, points_rover)

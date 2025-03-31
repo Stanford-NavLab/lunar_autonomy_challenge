@@ -22,8 +22,8 @@ def get_mask_centroids(masks):
     """
     mask_centroids = []
     for mask in masks:
-        mask = mask.astype(np.uint8)
-        mask_centroids.append(mask_centroid(mask))
+        centroid = mask_centroid(mask.astype(np.uint8))
+        mask_centroids.append(centroid)
     mask_centroids = np.array(mask_centroids)
     # Sort by y-coordinate
     if len(mask_centroids) > 1:

@@ -27,7 +27,11 @@ def load_data(data_path: str | Path):
 
 
 def load_stereo_images(data_path: str | Path):
-    """Load stereo images from data log file."""
+    """Load stereo images from data log file.
+
+    NOTE: this takes up a lot of RAM for large datasets. Use primarily for smaller datasets in notebooks
+
+    """
     left_imgs = {}
     right_imgs = {}
 
@@ -56,16 +60,23 @@ def load_side_images(data_path: str | Path):
     side_left_imgs_path = Path(data_path) / "Left"
     side_right_imgs_path = Path(data_path) / "Right"
 
-    for img_name in tqdm(os.listdir(side_left_imgs_path), desc="Left"):
-        side_left_imgs[int(img_name.split(".")[0])] = cv2.imread(
-            str(side_left_imgs_path / img_name), cv2.IMREAD_GRAYSCALE
-        )
-    for img_name in tqdm(os.listdir(side_right_imgs_path), desc="Right"):
-        side_right_imgs[int(img_name.split(".")[0])] = cv2.imread(
-            str(side_right_imgs_path / img_name), cv2.IMREAD_GRAYSCALE
-        )
+    try:
+        for img_name in tqdm(os.listdir(side_left_imgs_path), desc="Left"):
+            side_left_imgs[int(img_name.split(".")[0])] = cv2.imread(
+                str(side_left_imgs_path / img_name), cv2.IMREAD_GRAYSCALE
+            )
+    except FileNotFoundError:
+        print(f"Left images path not found: {side_left_imgs_path}")
 
-    assert len(side_left_imgs.keys()) == len(side_right_imgs.keys())
+    try:
+        for img_name in tqdm(os.listdir(side_right_imgs_path), desc="Right"):
+            side_right_imgs[int(img_name.split(".")[0])] = cv2.imread(
+                str(side_right_imgs_path / img_name), cv2.IMREAD_GRAYSCALE
+            )
+
+    except FileNotFoundError:
+        print(f"Right images path not found: {side_right_imgs_path}")
+
     return side_left_imgs, side_right_imgs
 
 
@@ -182,7 +193,7 @@ def np_img_to_PIL_rgb(img_array):
     return Image.fromarray(img_array).convert("RGB")
 
 
-def mask_centroid(mask: np.ndarray) -> tuple:
+def mask_centroid(mask: np.ndarray) -> tuple | None:
     """Compute the centroid of a binary mask."""
     M = cv2.moments(mask)
     cx = int(M["m10"] / M["m00"])

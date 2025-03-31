@@ -74,7 +74,7 @@ def stereo_depth_from_segmentation(left_seg_masks, right_seg_masks, baseline, fo
     return results
 
 
-def compute_rock_coords_rover_frame(stereo_depth_results, cam_name, cam_config):
+def compute_rock_coords_rover_frame(stereo_depth_results, cam_config):
     """
     stereo_depth_results : list - List of dictionaries containing stereo depth results
     cam_name : str - Name of the camera
@@ -86,7 +86,7 @@ def compute_rock_coords_rover_frame(stereo_depth_results, cam_name, cam_config):
     rock_coords_rover_frame = []
     for result in stereo_depth_results:
         rock_point_rover_frame = project_pixel_to_rover(
-            result["left_centroid"], result["depth"], cam_name, cam_config
+            result["left_centroid"], result["depth"], "FrontLeft", cam_config
         )
         rock_coords_rover_frame.append(rock_point_rover_frame)
     return rock_coords_rover_frame

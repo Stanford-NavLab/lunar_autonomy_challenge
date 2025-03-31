@@ -9,7 +9,7 @@ import segmentation_models_pytorch as smp
 from pathlib import Path
 from enum import Enum
 
-from lac.params import LAC_BASE_PATH
+from lac.params import TEAM_CODE_ROOT
 
 
 class SemanticClasses(Enum):
@@ -23,12 +23,7 @@ class SemanticClasses(Enum):
 class UnetSegmentation:
     def __init__(self, model_path=None):
         if model_path is None:
-            model_path = (
-                Path(LAC_BASE_PATH)
-                / "lunar_autonomy_challenge"
-                / "models"
-                / "model_UnetPlusPlus.pth"
-            )
+            model_path = Path(TEAM_CODE_ROOT) / "models" / "unet_v2.pth"
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = (
             smp.UnetPlusPlus(
@@ -73,7 +68,7 @@ class UnetSegmentation:
 
         return pred_resized
 
-    def segment_rocks(self, image: np.ndarray):
+    def segment_rocks(self, image: np.ndarray, output_pred=False):
         """
         Segment rocks in the input image using the trained Unet++ model.
         Args:
@@ -98,4 +93,7 @@ class UnetSegmentation:
             else:
                 labels[mask] = 0  # Remove small masks
 
-        return masks, labels
+        if output_pred:
+            return masks, labels, pred
+        else:
+            return masks, labels

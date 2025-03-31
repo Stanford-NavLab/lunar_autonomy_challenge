@@ -12,6 +12,14 @@ LAC_BASE_PATH = (
     else os.path.expanduser("~/LunarAutonomyChallenge")
 )
 
+print(f"LAC_BASE_PATH: {os.getenv('LAC_BASE_PATH')}")
+
+TEAM_CODE_ROOT = (
+    os.path.join(LAC_BASE_PATH, "lunar_autonomy_challenge")
+    if os.getenv("LAC_BASE_PATH")
+    else "/workspace/team_code"  # Location in the docker container
+)
+
 DEFAULT_RUN_NAME = "default_run"
 
 """-------------------------------------- Constants --------------------------------------"""
@@ -36,17 +44,24 @@ SCENE_BBOX = np.array(
 )
 
 # Lander dimensions
-LANDER_WIDTH = 3  # [m]
-LANDER_GLOBAL = np.array([
-    [-LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0], # top left 
-    [LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0],  # top right
-    [-LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0, 1.0], # bottom left
-    [LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0, 1.0]]) # bottom right
+LANDER_WIDTH = 3.0  # [m]
+LANDER_GLOBAL = np.array(
+    [
+        [-LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0],  # top left
+        [LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0],  # top right
+        [LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0],  # bottom right
+        [-LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0],  # bottom left
+    ]
+)  # bottom right
 # LANDER_GLOBAL = np.array([
-#     [LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0], # top left 
+#     [LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0], # top left
 #     [LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0, 1.0],  # top right
 #     [-LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0], # bottom left
 #     [-LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0, 1.0]]) # bottom right
+
+ROVER_RADIUS = 0.4  # [m]
+
+CELL_WIDTH = 0.15  # [m] width of each cell in the map
 
 """-------------------------------------- Data Structures --------------------------------------"""
 
@@ -88,14 +103,62 @@ WHEEL_RIG_POINTS = np.array(
 )
 
 CAMERA_CONFIG_INIT = {
-    "FrontLeft": {"active": False, "light": 0.0, "width": 1280, "height": 720, "semantic": False},
-    "FrontRight": {"active": False, "light": 0.0, "width": 1280, "height": 720, "semantic": False},
-    "BackLeft": {"active": False, "light": 0.0, "width": 1280, "height": 720, "semantic": False},
-    "BackRight": {"active": False, "light": 0.0, "width": 1280, "height": 720, "semantic": False},
-    "Left": {"active": False, "light": 0.0, "width": 1280, "height": 720, "semantic": False},
-    "Right": {"active": False, "light": 0.0, "width": 1280, "height": 720, "semantic": False},
-    "Front": {"active": False, "light": 0.0, "width": 1280, "height": 720, "semantic": False},
-    "Back": {"active": False, "light": 0.0, "width": 1280, "height": 720, "semantic": False},
+    "FrontLeft": {
+        "active": False,
+        "light": 0.0,
+        "width": 1280,
+        "height": 720,
+        "semantic": False,
+    },
+    "FrontRight": {
+        "active": False,
+        "light": 0.0,
+        "width": 1280,
+        "height": 720,
+        "semantic": False,
+    },
+    "BackLeft": {
+        "active": False,
+        "light": 0.0,
+        "width": 1280,
+        "height": 720,
+        "semantic": False,
+    },
+    "BackRight": {
+        "active": False,
+        "light": 0.0,
+        "width": 1280,
+        "height": 720,
+        "semantic": False,
+    },
+    "Left": {
+        "active": False,
+        "light": 0.0,
+        "width": 1280,
+        "height": 720,
+        "semantic": False,
+    },
+    "Right": {
+        "active": False,
+        "light": 0.0,
+        "width": 1280,
+        "height": 720,
+        "semantic": False,
+    },
+    "Front": {
+        "active": False,
+        "light": 0.0,
+        "width": 1280,
+        "height": 720,
+        "semantic": False,
+    },
+    "Back": {
+        "active": False,
+        "light": 0.0,
+        "width": 1280,
+        "height": 720,
+        "semantic": False,
+    },
 }
 
 
