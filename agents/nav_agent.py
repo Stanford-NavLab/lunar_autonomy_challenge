@@ -48,7 +48,6 @@ import lac.params as params
 EVAL = False  # Whether running in evaluation mode (disable ground truth)
 USE_FIDUCIALS = False
 
-TARGET_SPEED = 0.1  # [m/s]
 EARLY_STOP_STEP = 0  # Number of steps before stopping the mission (0 for no early stop)
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
@@ -80,8 +79,11 @@ class NavAgent(AutonomousAgent):
         """ Initialize a counter for backup maneuvers. """
         self.backup_counter = 0
 
-        """ Initialize a counter for how long the rover is stuck. """
+        """ Initialize a counter for how long the rover below a velocity threshold. """
         self.stuck_counter = 0
+
+        """ Initialize a counter for total time that the rover is stuck."""
+        self.stuck_timer = 0
 
         """ Camera config """
         self.cameras = params.CAMERA_CONFIG_INIT
@@ -113,7 +115,7 @@ class NavAgent(AutonomousAgent):
         self.lander_pose = self.initial_pose @ transform_to_numpy(
             self.get_initial_lander_position()
         )
-        self.planner = Planner(self.initial_pose, spiral_min=3.5, spiral_max=3.5, spiral_step=1.0)
+        self.planner = Planner(self.initial_pose, spiral_min=2.5, spiral_max=2.5, spiral_step=1.0) 
 
         """ State variables """
         self.current_pose = self.initial_pose
@@ -184,16 +186,21 @@ class NavAgent(AutonomousAgent):
         print("Running backup maneuver")
         frame_rate = params.FRAME_RATE
         self.backup_counter += 1
-        if self.backup_counter <= frame_rate * 3:  # Go backwards for 3 seconds
+        if self.backup_counter <= frame_rate * 1.5:  # Go backwards for 3 seconds
             control = carla.VehicleVelocityControl(-0.2, 0.0)
         elif (
-            self.backup_counter <= frame_rate * 5
-        ):  # Rotate 90 deg/s for 2 seconds (overcorrecting because it isn't rotating in 1 second)
-            control = carla.VehicleVelocityControl(0.0, np.pi / 2)
+            self.backup_counter <= frame_rate * 3
+        ):  # Rotate 90 deg/s for 1.5 seconds (overcorrecting because it isn't rotating in 1 second)
+            control = carla.VehicleVelocityControl(0.0, np.pi / 4)
         elif (
-            self.backup_counter <= frame_rate * 7
-        ):  # Move in an arc around the rock for 2 seconds (overcorrecting because it isn't rotating in 1 second)
-            control = carla.VehicleVelocityControl(0.2, -np.pi / 2)
+            self.backup_counter <= frame_rate * 9
+        ):
+            # Go forward for 6 seconds
+            control = carla.VehicleVelocityControl(0.2, 0.0)
+        # elif (
+        #     self.backup_counter <= frame_rate * 12
+        # ):  # Move in an arc around the rock for 6 seconds (overcorrecting)
+        #     control = carla.VehicleVelocityControl(0.2, -np.pi / 10)
         else:
             self.backup_counter = 0
             # control = self.run_nominal_step()
@@ -204,18 +211,31 @@ class NavAgent(AutonomousAgent):
         # Agent is stuck if the velocity is less than 0.1 m/s
         if self.step < ARM_RAISE_WAIT_FRAMES + 10:
             return False
-        is_stuck = np.linalg.norm(self.current_velocity) < 0.05
-        if is_stuck:
+        is_stuck = np.linalg.norm(self.current_velocity) < 0.5 * params.TARGET_SPEED
+        if is_stuck and self.stuck_timer == 0:
             self.stuck_counter += 1
-        else:
-            self.stuck_counter = 0
-        return is_stuck and self.stuck_counter >= params.FRAME_RATE  # 1 second
+            self.stuck_timer += 1
+        elif is_stuck and self.stuck_timer > 0:
+            self.stuck_counter += 1
+        if self.stuck_timer > params.FRAME_RATE * 2 and self.stuck_timer < params.FRAME_RATE * 3:  # between 2 and 3 seconds
+            if (self.stuck_counter / self.stuck_timer) > 0.5:
+                self.stuck_counter = 0
+                self.stuck_timer = 0
+                return True
+        elif self.stuck_timer >= params.FRAME_RATE * 3:  # more than 3 seconds
+            if (self.stuck_counter / self.stuck_timer) < 0.5:
+                self.stuck_counter = 0
+                self.stuck_timer = 0
+        return False
 
     def run_step(self, input_data):
         if self.step == 0:
             self.initialize()
         self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
         print("\nStep: ", self.step)
+
+        if self.stuck_timer > 0:
+            self.stuck_timer += 1
 
         if EARLY_STOP_STEP != 0 and self.step >= EARLY_STOP_STEP:
             self.mission_complete()
