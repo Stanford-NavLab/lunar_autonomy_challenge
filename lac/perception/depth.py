@@ -52,10 +52,42 @@ def stereo_depth_from_segmentation(left_seg_masks, right_seg_masks, baseline, fo
     matches = centroid_matching(left_rock_centroids, right_rock_centroids)
 
     # Since we compute disparity as x_left - x_right, the computed depth is with respect to the left camera
-    disparities = [
-        left_rock_centroids[match[0]][0] - right_rock_centroids[match[1]][0] + 1e-8
-        for match in matches
-    ]
+    disparities = [left_rock_centroids[match[0]][0] - right_rock_centroids[match[1]][0] + 1e-8 for match in matches]
+    depths = (focal_length_x * baseline) / disparities
+
+    results = []
+    for i, match in enumerate(matches):
+        if depths[i] > 0 and depths[i] < params.MAX_DEPTH:
+            results.append(
+                {
+                    "left_centroid": left_rock_centroids[match[0]],
+                    "left_mask": left_seg_masks[match[0]],
+                    "right_centroid": right_rock_centroids[match[1]],
+                    "right_mask": right_seg_masks[match[1]],
+                    "disparity": disparities[i],
+                    "depth": depths[i],
+                }
+            )
+    return results
+
+
+def stereo_mask_depth_from_segmentation(left_seg_masks, right_seg_masks, baseline, focal_length_x):
+    """
+    left_seg_results : dict - Results from the segmentation model for the left image
+    right_seg_results : dict - Results from the segmentation model for the right image
+    baseline : float - Stereo baseline in meters
+    focal_length_x : float - Horizontal focal length in pixels
+    """
+    left_rock_centroids = get_mask_centroids(left_seg_masks)
+    right_rock_centroids = get_mask_centroids(right_seg_masks)
+
+    if len(left_rock_centroids) == 0 or len(right_rock_centroids) == 0:
+        return []
+
+    matches = centroid_matching(left_rock_centroids, right_rock_centroids)
+
+    # Since we compute disparity as x_left - x_right, the computed depth is with respect to the left camera
+    disparities = [left_rock_centroids[match[0]][0] - right_rock_centroids[match[1]][0] + 1e-8 for match in matches]
     depths = (focal_length_x * baseline) / disparities
 
     results = []
@@ -118,9 +150,7 @@ def compute_rock_radii(stereo_depth_results):
     return rock_radii
 
 
-def project_rock_depths_to_world(
-    depth_results: list, rover_pose: np.ndarray, cam_name: str, cam_config: dict
-) -> list:
+def project_rock_depths_to_world(depth_results: list, rover_pose: np.ndarray, cam_name: str, cam_config: dict) -> list:
     """
     depth_results : list - List of dictionaries containing depth results
     K : np.ndarray (3, 3) - Camera intrinsics matrix
@@ -146,9 +176,7 @@ def project_rock_depths_to_world(
     return rock_world_points
 
 
-def project_pixel_to_rover(
-    pixel: tuple | np.ndarray, depth: float, cam_name: str, cam_config: dict
-):
+def project_pixel_to_rover(pixel: tuple | np.ndarray, depth: float, cam_name: str, cam_config: dict):
     CAM_TO_ROVER = get_cam_pose_rover(cam_name)
     K = get_camera_intrinsics(cam_name, cam_config)
     point_opencv = project_pixel_to_3D(pixel, depth, K)
@@ -157,9 +185,7 @@ def project_pixel_to_rover(
     return point_rover
 
 
-def project_pixels_to_rover(
-    pixels: np.ndarray, depths: np.ndarray, cam_name: str, cam_config: dict
-):
+def project_pixels_to_rover(pixels: np.ndarray, depths: np.ndarray, cam_name: str, cam_config: dict):
     CAM_TO_ROVER = get_cam_pose_rover(cam_name)
     K = get_camera_intrinsics(cam_name, cam_config)
     points_opencv = project_pixels_to_3D(pixels, depths, K)
@@ -178,6 +204,18 @@ def project_pixel_to_world(
     point_rover = apply_transform(CAM_TO_ROVER, point_cam)
     point_world = apply_transform(rover_pose, point_rover)
     return point_world
+
+
+def project_pixels_to_world(
+    rover_pose: np.ndarray, pixels: np.ndarray, depths: np.ndarray, cam_name: str, cam_config: dict
+):
+    CAM_TO_ROVER = get_cam_pose_rover(cam_name)
+    K = get_camera_intrinsics(cam_name, cam_config)
+    points_opencv = project_pixels_to_3D(pixels, depths, K)
+    points_cam = opencv_to_camera(points_opencv)
+    points_rover = apply_transform(CAM_TO_ROVER, points_cam)
+    points_world = apply_transform(rover_pose, points_rover)
+    return points_world
 
 
 def compute_stereo_depth(
@@ -217,9 +255,7 @@ def compute_stereo_depth(
     disparity = stereo.compute(img_left, img_right)
 
     # Normalize the disparity for visualization
-    disparity_normalized = cv2.normalize(
-        disparity, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX
-    )
+    disparity_normalized = cv2.normalize(disparity, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
     disparity_normalized = np.uint8(disparity_normalized)
 
     # Convert disparity to depth (requires camera calibration parameters)

@@ -39,20 +39,16 @@ def load_stereo_images(data_path: str | Path):
     right_path = Path(data_path) / "FrontRight"
 
     for img_name in tqdm(os.listdir(left_path), desc="FrontLeft"):
-        left_imgs[int(img_name.split(".")[0])] = cv2.imread(
-            str(left_path / img_name), cv2.IMREAD_GRAYSCALE
-        )
+        left_imgs[int(img_name.split(".")[0])] = cv2.imread(str(left_path / img_name), cv2.IMREAD_GRAYSCALE)
 
     for img_name in tqdm(os.listdir(right_path), desc="FrontRight"):
-        right_imgs[int(img_name.split(".")[0])] = cv2.imread(
-            str(right_path / img_name), cv2.IMREAD_GRAYSCALE
-        )
+        right_imgs[int(img_name.split(".")[0])] = cv2.imread(str(right_path / img_name), cv2.IMREAD_GRAYSCALE)
 
     assert len(left_imgs.keys()) == len(right_imgs.keys())
     return left_imgs, right_imgs
 
 
-def load_side_images(data_path: str | Path):
+def load_side_images(data_path: str | Path, step: int = 1):
     """Load side images from data log file."""
     side_left_imgs = {}
     side_right_imgs = {}

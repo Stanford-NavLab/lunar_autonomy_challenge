@@ -16,7 +16,7 @@ def dilate_mask(mask, pixels=1):
     return dilated_mask
 
 
-def get_mask_centroids(masks):
+def get_mask_centroids(masks, sorted=False):
     """
     seg_results : dict - Results from the segmentation model
     """
@@ -26,7 +26,7 @@ def get_mask_centroids(masks):
         mask_centroids.append(centroid)
     mask_centroids = np.array(mask_centroids)
     # Sort by y-coordinate
-    if len(mask_centroids) > 1:
+    if len(mask_centroids) > 1 and sorted:
         mask_centroids = mask_centroids[np.argsort(mask_centroids[:, 1])]
     return mask_centroids
 
@@ -57,9 +57,7 @@ def centroid_matching(left_centroids, right_centroids, max_y_diff=5, max_x_diff=
 
     # Create a list of candidate matches (left_idx, right_idx, y_diff, x_diff)
     candidates = [
-        (i, j, y_diffs[i, j], x_diffs[i, j])
-        for i in range(len(left_centroids))
-        for j in range(len(right_centroids))
+        (i, j, y_diffs[i, j], x_diffs[i, j]) for i in range(len(left_centroids)) for j in range(len(right_centroids))
     ]
 
     # Sort candidates by y-coordinate difference
@@ -69,12 +67,7 @@ def centroid_matching(left_centroids, right_centroids, max_y_diff=5, max_x_diff=
     used_right = set()
 
     for left_idx, right_idx, y_diff, x_diff in candidates:
-        if (
-            y_diff < max_y_diff
-            and x_diff < max_x_diff
-            and left_idx not in used_left
-            and right_idx not in used_right
-        ):
+        if y_diff < max_y_diff and x_diff < max_x_diff and left_idx not in used_left and right_idx not in used_right:
             # matches.append((left_centroids[left_idx], right_centroids[right_idx]))
             matches.append((left_idx, right_idx))
             used_left.add(left_idx)

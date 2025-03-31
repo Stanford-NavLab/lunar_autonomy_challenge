@@ -77,9 +77,7 @@ class StereoVIO:
         prev_pts_3d = (np.linalg.inv(K) @ prev_pts_h.T).T * prev_depths[:, None]
 
         # Estimate pose with PnP
-        _, rvec, tvec, inliers = cv2.solvePnPRansac(
-            prev_pts_3d, new_pts, K, None, flags=cv2.SOLVEPNP_ITERATIVE
-        )
+        _, rvec, tvec, inliers = cv2.solvePnPRansac(prev_pts_3d, new_pts, K, None, flags=cv2.SOLVEPNP_ITERATIVE)
 
         return rvec, tvec
 
@@ -199,8 +197,6 @@ class FiducialLocalizer:
         cam_poses = solve_tag_pnp(detections, cam_intrisics, lander_pose)
         rover_to_cam = get_cam_pose_rover(cam_name)
         cam_to_rover = invert_transform_mat(rover_to_cam)
-        rover_pose_estimates = {
-            tag_id: cam_pose @ cam_to_rover for tag_id, cam_pose in cam_poses.items()
-        }
+        rover_pose_estimates = {tag_id: cam_pose @ cam_to_rover for tag_id, cam_pose in cam_poses.items()}
 
         return rover_pose_estimates, detections
