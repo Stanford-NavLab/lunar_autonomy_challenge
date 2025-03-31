@@ -78,8 +78,11 @@ class NavAgent(AutonomousAgent):
         """ Initialize a counter for backup maneuvers. """
         self.backup_counter = 0
 
-        """ Initialize a counter for how long the rover is stuck. """
+        """ Initialize a counter for how long the rover below a velocity threshold. """
         self.stuck_counter = 0
+
+        """ Initialize a counter for total time that the rover is stuck."""
+        self.stuck_timer = 0
 
         """ Camera config """
         self.cameras = params.CAMERA_CONFIG_INIT
@@ -116,10 +119,8 @@ class NavAgent(AutonomousAgent):
 
         """ Planner """
         self.initial_pose = transform_to_numpy(self.get_initial_position())
-        self.lander_pose = self.initial_pose @ transform_to_numpy(
-            self.get_initial_lander_position()
-        )
-        self.planner = Planner(self.initial_pose, spiral_min=3.5, spiral_max=3.5, spiral_step=1.0)
+        self.lander_pose = self.initial_pose @ transform_to_numpy(self.get_initial_lander_position())
+        self.planner = Planner(self.initial_pose, spiral_min=2.5, spiral_max=2.5, spiral_step=1.0)
 
         """ State variables """
         self.current_pose = self.initial_pose
@@ -206,18 +207,33 @@ class NavAgent(AutonomousAgent):
         # Agent is stuck if the velocity is less than 0.1 m/s
         if self.step < ARM_RAISE_WAIT_FRAMES + 10:
             return False
-        is_stuck = np.linalg.norm(self.current_velocity) < 0.75 * params.TARGET_SPEED
-        if is_stuck:
+        is_stuck = np.linalg.norm(self.current_velocity) < 0.5 * params.TARGET_SPEED
+        if is_stuck and self.stuck_timer == 0:
             self.stuck_counter += 1
-        else:
-            self.stuck_counter = 0
-        return is_stuck and self.stuck_counter >= params.FRAME_RATE  # 1 second
+            self.stuck_timer += 1
+        elif is_stuck and self.stuck_timer > 0:
+            self.stuck_counter += 1
+        if (
+            self.stuck_timer > params.FRAME_RATE * 2 and self.stuck_timer < params.FRAME_RATE * 3
+        ):  # between 2 and 3 seconds
+            if (self.stuck_counter / self.stuck_timer) > 0.5:
+                self.stuck_counter = 0
+                self.stuck_timer = 0
+                return True
+        elif self.stuck_timer >= params.FRAME_RATE * 3:  # more than 3 seconds
+            if (self.stuck_counter / self.stuck_timer) < 0.5:
+                self.stuck_counter = 0
+                self.stuck_timer = 0
+        return False
 
     def run_step(self, input_data):
         if self.step == 0:
             self.initialize()
         self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
         print("\nStep: ", self.step)
+
+        if self.stuck_timer > 0:
+            self.stuck_timer += 1
 
         if EARLY_STOP_STEP != 0 and self.step >= EARLY_STOP_STEP:
             self.mission_complete()
@@ -249,15 +265,11 @@ class NavAgent(AutonomousAgent):
                 else:
                     self.svo.track(FL_gray, FR_gray)
                 self.svo_poses.append(self.svo.get_pose())
-                self.current_velocity = (
-                    self.svo.get_pose()[:3, 3] - self.current_pose[:3, 3]
-                ) / params.DT
+                self.current_velocity = (self.svo.get_pose()[:3, 3] - self.current_pose[:3, 3]) / params.DT
                 self.current_pose = self.svo.get_pose()
 
                 # Run segmentation
-                left_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(
-                    FL_gray, output_pred=True
-                )
+                left_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(FL_gray, output_pred=True)
                 right_seg_masks, right_labels = self.segmentation.segment_rocks(FR_gray)
                 left_full_mask = np.clip(left_labels, 0, 1).astype(np.uint8)
 
@@ -287,18 +299,14 @@ class NavAgent(AutonomousAgent):
                         ground_idxs.append(i)
                 ground_kps = kps_left[ground_idxs]
                 ground_depths = depths[ground_idxs]
-                ground_points_world = self.feature_tracker.project_stereo(
-                    self.current_pose, ground_kps, ground_depths
-                )
+                ground_points_world = self.feature_tracker.project_stereo(self.current_pose, ground_kps, ground_depths)
                 self.ground_points.append(ground_points_world)
 
                 if BACK_CAMERAS:
                     BL_gray = input_data["Grayscale"][carla.SensorPosition.BackLeft]
                     BR_gray = input_data["Grayscale"][carla.SensorPosition.BackRight]
 
-                    left_seg_masks, _, left_pred = self.segmentation.segment_rocks(
-                        BL_gray, output_pred=True
-                    )
+                    left_seg_masks, _, left_pred = self.segmentation.segment_rocks(BL_gray, output_pred=True)
                     right_seg_masks, _ = self.segmentation.segment_rocks(BR_gray)
 
                     back_stereo_depth_results = stereo_depth_from_segmentation(
@@ -333,9 +341,7 @@ class NavAgent(AutonomousAgent):
                     self.ground_points.append(ground_points_world)
 
                 # Path planning
-                control, path, waypoint_local = self.arc_planner.plan_arc(
-                    waypoint, nav_pose, rock_coords, rock_radii
-                )
+                control, path, waypoint_local = self.arc_planner.plan_arc(waypoint, nav_pose, rock_coords, rock_radii)
                 if control is not None:
                     self.current_v, self.current_w = control
                 else:

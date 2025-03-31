@@ -134,7 +134,6 @@ class ArcPlanner:
         pose_inv = invert_transform_mat(current_pose)
         waypoint_local = pose_inv @ np.array([waypoint_global[0], waypoint_global[1], 0.0, 1.0])
 
-        # TODO: Kaila fix this. Not correct.
         # Transform lander global position to rover local frame
         lander_local = apply_transform(pose_inv, params.LANDER_GLOBAL)
 
