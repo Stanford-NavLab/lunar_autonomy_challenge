@@ -127,7 +127,11 @@ class FeatureTracker:
             return feats_left, feats_right, matches, depths
 
     def project_stereo(
-        self, pose: np.ndarray, pixels: np.ndarray | torch.Tensor, depths: np.ndarray | torch.Tensor
+        self,
+        pose: np.ndarray,
+        pixels: np.ndarray | torch.Tensor,
+        depths: np.ndarray | torch.Tensor,
+        cam_name: str = "FrontLeft",
     ):
         """Project stereo pixel-depth pairs to world points"""
         if isinstance(pixels, torch.Tensor):
@@ -135,7 +139,7 @@ class FeatureTracker:
         if isinstance(depths, torch.Tensor):
             depths = depths.cpu().numpy()
         # TODO: check for invalid-valued pixels/depths
-        points_rover = project_pixels_to_rover(pixels, depths, "FrontLeft", self.cam_config)
+        points_rover = project_pixels_to_rover(pixels, depths, cam_name, self.cam_config)
         points_world = apply_transform(pose, points_rover)
         return points_world
 

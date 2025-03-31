@@ -12,8 +12,6 @@ import carla
 import cv2 as cv
 import numpy as np
 import signal
-from norfair import Detection, Tracker
-from scipy.stats import binned_statistic_2d
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
@@ -38,17 +36,17 @@ from lac.utils.visualization import (
     overlay_mask,
     draw_steering_arc,
     overlay_stereo_rock_depths,
-    overlay_tag_detections,
 )
+from lac.utils.frames import apply_transform
 from lac.utils.data_logger import DataLogger
 import lac.params as params
 
 
 """ Agent parameters and settings """
-EVAL = False  # Whether running in evaluation mode (disable ground truth)
+EVAL = True  # Whether running in evaluation mode (disable ground truth)
 USE_FIDUCIALS = False
+BACK_CAMERAS = True
 
-TARGET_SPEED = 0.1  # [m/s]
 EARLY_STOP_STEP = 0  # Number of steps before stopping the mission (0 for no early stop)
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
@@ -99,13 +97,21 @@ class NavAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
-        # self.cameras["Right"] = {
-        #     "active": True,
-        #     "light": 1.0,
-        #     "width": 1280,
-        #     "height": 720,
-        #     "semantic": False,
-        # }
+        if BACK_CAMERAS:
+            self.cameras["BackLeft"] = {
+                "active": True,
+                "light": 1.0,
+                "width": 1280,
+                "height": 720,
+                "semantic": False,
+            }
+            self.cameras["BackRight"] = {
+                "active": True,
+                "light": 1.0,
+                "width": 1280,
+                "height": 720,
+                "semantic": False,
+            }
         self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
         """ Planner """
@@ -123,11 +129,9 @@ class NavAgent(AutonomousAgent):
         self.svo = StereoVisualOdometry(self.cameras)
         self.svo_poses = [self.initial_pose]
         self.feature_tracker = FeatureTracker(self.cameras)
-        self.tracker = Tracker(
-            distance_function="euclidean", distance_threshold=100, hit_counter_max=5
-        )
         self.ground_points = []
         self.rock_detections = {}
+        self.rock_points = []
 
         """ Path planner """
         self.arc_planner = ArcPlanner()
@@ -184,19 +188,17 @@ class NavAgent(AutonomousAgent):
         print("Running backup maneuver")
         frame_rate = params.FRAME_RATE
         self.backup_counter += 1
-        if self.backup_counter <= frame_rate * 3:  # Go backwards for 3 seconds
+        if self.backup_counter <= frame_rate * 1.5:  # Go backwards for 3 seconds
             control = carla.VehicleVelocityControl(-0.2, 0.0)
         elif (
-            self.backup_counter <= frame_rate * 5
-        ):  # Rotate 90 deg/s for 2 seconds (overcorrecting because it isn't rotating in 1 second)
-            control = carla.VehicleVelocityControl(0.0, np.pi / 2)
-        elif (
-            self.backup_counter <= frame_rate * 7
-        ):  # Move in an arc around the rock for 2 seconds (overcorrecting because it isn't rotating in 1 second)
-            control = carla.VehicleVelocityControl(0.2, -np.pi / 2)
+            self.backup_counter <= frame_rate * 3
+        ):  # Rotate 90 deg/s for 1.5 seconds (overcorrecting because it isn't rotating in 1 second)
+            control = carla.VehicleVelocityControl(0.0, np.pi / 4)
+        elif self.backup_counter <= frame_rate * 9:
+            # Go forward for 6 seconds
+            control = carla.VehicleVelocityControl(0.2, 0.0)
         else:
             self.backup_counter = 0
-            # control = self.run_nominal_step()
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         return control
 
@@ -204,7 +206,7 @@ class NavAgent(AutonomousAgent):
         # Agent is stuck if the velocity is less than 0.1 m/s
         if self.step < ARM_RAISE_WAIT_FRAMES + 10:
             return False
-        is_stuck = np.linalg.norm(self.current_velocity) < 0.05
+        is_stuck = np.linalg.norm(self.current_velocity) < 0.75 * params.TARGET_SPEED
         if is_stuck:
             self.stuck_counter += 1
         else:
@@ -266,40 +268,17 @@ class NavAgent(AutonomousAgent):
                 rock_coords = compute_rock_coords_rover_frame(stereo_depth_results, self.cameras)
                 rock_radii = compute_rock_radii(stereo_depth_results)
 
-                # Rock tracking
-                # detections = []
-                # centroids = []
-                # for i, result in enumerate(stereo_depth_results):
-                #     centroid = result["left_centroid"]
-                #     depth = result["depth"]
-                #     if depth < 5.0:
-                #         rock_point_world_frame = project_pixel_to_world(
-                #             self.current_pose, centroid, result["depth"], "FrontLeft", self.cameras
-                #         )
-                #         centroids.append(centroid)
-                #         detections.append(
-                #             Detection(
-                #                 points=centroid,
-                #                 data={"point": rock_point_world_frame, "radius": rock_radii[i]},
-                #             )
-                #         )
-                # tracked_objects = self.tracker.update(detections)
-                # for rock in tracked_objects:
-                #     if rock.id not in self.rock_detections:
-                #         self.rock_detections[rock.id] = {"points": [], "radii": []}
-                #     self.rock_detections[rock.id]["points"].append(
-                #         rock.last_detection.data["point"]
-                #     )
-                #     self.rock_detections[rock.id]["radii"].append(
-                #         rock.last_detection.data["radius"]
-                #     )
+                # Add points for rock mapping
+                if self.step % 20 == 0:
+                    rock_points_world = apply_transform(self.current_pose, rock_coords)
+                    self.rock_points.append(rock_points_world)
 
                 # Feature matching depth
                 feats_left, feats_right, matches, depths = self.feature_tracker.process_stereo(
                     FL_gray, FR_gray, return_matched_feats=True
                 )
 
-                # Extract ground points
+                # Extract ground points for height mapping
                 left_ground_mask = left_pred == SemanticClasses.GROUND.value
                 kps_left = feats_left["keypoints"][0].cpu().numpy()
                 ground_idxs = []
@@ -312,6 +291,46 @@ class NavAgent(AutonomousAgent):
                     self.current_pose, ground_kps, ground_depths
                 )
                 self.ground_points.append(ground_points_world)
+
+                if BACK_CAMERAS:
+                    BL_gray = input_data["Grayscale"][carla.SensorPosition.BackLeft]
+                    BR_gray = input_data["Grayscale"][carla.SensorPosition.BackRight]
+
+                    left_seg_masks, _, left_pred = self.segmentation.segment_rocks(
+                        BL_gray, output_pred=True
+                    )
+                    right_seg_masks, _ = self.segmentation.segment_rocks(BR_gray)
+
+                    back_stereo_depth_results = stereo_depth_from_segmentation(
+                        left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
+                    )
+                    back_rock_coords = compute_rock_coords_rover_frame(
+                        back_stereo_depth_results, self.cameras, cam_name="BackLeft"
+                    )
+
+                    # Add points for rock mapping
+                    if self.step % 20 == 0:
+                        rock_points_world = apply_transform(self.current_pose, back_rock_coords)
+                        self.rock_points.append(rock_points_world)
+
+                    # Feature matching depth
+                    feats_left, feats_right, matches, depths = self.feature_tracker.process_stereo(
+                        BL_gray, BR_gray, return_matched_feats=True
+                    )
+
+                    # Extract ground points for height mapping
+                    left_ground_mask = left_pred == SemanticClasses.GROUND.value
+                    kps_left = feats_left["keypoints"][0].cpu().numpy()
+                    ground_idxs = []
+                    for i, kp in enumerate(kps_left):
+                        if left_ground_mask[int(kp[1]), int(kp[0])]:
+                            ground_idxs.append(i)
+                    ground_kps = kps_left[ground_idxs]
+                    ground_depths = depths[ground_idxs]
+                    ground_points_world = self.feature_tracker.project_stereo(
+                        self.current_pose, ground_kps, ground_depths, cam_name="BackLeft"
+                    )
+                    self.ground_points.append(ground_points_world)
 
                 # Path planning
                 control, path, waypoint_local = self.arc_planner.plan_arc(
@@ -341,6 +360,7 @@ class NavAgent(AutonomousAgent):
             control = self.run_backup_maneuver()
         else:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+            # control = carla.VehicleVelocityControl(params.TARGET_SPEED, 0.0)  # drive straight
 
         """ Data logging """
         if LOG_DATA:
@@ -365,12 +385,22 @@ class NavAgent(AutonomousAgent):
             map_array[:] = interpolate_heights(map_array)
 
             # map_array[:, :, 3] = ground_grid == -np.inf
+            map_array[:, :, 3] = 0.0
+            rock_points = np.concatenate(self.rock_points, axis=0)
+            xmin, xmax = np.min(map_array[:, :, 0]), np.max(map_array[:, :, 0])
+            ymin, ymax = np.min(map_array[:, :, 1]), np.max(map_array[:, :, 1])
+            nx, ny = map_array.shape[:2]
+            for p in rock_points:
+                i = int((p[0] - xmin) / (xmax - xmin) * nx)
+                j = int((p[1] - ymin) / (ymax - ymin) * ny)
+                if 0 <= i < nx and 0 <= j < ny:
+                    map_array[i, j, 3] = 1.0
 
-            if LOG_DATA:
-                np.save(
-                    f"output/{get_entry_point()}/{params.DEFAULT_RUN_NAME}/ground_points.npy",
-                    all_ground_points,
-                )
+            # if LOG_DATA:
+            #     np.save(
+            #         f"output/{get_entry_point()}/{params.DEFAULT_RUN_NAME}/ground_points.npy",
+            #         all_ground_points,
+            #     )
 
         # Rocks
         # map_array[:, :, 3] = 0.0

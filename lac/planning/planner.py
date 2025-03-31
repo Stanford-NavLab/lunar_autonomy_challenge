@@ -29,6 +29,7 @@ class Planner:
         #     initial_pose, spiral_min, spiral_max, spiral_step
         # )
         self.waypoints = gen_spiral(initial_pose, spiral_min, spiral_max, spiral_step)
+        # self.waypoints = self.waypoints[:3]  # get the first two waypoints only
         self.waypoint_idx = 0
 
     def get_waypoint(self, pose: np.ndarray, print_progress: bool = False) -> np.ndarray | None:
