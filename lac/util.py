@@ -26,7 +26,7 @@ def load_data(data_path: str | Path):
     return initial_pose, lander_pose, poses, imu_data, cam_config
 
 
-def load_stereo_images(data_path: str | Path):
+def load_stereo_images(data_path: str | Path, step: int = 1):
     """Load stereo images from data log file.
 
     NOTE: this takes up a lot of RAM for large datasets. Use primarily for smaller datasets in notebooks
@@ -39,10 +39,14 @@ def load_stereo_images(data_path: str | Path):
     right_path = Path(data_path) / "FrontRight"
 
     for img_name in tqdm(os.listdir(left_path), desc="FrontLeft"):
-        left_imgs[int(img_name.split(".")[0])] = cv2.imread(str(left_path / img_name), cv2.IMREAD_GRAYSCALE)
+        name = int(img_name.split(".")[0])
+        if name % step == 0:
+            left_imgs[name] = cv2.imread(str(left_path / img_name), cv2.IMREAD_GRAYSCALE)
 
     for img_name in tqdm(os.listdir(right_path), desc="FrontRight"):
-        right_imgs[int(img_name.split(".")[0])] = cv2.imread(str(right_path / img_name), cv2.IMREAD_GRAYSCALE)
+        name = int(img_name.split(".")[0])
+        if name % step == 0:
+            right_imgs[name] = cv2.imread(str(right_path / img_name), cv2.IMREAD_GRAYSCALE)
 
     assert len(left_imgs.keys()) == len(right_imgs.keys())
     return left_imgs, right_imgs
@@ -58,17 +62,19 @@ def load_side_images(data_path: str | Path, step: int = 1):
 
     try:
         for img_name in tqdm(os.listdir(side_left_imgs_path), desc="Left"):
-            side_left_imgs[int(img_name.split(".")[0])] = cv2.imread(
-                str(side_left_imgs_path / img_name), cv2.IMREAD_GRAYSCALE
-            )
+            name = int(img_name.split(".")[0])
+            if name % step == 0:
+                side_left_imgs[name] = cv2.imread(str(side_left_imgs_path / img_name), cv2.IMREAD_GRAYSCALE)
     except FileNotFoundError:
         print(f"Left images path not found: {side_left_imgs_path}")
 
     try:
         for img_name in tqdm(os.listdir(side_right_imgs_path), desc="Right"):
-            side_right_imgs[int(img_name.split(".")[0])] = cv2.imread(
-                str(side_right_imgs_path / img_name), cv2.IMREAD_GRAYSCALE
-            )
+            name = int(img_name.split(".")[0])
+            if name % step == 0:
+                side_right_imgs[int(img_name.split(".")[0])] = cv2.imread(
+                    str(side_right_imgs_path / img_name), cv2.IMREAD_GRAYSCALE
+                )
 
     except FileNotFoundError:
         print(f"Right images path not found: {side_right_imgs_path}")

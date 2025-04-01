@@ -7,9 +7,7 @@ from pathlib import Path
 
 
 LAC_BASE_PATH = (
-    os.getenv("LAC_BASE_PATH")
-    if os.getenv("LAC_BASE_PATH")
-    else os.path.expanduser("~/LunarAutonomyChallenge")
+    os.getenv("LAC_BASE_PATH") if os.getenv("LAC_BASE_PATH") else os.path.expanduser("~/LunarAutonomyChallenge")
 )
 
 print(f"LAC_BASE_PATH: {os.getenv('LAC_BASE_PATH')}")
@@ -39,9 +37,7 @@ SCENE_MAX_Y = 20.0  # [m]
 SCENE_MIN_Y = -20.0  # [m]
 SCENE_MAX_Z = 10.0  # [m]  (could probably reduce this, based on max height of lander)
 SCENE_MIN_Z = 0.0  # [m]
-SCENE_BBOX = np.array(
-    [[SCENE_MIN_X, SCENE_MIN_Y, SCENE_MIN_Z], [SCENE_MAX_X, SCENE_MAX_Y, SCENE_MAX_Z]]
-)
+SCENE_BBOX = np.array([[SCENE_MIN_X, SCENE_MIN_Y, SCENE_MIN_Z], [SCENE_MAX_X, SCENE_MAX_Y, SCENE_MAX_Z]])
 
 # Lander dimensions
 LANDER_WIDTH = 3.0  # [m]
