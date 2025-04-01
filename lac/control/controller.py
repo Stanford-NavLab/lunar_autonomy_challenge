@@ -91,7 +91,7 @@ class ArcPlanner:
         MAX_OMEGA = 1  # [rad/s]
         ARC_DURATION = 2.0  # [s]
         NUM_ARC_POINTS = int(ARC_DURATION / params.DT)
-        self.speeds = [0.2]  # [0.05, 0.1, 0.15, 0.2]  # [m/s]
+        self.speeds = [params.TARGET_SPEED]  # [0.05, 0.1, 0.15, 0.2]  # [m/s]
         self.omegas = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS)
         self.root_arcs = []
         self.candidate_arcs = []
@@ -134,7 +134,6 @@ class ArcPlanner:
         pose_inv = invert_transform_mat(current_pose)
         waypoint_local = pose_inv @ np.array([waypoint_global[0], waypoint_global[1], 0.0, 1.0])
 
-        # TODO: Kaila fix this. Not correct.
         # Transform lander global position to rover local frame
         lander_local = apply_transform(pose_inv, params.LANDER_GLOBAL)
 
