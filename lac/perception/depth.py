@@ -5,7 +5,7 @@ import numpy as np
 from transformers import pipeline
 import torch
 from PIL import Image
-
+import open3d as o3d
 from lac.perception.segmentation_util import (
     get_mask_centroids,
     centroid_matching,
@@ -13,6 +13,7 @@ from lac.perception.segmentation_util import (
 from lac.perception.vision import project_pixel_to_3D, project_pixels_to_3D, get_camera_intrinsics
 from lac.utils.frames import opencv_to_camera, get_cam_pose_rover, apply_transform
 import lac.params as params
+import plotly.graph_objects as go
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -278,3 +279,223 @@ def compute_stereo_depth(
     depth = (focal_length_x * baseline) / disparity
 
     return disparity, depth
+
+
+RENDERERS = {}
+
+
+from lac.params import IMG_WIDTH, IMG_HEIGHT, FL_X, FL_Y
+
+
+def get_renderer():
+
+    H, W = IMG_HEIGHT, IMG_WIDTH
+    if RENDERERS.get((H, W)) is not None:
+        renderer = RENDERERS[(H, W)]
+    else:
+        renderer = o3d.visualization.rendering.OffscreenRenderer(width=W, height=H)
+
+    material = o3d.visualization.rendering.MaterialRecord()
+    material.shader = "defaultLit"
+    material.base_color = [0.4, 0.4, 0.4, 1.0]  # gray rock color, RGBA
+    material.base_roughness = 1.0  # high roughness for rock texture
+    material.base_metallic = 0.0  # non-metallic surface
+    material.base_reflectance = 0.0  # low reflectivity for natural rocks
+
+    bg_color = np.array([0.0, 0.0, 0.0, 0.0])
+    renderer.scene.set_background(bg_color)
+
+    return renderer, material
+
+
+def render_o3d(meshes, renderer, material, pose, d_light):
+    renderer.scene.clear_geometry()
+    for i, mesh in enumerate(meshes):
+        renderer.scene.add_geometry(f"mesh_{i}", mesh, material)
+
+    renderer.scene.set_lighting(renderer.scene.LightingProfile.HARD_SHADOWS, d_light)
+    cam = o3d.camera.PinholeCameraParameters()
+    cam.extrinsic = pose
+    cam.intrinsic = o3d.camera.PinholeCameraIntrinsic(
+        IMG_WIDTH,
+        IMG_HEIGHT,
+        FL_X,
+        FL_Y,
+        IMG_WIDTH / 2,
+        IMG_HEIGHT / 2,
+    )
+    renderer.setup_camera(cam.intrinsic, cam.extrinsic)
+    img = np.asarray(renderer.render_to_image())
+    depth = np.asarray(renderer.render_to_depth_image(z_in_view_space=True))
+    return img, depth
+
+
+def get_plotly_mesh(mesh: o3d.geometry.TriangleMesh, lighting=None, light_position=None, colorscale=None) -> go.Mesh3d:
+    if colorscale is None:
+        colorscale = [0, "rgb(153, 153, 153)"], [1.0, "rgb(160,160,160)"]
+    if light_position is None:
+        light_position = dict(x=1000, y=500, z=2000)
+    if lighting is None:
+        lighting = dict(
+            ambient=0.02,
+            diffuse=0.8,
+            specular=0.15,
+            roughness=0.5,
+            fresnel=0.2,
+            facenormalsepsilon=1e-15,
+            vertexnormalsepsilon=1e-15,
+        )
+
+    vertices = np.asarray(mesh.vertices)
+    triangles = np.asarray(mesh.triangles)
+    mesh_plotly = go.Mesh3d(
+        x=vertices[:, 0],
+        y=vertices[:, 1],
+        z=vertices[:, 2],
+        i=triangles[:, 0],
+        j=triangles[:, 1],
+        k=triangles[:, 2],
+        flatshading=True,
+        colorscale=colorscale,
+        intensity=vertices[:, 0],
+        lighting=lighting,
+        lightposition=light_position,
+        showlegend=False,
+    )
+    return mesh_plotly
+
+
+def get_light_direction(az, el):
+    return -np.array([np.cos(az) * np.cos(el), np.sin(az) * np.cos(el), np.sin(el)])
+
+
+def map_to_mesh(map_gt: np.ndarray) -> o3d.geometry.TriangleMesh:
+    H, W = map_gt.shape[:2]
+    vertices = map_gt[..., :3].reshape(-1, 3)
+
+    triangles = []
+
+    for i in range(H - 1):
+        for j in range(W - 1):
+            idx0 = i * W + j
+            idx1 = idx0 + 1
+            idx2 = idx0 + W
+            idx3 = idx2 + 1
+
+            # Triangle 1
+            triangles.append([idx0, idx2, idx1])
+            # Triangle 2
+            triangles.append([idx1, idx2, idx3])
+
+    triangles = np.array(triangles)
+
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    mesh.triangles = o3d.utility.Vector3iVector(triangles)
+    mesh.compute_vertex_normals()
+
+    return mesh
+
+
+from thirdparty.raft_stereo.raft_stereo import RAFTStereo
+from thirdparty.raft_stereo.utils.utils import InputPadder
+from lac.params import LAC_BASE_PATH
+import munch
+import os
+from typing import Union
+
+
+class DepthEstimator:
+    def __init__(
+        self,
+        **kwargs,
+    ):
+        config_dict = {
+            "restore_ckpt": os.path.join(LAC_BASE_PATH, "lunar_autonomy_challenge/models/raftstereo-eth3d.pth"),
+            "save_numpy": False,
+            "mixed_precision": False,
+            "valid_iters": 32,
+            "hidden_dims": [128, 128, 128],
+            "corr_implementation": "reg",
+            "shared_backbone": False,
+            "corr_levels": 4,
+            "corr_radius": 4,
+            "n_downsample": 2,
+            "context_norm": "batch",
+            "slow_fast_gru": False,
+            "n_gru_layers": 3,
+            "device": "cuda",
+        }
+        config_dict.update(kwargs)
+        self.config = munch.Munch.fromDict(config_dict)
+
+        self.model = torch.nn.DataParallel(RAFTStereo(self.config), device_ids=[0])
+        self.model.load_state_dict(torch.load(self.config.restore_ckpt))
+
+        self.model = self.model.module
+        self.model.to(self.config.device)
+        self.model.eval()
+
+    def compute_disparity(self, image1: Union[np.ndarray, torch.Tensor], image2: Union[np.ndarray, torch.Tensor]):
+
+        # Convert to torch tensor [C, H, W]
+        if isinstance(image1, np.ndarray):
+            image1 = torch.from_numpy(image1).permute(2, 0, 1).unsqueeze(0).to(device)
+            image2 = torch.from_numpy(image2).permute(2, 0, 1).unsqueeze(0).to(device)
+        elif isinstance(image1, torch.Tensor):
+            image1 = image1.unsqueeze(0).to(device)
+            image2 = image2.unsqueeze(0).to(device)
+
+        with torch.no_grad():
+            padder = InputPadder(image1.shape, divis_by=32)
+            image1, image2 = padder.pad(image1, image2)
+
+            _, flow_up = self.model(image1, image2, iters=self.config.valid_iters, test_mode=True)
+            flow_up = padder.unpad(flow_up).squeeze()
+
+        return -flow_up.cpu().numpy()
+
+
+@torch.no_grad()
+def align_scale_and_shift(prediction, target, weights):
+    """
+    weighted least squares problem to solve scale and shift:
+        min sum{
+                  weight[i,j] *
+                  (prediction[i,j] * scale + shift - target[i,j])^2
+               }
+
+    prediction: [B,H,W]
+    target: [B,H,W]
+    weights: [B,H,W]
+    """
+    if isinstance(prediction, np.ndarray):
+        prediction = torch.from_numpy(prediction).to(device)
+    if isinstance(target, np.ndarray):
+        target = torch.from_numpy(target).to(device)
+    if isinstance(weights, np.ndarray):
+        weights = torch.from_numpy(weights).to(device)
+
+    if weights is None:
+        weights = torch.ones_like(prediction).to(prediction.device)
+    if len(prediction.shape) < 3:
+        prediction = prediction.unsqueeze(0)
+        target = target.unsqueeze(0)
+        weights = weights.unsqueeze(0)
+    a_00 = torch.nansum(weights * prediction * prediction, dim=[1, 2])
+    a_01 = torch.nansum(weights * prediction, dim=[1, 2])
+    a_11 = torch.nansum(weights, dim=[1, 2])
+    # right hand side: b = [b_0, b_1]
+    b_0 = torch.nansum(weights * prediction * target, dim=[1, 2])
+    b_1 = torch.nansum(weights * target, dim=[1, 2])
+    # solution: x = A^-1 . b = [[a_11, -a_01], [-a_10, a_00]] / (a_00 * a_11 - a_01 * a_10) . b
+    det = a_00 * a_11 - a_01 * a_01
+    scale = (a_11 * b_0 - a_01 * b_1) / det
+    shift = (-a_01 * b_0 + a_00 * b_1) / det
+    error = (scale[:, None, None] * prediction + shift[:, None, None] - target).abs()
+    masked_error = error * weights
+    error_sum = masked_error.nansum(dim=[1, 2])
+    error_num = weights.nansum(dim=[1, 2])
+    avg_error = error_sum / error_num
+
+    return scale, shift, avg_error

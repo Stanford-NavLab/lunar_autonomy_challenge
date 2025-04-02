@@ -132,3 +132,11 @@ def positions_rmse(traj_a: Trajectory, traj_b: Trajectory):
     pos_a = traj_a.get_positions()
     pos_b = traj_b.get_positions()
     return np.sqrt(np.mean(np.linalg.norm(pos_a - pos_b, axis=1) ** 2))
+
+
+def cam_to_world(world_T_rover: np.array, cam_name: str) -> np.ndarray:
+    rover_T_cam = get_cam_pose_rover("FrontLeft")
+    rover_T_cam_ocv = rover_T_cam.copy()
+    rover_T_cam_ocv[:3, :3] = rover_T_cam_ocv[:3, :3] @ CAMERA_TO_OPENCV_PASSIVE
+    cam_T_world = np.linalg.inv(world_T_rover @ rover_T_cam_ocv)
+    return cam_T_world
