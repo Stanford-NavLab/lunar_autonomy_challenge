@@ -167,6 +167,51 @@ def draw_steering_arc(image, steering, l=0.4, color=(0, 0, 255), thickness=3):
     return output
 
 
+# def image_grid(
+#     images,
+#     rows=None,
+#     cols=None,
+#     fill: bool = True,
+#     show_axes: bool = False,
+#     rgb: bool = True,
+# ):
+#     """
+#     A util function for plotting a grid of images.
+
+#     Args:
+#         images: (N, H, W, 4) array of RGBA images
+#         rows: number of rows in the grid
+#         cols: number of columns in the grid
+#         fill: boolean indicating if the space between images should be filled
+#         show_axes: boolean indicating if the axes of the plots should be visible
+#         rgb: boolean, If True, only RGB channels are plotted.
+#             If False, only the alpha channel is plotted.
+
+#     Returns:
+#         None
+#     """
+#     if (rows is None) != (cols is None):
+#         raise ValueError("Specify either both rows and cols or neither.")
+
+#     if rows is None:
+#         rows = len(images)
+#         cols = 1
+
+#     gridspec_kw = {"wspace": 0.0, "hspace": 0.0} if fill else {}
+#     fig, axarr = plt.subplots(rows, cols, gridspec_kw=gridspec_kw, figsize=(15, 9))
+#     bleed = 0
+#     fig.subplots_adjust(left=bleed, bottom=bleed, right=(1 - bleed), top=(1 - bleed))
+
+
+#     for ax, im in zip(axarr.ravel(), images):
+#         if rgb:
+#             # only render RGB channels
+#             ax.imshow(im[..., :3])
+#         else:
+#             # only render Alpha channel
+#             ax.imshow(im[..., 3])
+#         if not show_axes:
+#             ax.set_axis_off()
 def image_grid(
     images,
     rows=None,
@@ -176,16 +221,16 @@ def image_grid(
     rgb: bool = True,
 ):
     """
-    A util function for plotting a grid of images.
+    A utility function for plotting a grid of images.
 
     Args:
-        images: (N, H, W, 4) array of RGBA images
-        rows: number of rows in the grid
-        cols: number of columns in the grid
-        fill: boolean indicating if the space between images should be filled
-        show_axes: boolean indicating if the axes of the plots should be visible
-        rgb: boolean, If True, only RGB channels are plotted.
-            If False, only the alpha channel is plotted.
+        images: List or array of images with shapes (H, W), (H, W, 3), or (H, W, 4).
+        rows: Number of rows in the grid.
+        cols: Number of columns in the grid.
+        fill: Boolean indicating if the space between images should be filled.
+        show_axes: Boolean indicating if the axes of the plots should be visible.
+        rgb: Boolean, If True, only RGB channels are plotted.
+            If False, only the alpha channel is plotted (for RGBA images).
 
     Returns:
         None
@@ -199,15 +244,26 @@ def image_grid(
 
     gridspec_kw = {"wspace": 0.0, "hspace": 0.0} if fill else {}
     fig, axarr = plt.subplots(rows, cols, gridspec_kw=gridspec_kw, figsize=(15, 9))
-    bleed = 0
-    fig.subplots_adjust(left=bleed, bottom=bleed, right=(1 - bleed), top=(1 - bleed))
 
-    for ax, im in zip(axarr.ravel(), images):
-        if rgb:
-            # only render RGB channels
-            ax.imshow(im[..., :3])
+    axarr = np.array(axarr).reshape(-1)  # Flatten in case of 2D grid
+
+    for ax, im in zip(axarr, images):
+        if im.ndim == 2:
+            # Grayscale image (H, W)
+            ax.imshow(im, cmap="gray")
+        elif im.shape[-1] == 3:
+            # RGB image (H, W, 3)
+            ax.imshow(im)
+        elif im.shape[-1] == 4:
+            # RGBA image (H, W, 4)
+            if rgb:
+                ax.imshow(im[..., :3])  # Only RGB channels
+            else:
+                ax.imshow(im[..., 3], cmap="gray")  # Only Alpha channel
         else:
-            # only render Alpha channel
-            ax.imshow(im[..., 3])
+            raise ValueError(f"Unsupported image shape: {im.shape}")
+
         if not show_axes:
             ax.set_axis_off()
+
+    plt.show()

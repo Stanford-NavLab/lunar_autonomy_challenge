@@ -22,7 +22,7 @@ from lac.util import (
     transform_to_pos_rpy,
 )
 from lac.perception.segmentation import UnetSegmentation, SemanticClasses
-from lac.planning.planner import Planner
+from lac.planning.waypoint_planner import Planner
 from lac.slam.visual_odometry import StereoVisualOdometry
 from lac.slam.feature_tracker import FeatureTracker
 from lac.control.controller import waypoint_steering

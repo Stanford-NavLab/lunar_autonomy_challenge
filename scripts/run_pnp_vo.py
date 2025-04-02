@@ -8,7 +8,7 @@ import cv2
 
 from lac.slam.visual_odometry import StereoVisualOdometry
 from lac.utils.plotting import plot_poses
-from lac.util import load_data, load_stereo_images
+from lac.util import load_data
 
 if __name__ == "__main__":
     # Load the data logs
@@ -25,8 +25,11 @@ if __name__ == "__main__":
     END_FRAME = 33000
 
     print("Running VO...")
-    for frame in tqdm(range(START_FRAME, END_FRAME, 2)):
-        tqdm.write(f"Frame: {frame}")
+    progress_bar = tqdm(range(START_FRAME, END_FRAME, 2), dynamic_ncols=True)
+
+    for frame in progress_bar:
+        progress_bar.set_description(f"Processing Frame: {frame}")
+
         img_name = f"{frame:06}.png"
         left_img = cv2.imread(str(left_path / img_name), cv2.IMREAD_GRAYSCALE)
         right_img = cv2.imread(str(right_path / img_name), cv2.IMREAD_GRAYSCALE)

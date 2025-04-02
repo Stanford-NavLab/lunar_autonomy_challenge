@@ -41,12 +41,7 @@ LANDER_GLOBAL = np.array(
         [LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0],  # bottom right
         [-LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0],  # bottom left
     ]
-)  # bottom right
-# LANDER_GLOBAL = np.array([
-#     [LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0], # top left
-#     [LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0, 1.0],  # top right
-#     [-LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0], # bottom left
-#     [-LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0, 1.0]]) # bottom right
+)
 
 ROVER_RADIUS = 0.4  # [m]
 

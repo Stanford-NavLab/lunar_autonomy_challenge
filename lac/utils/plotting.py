@@ -31,12 +31,8 @@ def plot_heightmaps(ground_map, agent_map):
         horizontal_spacing=0.1,
     )
     error = ground_map[:, :, 2] - agent_map[:, :, 2]
-    fig.add_trace(
-        go.Heatmap(z=ground_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1
-    )
-    fig.add_trace(
-        go.Heatmap(z=agent_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2
-    )
+    fig.add_trace(go.Heatmap(z=ground_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1)
+    fig.add_trace(go.Heatmap(z=agent_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2)
     fig.add_trace(go.Heatmap(z=error, colorscale="Viridis", colorbar=dict(x=1.0)), row=1, col=3)
     fig.update_layout(
         width=1400,  # Adjust the figure width
@@ -60,12 +56,8 @@ def plot_rock_maps(ground_map, agent_map):
         horizontal_spacing=0.1,
     )
     error = ground_map[:, :, 3] - agent_map[:, :, 3]
-    fig.add_trace(
-        go.Heatmap(z=ground_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1
-    )
-    fig.add_trace(
-        go.Heatmap(z=agent_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2
-    )
+    fig.add_trace(go.Heatmap(z=ground_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1)
+    fig.add_trace(go.Heatmap(z=agent_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2)
     fig.add_trace(go.Heatmap(z=error, colorscale="Viridis", colorbar=dict(x=1.0)), row=1, col=3)
     fig.update_layout(
         width=1400,  # Adjust the figure width
@@ -298,11 +290,7 @@ def plot_surface(grid, fig=None, colorscale="Viridis", no_axes=False, showscale=
     )
     fig.update_layout(width=1600, height=900, scene_aspectmode="data")
     if no_axes:
-        fig.update_layout(
-            scene=dict(
-                xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)
-            )
-        )
+        fig.update_layout(scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)))
     return fig
 
 
@@ -327,11 +315,7 @@ def plot_rock_map(grid, fig=None, no_axes=False, **kwargs):
     )
     fig.update_layout(width=1600, height=900, scene_aspectmode="data")
     if no_axes:
-        fig.update_layout(
-            scene=dict(
-                xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)
-            )
-        )
+        fig.update_layout(scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)))
     return fig
 
 
@@ -548,44 +532,6 @@ def plot_reference_frames(poses: T.List[np.ndarray], pose_names: T.List[str]) ->
     return fig_poses
 
 
-# def plot_mesh_vertices_edges(mesh, title="Mesh Visualization"):
-#     """
-#     Plots the vertices and edges of a PyTorch3D mesh using Matplotlib.
-
-#     Args:
-#         mesh: A PyTorch3D Meshes object.
-#         title: Title of the plot.
-#     """
-#     verts = mesh.verts_packed().clone().detach().cpu().numpy()  # Extract vertex positions
-#     faces = mesh.faces_packed().clone().detach().cpu().numpy()  # Extract face indices
-
-#     fig = plt.figure(figsize=(8, 8))
-#     ax = fig.add_subplot(111, projection="3d")
-
-#     # Plot vertices
-#     ax.scatter(verts[:, 0], verts[:, 1], verts[:, 2], color="red", s=10, label="Vertices")
-
-#     # Create edges from face indices
-#     edges = set()
-#     for face in faces:
-#         for i in range(3):
-#             edge = tuple(sorted((face[i], face[(i + 1) % 3])))  # Ensure unique edges
-#             edges.add(edge)
-
-#     edge_lines = [[verts[i], verts[j]] for i, j in edges]
-
-#     # Plot edges
-#     ax.add_collection3d(Line3DCollection(edge_lines, colors="black", linewidths=0.5))
-
-#     ax.set_xlabel("X")
-#     ax.set_ylabel("Y")
-#     ax.set_zlabel("Z")
-#     # ax.set_title(title)
-#     # plt.axis("equal")
-#     plt.show()
-#     return fig
-
-
 def plot_mesh(mesh, show_edges=True, textured=False):
     """
     Plots the vertices and edges of a PyTorch3D mesh using Plotly's Mesh3d.
@@ -619,9 +565,7 @@ def plot_mesh(mesh, show_edges=True, textured=False):
         # TODO: handle TexturesUV
     else:
         colors = "lightblue"
-    vertices_plot = go.Scatter3d(
-        x=x, y=y, z=z, mode="markers", marker=dict(color=colors, size=2), name="Vertices"
-    )
+    vertices_plot = go.Scatter3d(x=x, y=y, z=z, mode="markers", marker=dict(color=colors, size=2), name="Vertices")
 
     data = [mesh_plot, vertices_plot]
 

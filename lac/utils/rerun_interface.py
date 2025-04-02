@@ -9,9 +9,6 @@ import cv2
 import rerun as rr
 import rerun.blueprint as rrb
 import math as math
-import subprocess
-import psutil
-import time
 
 
 class Rerun:
@@ -31,7 +28,7 @@ class Rerun:
     # Init
     # ===================================================================================
 
-    @staticmethod
+    # @staticmethod
     def init(img_compress: bool = False) -> None:
         Rerun.img_compress = img_compress
 
@@ -42,15 +39,16 @@ class Rerun:
         # rr.connect()  # Connect to a remote viewer
         Rerun.is_initialized = True
 
-    @staticmethod
+    # @staticmethod
     def init3d(img_compress: bool = False) -> None:
         Rerun.init(img_compress)
-        rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
+        rr.log("/world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
         Rerun.log_3d_grid_plane()
 
-    @staticmethod
+    # @staticmethod
     def init_vo(img_compress: bool = False) -> None:
         # Setup the blueprint
+        print("Setting rerun blueprint")
         Rerun.blueprint = rrb.Vertical(
             rrb.Horizontal(
                 rrb.Spatial3DView(name="3D", origin="/world"),
@@ -62,7 +60,12 @@ class Rerun:
                     rrb.TimeSeriesView(origin="/trajectory_stats"),
                     column_shares=[1, 1],
                 ),
-                rrb.Spatial2DView(name="Trajectory 2D", origin="/trajectory_img/2d"),
+                rrb.Spatial2DView(
+                    name="Local frame",
+                    origin="/local",
+                    background=[50, 50, 50],
+                    visual_bounds=rrb.VisualBounds2D(x_range=[0, 5], y_range=[-5, 5]),
+                ),
                 column_shares=[3, 2],
             ),
             row_shares=[3, 2],  # 3 "parts" in the first Horizontal, 2 in the second
@@ -79,11 +82,11 @@ class Rerun:
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         if Rerun.img_compress:
             rr.log(
-                "world/camera/image",
+                "/world/camera/image",
                 rr.Image(rgb).compress(jpeg_quality=Rerun.img_compress_jpeg_quality),
             )
         else:
-            rr.log("world/camera/image", rr.Image(rgb))
+            rr.log("/world/camera/image", rr.Image(rgb))
 
     # ===================================================================================
     # 3D logging
@@ -104,7 +107,7 @@ class Rerun:
             lines.append([[minx, miny + div_size * n, 0], [maxx, miny + div_size * n, 0]])
 
         rr.log(
-            "world/grid",
+            "/world/grid",
             rr.LineStrips3D(
                 lines,
                 radii=0.01,
@@ -147,6 +150,35 @@ class Rerun:
     # ===================================================================================
     # 2D logging
     # ===================================================================================
+
+    # TODO: test
+    @staticmethod
+    def log_2d_trajectory(topic: str, frame_id: int, trajectory: np.ndarray) -> None:
+        rr.set_time_sequence("frame_id", frame_id)
+        # Swap x and y, and invert y
+        trajectory = np.column_stack((trajectory[:, 1], -trajectory[:, 0]))
+        rr.log(
+            topic,
+            rr.LineStrips2D(
+                [trajectory],
+                radii=0.01,
+                colors=[0, 0, 255],
+            ),
+        )
+
+    # TODO: test
+    @staticmethod
+    def log_2d_obstacle_map(topic: str, frame_id: int, centers: np.ndarray, radii: np.ndarray) -> None:
+        rr.set_time_sequence("frame_id", frame_id)
+        centers = np.column_stack((centers[:, 1], -centers[:, 0]))
+        rr.log(
+            topic,
+            rr.Points2D(
+                centers,
+                radii=radii,
+                colors=[255, 0, 0],
+            ),
+        )
 
     @staticmethod
     def log_2d_seq_scalar(topic: str, frame_id: int, scalar_data) -> None:
