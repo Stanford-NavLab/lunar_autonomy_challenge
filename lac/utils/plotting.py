@@ -9,7 +9,11 @@ from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
-##### ------------------- 2D ------------------- #####
+from lac.params import LANDER_GLOBAL, LANDER_HEIGHT
+
+# ==================================================================================================
+#                                    2D Plotting Functions
+# ==================================================================================================
 
 
 def plot_heatmap(data, fig=None, colorscale="Viridis", no_axes=False):
@@ -268,7 +272,9 @@ def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, waypoint=No
     return fig
 
 
-##### ------------------- 3D ------------------- #####
+# ==================================================================================================
+#                                    3D Plotting Functions
+# ==================================================================================================
 
 
 def plot_surface(grid, fig=None, colorscale="Viridis", no_axes=False, showscale=True, **kwargs):
@@ -477,6 +483,47 @@ def plot_poses(poses, fig=None, no_axes=False, **kwargs):
     return fig
 
 
+def plot_lander_3d(lander_height, fig=None, color="silver"):
+    """Plot the lander as a box in 3D."""
+    if fig is None:
+        fig = go.Figure()
+
+    vertices = np.vstack([LANDER_GLOBAL, LANDER_GLOBAL + np.array([0, 0, LANDER_HEIGHT])])
+    vertices[:, 2] += lander_height
+
+    # Define the triangular faces of the box
+    faces = [
+        [0, 1, 2],
+        [0, 2, 3],  # Bottom face
+        [4, 5, 6],
+        [4, 6, 7],  # Top face
+        [0, 1, 5],
+        [0, 5, 4],  # Side face 1
+        [1, 2, 6],
+        [1, 6, 5],  # Side face 2
+        [2, 3, 7],
+        [2, 7, 6],  # Side face 3
+        [3, 0, 4],
+        [3, 4, 7],  # Side face 4
+    ]
+
+    # Create 3D mesh plot
+    fig.add_trace(
+        go.Mesh3d(
+            x=vertices[:, 0],
+            y=vertices[:, 1],
+            z=vertices[:, 2],
+            i=[face[0] for face in faces],
+            j=[face[1] for face in faces],
+            k=[face[2] for face in faces],
+            color=color,
+            opacity=0.5,
+        )
+    )
+
+    return fig
+
+
 def vector_trace(
     start: np.ndarray, end: np.ndarray, color: str = "blue", name: str = "", head_size: float = 0.1
 ) -> go.Scatter3d:
@@ -530,44 +577,6 @@ def plot_reference_frames(poses: T.List[np.ndarray], pose_names: T.List[str]) ->
 
     fig_poses.update_layout(height=700, width=1200, scene_aspectmode="data")
     return fig_poses
-
-
-# def plot_mesh_vertices_edges(mesh, title="Mesh Visualization"):
-#     """
-#     Plots the vertices and edges of a PyTorch3D mesh using Matplotlib.
-
-#     Args:
-#         mesh: A PyTorch3D Meshes object.
-#         title: Title of the plot.
-#     """
-#     verts = mesh.verts_packed().clone().detach().cpu().numpy()  # Extract vertex positions
-#     faces = mesh.faces_packed().clone().detach().cpu().numpy()  # Extract face indices
-
-#     fig = plt.figure(figsize=(8, 8))
-#     ax = fig.add_subplot(111, projection="3d")
-
-#     # Plot vertices
-#     ax.scatter(verts[:, 0], verts[:, 1], verts[:, 2], color="red", s=10, label="Vertices")
-
-#     # Create edges from face indices
-#     edges = set()
-#     for face in faces:
-#         for i in range(3):
-#             edge = tuple(sorted((face[i], face[(i + 1) % 3])))  # Ensure unique edges
-#             edges.add(edge)
-
-#     edge_lines = [[verts[i], verts[j]] for i, j in edges]
-
-#     # Plot edges
-#     ax.add_collection3d(Line3DCollection(edge_lines, colors="black", linewidths=0.5))
-
-#     ax.set_xlabel("X")
-#     ax.set_ylabel("Y")
-#     ax.set_zlabel("Z")
-#     # ax.set_title(title)
-#     # plt.axis("equal")
-#     plt.show()
-#     return fig
 
 
 def plot_mesh(mesh, show_edges=True, textured=False):

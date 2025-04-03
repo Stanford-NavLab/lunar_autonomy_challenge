@@ -6,17 +6,10 @@ import os
 from pathlib import Path
 
 
-LAC_BASE_PATH = (
-    os.getenv("LAC_BASE_PATH") if os.getenv("LAC_BASE_PATH") else os.path.expanduser("~/LunarAutonomyChallenge")
-)
+TEAM_CODE_ROOT = Path(os.path.abspath(__file__)).parent.parent
+# "/workspace/team_code" - Location in the docker container
 
-print(f"LAC_BASE_PATH: {os.getenv('LAC_BASE_PATH')}")
-
-TEAM_CODE_ROOT = (
-    os.path.join(LAC_BASE_PATH, "lunar_autonomy_challenge")
-    if os.getenv("LAC_BASE_PATH")
-    else "/workspace/team_code"  # Location in the docker container
-)
+LAC_BASE_PATH = TEAM_CODE_ROOT.parent
 
 DEFAULT_RUN_NAME = "default_run"
 
@@ -40,7 +33,8 @@ SCENE_MIN_Z = 0.0  # [m]
 SCENE_BBOX = np.array([[SCENE_MIN_X, SCENE_MIN_Y, SCENE_MIN_Z], [SCENE_MAX_X, SCENE_MAX_Y, SCENE_MAX_Z]])
 
 # Lander dimensions
-LANDER_WIDTH = 3.0  # [m]
+LANDER_WIDTH = 3.0  # [m]  (approximate)
+LANDER_HEIGHT = 3.0  # [m]  (approximate)
 LANDER_GLOBAL = np.array(
     [
         [-LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0],  # top left
@@ -48,12 +42,7 @@ LANDER_GLOBAL = np.array(
         [LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0],  # bottom right
         [-LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0],  # bottom left
     ]
-)  # bottom right
-# LANDER_GLOBAL = np.array([
-#     [LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0], # top left
-#     [LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0, 1.0],  # top right
-#     [-LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0, 1.0], # bottom left
-#     [-LANDER_WIDTH / 2, -LANDER_WIDTH / 2, 0.0, 1.0]]) # bottom right
+)
 
 ROVER_RADIUS = 0.4  # [m]
 

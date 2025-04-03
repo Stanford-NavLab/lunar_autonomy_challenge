@@ -8,37 +8,11 @@ import numpy as np
 import cv2
 import rerun as rr
 import rerun.blueprint as rrb
-
 import math as math
-
-# from camera import Camera
-import subprocess
-
-# from utils_sys import Printer
-import psutil
-import time
-import os
-
-
-def check_command_start(command):
-    try:
-        process = subprocess.Popen(
-            command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        time.sleep(1)
-        for proc in psutil.process_iter(attrs=["name"]):
-            # print(f'found process: {proc.info["name"]}')
-            if proc.info["name"] == command and proc.is_running():
-                # Printer.green("INFO: " + command + " running")
-                return True
-        # Printer.orange("WARNING: " + command + " not running")
-        return False
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        return False
 
 
 class Rerun:
-    # static parameters
+    # Static parameters
     blueprint = None
     img_compress = False  # set to true if you want to compress the data
     img_compress_jpeg_quality = 85
@@ -50,23 +24,12 @@ class Rerun:
     def __init__(self) -> None:
         self.init()
 
-    @staticmethod
-    def is_ok() -> bool:
-        command = "rerun"
-        result = False
-        try:
-            result = check_command_start(command)
-        except Exception as e:
-            # Printer.orange("ERROR: " + str(e))
-            pass
-        return result
-
     # ===================================================================================
     # Init
     # ===================================================================================
 
-    @staticmethod
-    def init(img_compress=False) -> None:
+    # @staticmethod
+    def init(img_compress: bool = False) -> None:
         Rerun.img_compress = img_compress
 
         if Rerun.blueprint:
@@ -76,15 +39,16 @@ class Rerun:
         # rr.connect()  # Connect to a remote viewer
         Rerun.is_initialized = True
 
-    @staticmethod
-    def init3d(img_compress=False) -> None:
+    # @staticmethod
+    def init3d(img_compress: bool = False) -> None:
         Rerun.init(img_compress)
-        rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
+        rr.log("/world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
         Rerun.log_3d_grid_plane()
 
-    @staticmethod
-    def init_vo(img_compress=False) -> None:
+    # @staticmethod
+    def init_vo(img_compress: bool = False) -> None:
         # Setup the blueprint
+        print("Setting rerun blueprint")
         Rerun.blueprint = rrb.Vertical(
             rrb.Horizontal(
                 rrb.Spatial3DView(name="3D", origin="/world"),
@@ -96,7 +60,12 @@ class Rerun:
                     rrb.TimeSeriesView(origin="/trajectory_stats"),
                     column_shares=[1, 1],
                 ),
-                rrb.Spatial2DView(name="Trajectory 2D", origin="/trajectory_img/2d"),
+                rrb.Spatial2DView(
+                    name="Local frame",
+                    origin="/local",
+                    background=[50, 50, 50],
+                    visual_bounds=rrb.VisualBounds2D(x_range=[0, 5], y_range=[-5, 5]),
+                ),
                 column_shares=[3, 2],
             ),
             row_shares=[3, 2],  # 3 "parts" in the first Horizontal, 2 in the second
@@ -105,11 +74,26 @@ class Rerun:
         Rerun.init3d(img_compress)
 
     # ===================================================================================
+    # Image logging
+    # ===================================================================================
+
+    @staticmethod
+    def log_img(img: np.ndarray) -> None:
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        if Rerun.img_compress:
+            rr.log(
+                "/world/camera/image",
+                rr.Image(rgb).compress(jpeg_quality=Rerun.img_compress_jpeg_quality),
+            )
+        else:
+            rr.log("/world/camera/image", rr.Image(rgb))
+
+    # ===================================================================================
     # 3D logging
     # ===================================================================================
 
     @staticmethod
-    def log_3d_grid_plane(num_divs=20, div_size=1):
+    def log_3d_grid_plane(num_divs: int = 20, div_size: int = 1) -> None:
         rr.set_time_sequence("frame_id", 0)
         # Plane parallel to x-y at z = 0 with normal +z
         minx = -num_divs * div_size
@@ -123,7 +107,7 @@ class Rerun:
             lines.append([[minx, miny + div_size * n, 0], [maxx, miny + div_size * n, 0]])
 
         rr.log(
-            "world/grid",
+            "/world/grid",
             rr.LineStrips3D(
                 lines,
                 radii=0.01,
@@ -151,9 +135,50 @@ class Rerun:
             ),
         )
 
+    @staticmethod
+    def log_3d_points(points: np.ndarray, topic: str = "/world", color=[0, 0, 255]) -> None:
+        points = np.array(points).reshape(-1, 3)
+        rr.log(
+            topic,
+            rr.Points3D(
+                points,
+                radii=0.01,
+                colors=color,
+            ),
+        )
+
     # ===================================================================================
     # 2D logging
     # ===================================================================================
+
+    # TODO: test
+    @staticmethod
+    def log_2d_trajectory(topic: str, frame_id: int, trajectory: np.ndarray) -> None:
+        rr.set_time_sequence("frame_id", frame_id)
+        # Swap x and y, and invert y
+        trajectory = np.column_stack((trajectory[:, 1], -trajectory[:, 0]))
+        rr.log(
+            topic,
+            rr.LineStrips2D(
+                [trajectory],
+                radii=0.01,
+                colors=[0, 0, 255],
+            ),
+        )
+
+    # TODO: test
+    @staticmethod
+    def log_2d_obstacle_map(topic: str, frame_id: int, centers: np.ndarray, radii: np.ndarray) -> None:
+        rr.set_time_sequence("frame_id", frame_id)
+        centers = np.column_stack((centers[:, 1], -centers[:, 0]))
+        rr.log(
+            topic,
+            rr.Points2D(
+                centers,
+                radii=radii,
+                colors=[255, 0, 0],
+            ),
+        )
 
     @staticmethod
     def log_2d_seq_scalar(topic: str, frame_id: int, scalar_data) -> None:

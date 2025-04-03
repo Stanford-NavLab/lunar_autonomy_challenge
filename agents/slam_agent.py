@@ -21,7 +21,7 @@ from lac.util import (
     transform_to_numpy,
     transform_to_pos_rpy,
 )
-from lac.planning.planner import Planner
+from lac.planning.waypoint_planner import Planner
 from lac.slam.visual_odometry import StereoVisualOdometry
 from lac.control.controller import waypoint_steering
 from lac.utils.data_logger import DataLogger
@@ -79,9 +79,7 @@ class SlamAgent(AutonomousAgent):
 
         """ Planner """
         self.initial_pose = transform_to_numpy(self.get_initial_position())
-        self.lander_pose = self.initial_pose @ transform_to_numpy(
-            self.get_initial_lander_position()
-        )
+        self.lander_pose = self.initial_pose @ transform_to_numpy(self.get_initial_lander_position())
         self.planner = Planner(self.initial_pose)
 
         """ SLAM """
@@ -145,9 +143,7 @@ class SlamAgent(AutonomousAgent):
             # Stereo VO
             if self.step >= ARM_RAISE_WAIT_FRAMES:
                 if self.step == ARM_RAISE_WAIT_FRAMES:
-                    self.svo.initialize(
-                        self.initial_pose, images_gray["FrontLeft"], images_gray["FrontRight"]
-                    )
+                    self.svo.initialize(self.initial_pose, images_gray["FrontLeft"], images_gray["FrontRight"])
                 else:
                     self.svo.track(images_gray["FrontLeft"], images_gray["FrontRight"])
                 self.svo_poses.append(self.svo.get_pose())
@@ -163,12 +159,8 @@ class SlamAgent(AutonomousAgent):
         position_error = self.current_pose[:3, 3] - ground_truth_pose[:3, 3]
         gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
         svo_trajectory = np.array([pose[:3, 3] for pose in self.svo_poses])
-        Rerun.log_3d_trajectory(
-            self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255]
-        )
-        Rerun.log_3d_trajectory(
-            self.step, svo_trajectory, trajectory_string="EKF", color=[255, 165, 0]
-        )
+        Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255])
+        Rerun.log_3d_trajectory(self.step, svo_trajectory, trajectory_string="EKF", color=[255, 165, 0])
         Rerun.log_2d_seq_scalar("trajectory_error/err_x", self.step, position_error[0])
         Rerun.log_2d_seq_scalar("trajectory_error/err_y", self.step, position_error[1])
         Rerun.log_2d_seq_scalar("trajectory_error/err_z", self.step, position_error[2])

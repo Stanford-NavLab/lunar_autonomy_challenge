@@ -30,7 +30,7 @@ from lac.perception.depth import (
 from lac.slam.visual_odometry import StereoVisualOdometry
 from lac.slam.feature_tracker import FeatureTracker
 from lac.control.controller import ArcPlanner
-from lac.planning.planner import Planner
+from lac.planning.waypoint_planner import Planner
 from lac.mapping.mapper import bin_points_to_grid, interpolate_heights
 from lac.utils.visualization import (
     overlay_mask,

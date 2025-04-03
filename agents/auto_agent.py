@@ -9,10 +9,8 @@ Full agent
 """
 
 import carla
-import cv2 as cv
 import numpy as np
-import json
-from PIL import Image
+import cv2 as cv
 import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
@@ -29,12 +27,13 @@ from lac.perception.depth import (
     compute_rock_radii,
 )
 from lac.control.controller import ArcPlanner
-from lac.planning.planner import Planner
+from lac.planning.waypoint_planner import Planner
 from lac.utils.visualization import (
     overlay_mask,
     draw_steering_arc,
     overlay_stereo_rock_depths,
 )
+from lac.utils.rerun_interface import Rerun
 from lac.utils.data_logger import DataLogger
 import lac.params as params
 
@@ -42,6 +41,8 @@ import lac.params as params
 """ Agent parameters and settings """
 TARGET_SPEED = 0.15  # [m/s]
 IMAGE_PROCESS_RATE = 10  # [Hz]
+
+ARM_RAISE_WAIT_FRAMES = 80
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
 LOG_DATA = True  # Whether to log data
@@ -82,9 +83,9 @@ class AutoAgent(AutonomousAgent):
         self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
         """ Planner """
-        initial_pose = transform_to_numpy(self.get_initial_position())
-        self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(initial_pose)
+        self.initial_pose = transform_to_numpy(self.get_initial_position())
+        self.lander_pose = self.initial_pose @ transform_to_numpy(self.get_initial_lander_position())
+        self.planner = Planner(self.initial_pose)
 
         """ Path planner """
         # TODO: initialize ArcPlanner
@@ -95,9 +96,9 @@ class AutoAgent(AutonomousAgent):
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.cameras)
             self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
-            self.rock_detections_file = (
-                f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/rock_detections.json"
-            )
+            self.rock_detections_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/rock_detections.json"
+        Rerun.init_vo()
+        self.gt_poses = [self.initial_pose]
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
 
@@ -136,6 +137,7 @@ class AutoAgent(AutonomousAgent):
         print("\nStep: ", self.step)
 
         ground_truth_pose = transform_to_numpy(self.get_transform())
+        self.gt_poses.append(ground_truth_pose)
         nav_pose = ground_truth_pose
 
         """ Waypoint navigation """
@@ -145,7 +147,6 @@ class AutoAgent(AutonomousAgent):
             return carla.VehicleVelocityControl(0.0, 0.0)
 
         """ Rock segmentation """
-        # if self.step % (params.FRAME_RATE // IMAGE_PROCESS_RATE) == 0:  # This runs at 1 Hz
         if self.image_available():
             FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
             FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
@@ -158,15 +159,11 @@ class AutoAgent(AutonomousAgent):
             stereo_depth_results = stereo_depth_from_segmentation(
                 left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
             )
-            rock_coords = compute_rock_coords_rover_frame(
-                stereo_depth_results, "FrontLeft", self.cameras
-            )
+            rock_coords = compute_rock_coords_rover_frame(stereo_depth_results, self.cameras)
             rock_radii = compute_rock_radii(stereo_depth_results)
 
             # Path planning
-            control, path, waypoint_local = self.arc_planner.plan_arc(
-                waypoint, nav_pose, rock_coords, rock_radii
-            )
+            control, path, waypoint_local = self.arc_planner.plan_arc(waypoint, nav_pose, rock_coords, rock_radii)
             self.current_v, self.current_w = control
             print(f"Control: linear = {self.current_v}, angular = {self.current_w}")
             print(f"Waypoint_local: {waypoint_local}")
@@ -181,7 +178,38 @@ class AutoAgent(AutonomousAgent):
                 cv.imshow("Rock segmentation", overlay)
                 cv.waitKey(1)
 
-        control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+            """ Rerun visualization """
+            gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
+            Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 120, 255])
+            print(f"path: {path.shape}")
+            # Rerun.log_2d_trajectory(
+            #     topic="/trajectory_2d/img/path", frame_id=self.step, trajectory=path
+            # )
+            # if len(rock_coords) > 0:
+            #     rock_centers = np.array(rock_coords)[:, :2]
+            #     print(f"Rock centers: {rock_centers.shape}")
+            #     Rerun.log_2d_obstacle_map(
+            #         topic="/trajectory_2d/img/obstacles",
+            #         frame_id=self.step,
+            #         centers=rock_centers,
+            #         radii=rock_radii,
+            #     )
+            Rerun.log_2d_trajectory(topic="/local/path", frame_id=self.step, trajectory=path)
+            if len(rock_coords) > 0:
+                rock_centers = np.array(rock_coords)[:, :2]
+                print(f"Rock centers: {rock_centers.shape}")
+                Rerun.log_2d_obstacle_map(
+                    topic="/local/obstacles",
+                    frame_id=self.step,
+                    centers=rock_centers,
+                    radii=rock_radii,
+                )
+            print(Rerun.blueprint)
+
+        if self.step < ARM_RAISE_WAIT_FRAMES:  # Wait for arms to raise before moving
+            control = carla.VehicleVelocityControl(0.0, 0.0)
+        else:
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         """ Data logging """
         if LOG_DATA:

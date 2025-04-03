@@ -18,7 +18,7 @@ from lac.control.controller import waypoint_steering
 from lac.localization.ekf import EKF, create_Q, get_pose_measurement_tag
 from lac.localization.imu_dynamics import propagate_state
 from lac.perception.vision import FiducialLocalizer
-from lac.planning.planner import Planner
+from lac.planning.waypoint_planner import Planner
 from lac.util import (
     pos_rpy_to_pose,
     pose_to_pos_rpy,
@@ -109,7 +109,8 @@ class LocalizationAgent(AutonomousAgent):
 
     def sensors(self):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
-        and also the initial activation state of each camera and light. Here we are activating the front left camera and light."""
+        and also the initial activation state of each camera and light. Here we are activating the front left camera and light.
+        """
 
         sensors = {}
         for cam, config in self.cameras.items():

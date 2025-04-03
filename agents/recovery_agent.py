@@ -29,7 +29,7 @@ from lac.perception.depth import (
     compute_rock_radii,
 )
 from lac.control.controller import waypoint_steering, ArcPlanner
-from lac.planning.planner import Planner
+from lac.planning.waypoint_planner import Planner
 from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
 from lac.localization.imu_dynamics import propagate_state
 from lac.utils.visualization import (
@@ -60,7 +60,7 @@ class RecoveryAgent(AutonomousAgent):
         """Controller variables"""
         self.current_v = 0.0
         self.current_w = 0.0
-
+        
         """ Perception modules """
         self.segmentation = UnetSegmentation()
 
@@ -119,15 +119,22 @@ class RecoveryAgent(AutonomousAgent):
 
         """ Path planner """
         self.arc_planner = ArcPlanner()
+        self.path_planner_statistics = {} 
+        self.path_planner_statistics["collision detections"] = [] # frame number and current pose
+        self.path_planner_statistics["time taken"] = 0
+        self.path_planner_statistics["success"] = False
+
+        # #with open('my_dict.pickle', 'wb') as file: at the end of the run
+        #     pickle.dump(my_dict, file)
+
+        #     print("Dictionary saved to my_dict.pickle")
 
         """ Data logging """
         if LOG_DATA:
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.cameras)
             self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
-            self.rock_detections_file = (
-                f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/rock_detections.json"
-            )
+            self.rock_detections_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/rock_detections.json"
 
         if ENABLE_RERUN:
             Rerun.init_vo()
@@ -223,9 +230,7 @@ class RecoveryAgent(AutonomousAgent):
         gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
 
         if ENABLE_RERUN:
-            Rerun.log_3d_trajectory(
-                self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255]
-            )
+            Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255])
             # Rerun.log_2d_seq_scalar("ground_truth_pose/x", self.step, ground_truth_pose[0, 3])
             # Rerun.log_2d_seq_scalar("ground_truth_pose/y", self.step, ground_truth_pose[1, 3])
             # Rerun.log_2d_seq_scalar("ground_truth_pose/z", self.step, ground_truth_pose[2, 3])
@@ -268,9 +273,7 @@ class RecoveryAgent(AutonomousAgent):
             rock_radii = compute_rock_radii(stereo_depth_results)
 
             # Path planning
-            control, path, waypoint_local = self.arc_planner.plan_arc(
-                waypoint, nav_pose, rock_coords, rock_radii
-            )
+            control, path, waypoint_local = self.arc_planner.plan_arc(waypoint, nav_pose, rock_coords, rock_radii)
             self.current_v, self.current_w = control
             print(f"Control: linear = {self.current_v}, angular = {self.current_w}")
             print(f"Waypoint_local: {waypoint_local}")

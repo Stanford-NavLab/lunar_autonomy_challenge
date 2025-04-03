@@ -11,7 +11,10 @@ import argparse
 import time
 
 import warnings
-warnings.filterwarnings("ignore", message="torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument")
+
+warnings.filterwarnings(
+    "ignore", message="torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument"
+)
 
 from droid_slam.droid import Droid
 import droid_backends
@@ -30,7 +33,7 @@ if __name__ == "__main__":
     frames = sorted(int(img_name.split(".")[0]) for img_name in os.listdir(left_path))
 
     # Parameters
-    DOWNSCALE_FACTOR = 0.5  # works with [0.3, 0.5]
+    DOWNSCALE_FACTOR = 0.4  # works with [0.3, 0.5]
     IMAGE_SIZE = (DOWNSCALE_FACTOR * np.array([720, 1280])).astype(int)
     INTRINSICS = torch.as_tensor(DOWNSCALE_FACTOR * np.array([914.0152, 914.0152, 640.0, 360.0]))
     BUFFER = 2000
@@ -91,12 +94,14 @@ if __name__ == "__main__":
 
     # np.save(Path(LAC_BASE_PATH) / f"results/slam/droid/trajs/{len(traj_est)}_frames.npy", traj_est)
     # np.save(Path(data_path) / f"droid_traj_{len(traj_est)}_frames.npy", traj_est)
-    np.savez(Path(data_path) / "droid.npz", 
-         start_frame=START_FRAME, 
-         end_frame=END_FRAME, 
-         stride=STRIDE, 
-         downscale_factor=DOWNSCALE_FACTOR, 
-         trajectory=traj_est)
+    np.savez(
+        Path(data_path) / "droid.npz",
+        start_frame=START_FRAME,
+        end_frame=END_FRAME,
+        stride=STRIDE,
+        downscale_factor=DOWNSCALE_FACTOR,
+        trajectory=traj_est,
+    )
     print("Trajectory saved")
 
     # fig = plot_poses(poses[START_FRAME:END_FRAME], no_axes=True, color="black", name="Ground truth")

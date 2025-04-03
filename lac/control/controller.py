@@ -86,35 +86,47 @@ def rock_avoidance_steering(depth_results: dict, cam_config: dict) -> float:
 class ArcPlanner:
     """Arc planner"""
 
-    def __init__(self):
-        NUM_OMEGAS = 5
+    def __init__(self, arc_config: int | tuple[int, int] = (5, 5)):
+
         MAX_OMEGA = 1  # [rad/s]
         ARC_DURATION = 2.0  # [s]
         NUM_ARC_POINTS = int(ARC_DURATION / params.DT)
         self.speeds = [params.TARGET_SPEED]  # [0.05, 0.1, 0.15, 0.2]  # [m/s]
-        self.omegas = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS)
         self.root_arcs = []
         self.candidate_arcs = []
         self.root_vw = []
         self.vw = []
+        if (type(arc_config) == int):
+            self.is_branch = False
+            NUM_OMEGAS_1 = arc_config
+            self.omegas1 = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS_1)
+        else:
+            self.is_branch = True
+            NUM_OMEGAS_1 = arc_config[0]
+            NUM_OMEGAS_2 = arc_config[1]
+            self.omegas1 = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS_1)
+            self.omegas2 = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS_2)
+
         for v in self.speeds:
-            for w in self.omegas:
+            for w in self.omegas1:
                 new_arc = dubins_traj(np.zeros(3), [v, w], NUM_ARC_POINTS, params.DT)
                 self.root_arcs.append(new_arc)
                 self.candidate_arcs.append(new_arc)
                 self.root_vw.append((v, w))
+     
 
-        concatenated_arcs = []
-        for count, root_arc in enumerate(self.root_arcs):
-            last_state = root_arc[-1]  # Extract last state [x, y, theta]
+        if self.is_branch:
+            concatenated_arcs = []
+            for count, root_arc in enumerate(self.root_arcs):
+                last_state = root_arc[-1]  # Extract last state [x, y, theta]
 
-            for v in self.speeds:
-                for w in self.omegas:
-                    new_arc = dubins_traj(last_state, [v, w], NUM_ARC_POINTS, params.DT)
-                    concatenated_arcs.append(np.concatenate((root_arc, new_arc)))
-                    self.vw.append(self.root_vw[count])
-
-        self.candidate_arcs = concatenated_arcs
+                for v in self.speeds:
+                    for w in self.omegas2:
+                        new_arc = dubins_traj(last_state, [v, w], NUM_ARC_POINTS, params.DT)
+                        concatenated_arcs.append(np.concatenate((root_arc, new_arc)))
+                        self.vw.append(self.root_vw[count])
+    
+            self.candidate_arcs = concatenated_arcs
         self.np_candidate_arcs = np.array(self.candidate_arcs)
 
     def plan_arc(

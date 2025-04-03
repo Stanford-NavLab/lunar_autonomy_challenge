@@ -16,7 +16,7 @@ import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.planning.planner import Planner
+from lac.planning.waypoint_planner import Planner
 from lac.control.controller import waypoint_steering
 from lac.utils.data_logger import DataLogger
 from lac.util import transform_to_numpy
@@ -125,7 +125,8 @@ class DataCollectionAgent(AutonomousAgent):
 
     def sensors(self):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
-        and also the initial activation state of each camera and light. Here we are activating the front left camera and light."""
+        and also the initial activation state of each camera and light. Here we are activating the front left camera and light.
+        """
         sensors = {}
         for cam, config in self.cameras.items():
             sensors[getattr(carla.SensorPosition, cam)] = {
