@@ -33,7 +33,8 @@ SCENE_MIN_Z = 0.0  # [m]
 SCENE_BBOX = np.array([[SCENE_MIN_X, SCENE_MIN_Y, SCENE_MIN_Z], [SCENE_MAX_X, SCENE_MAX_Y, SCENE_MAX_Z]])
 
 # Lander dimensions
-LANDER_WIDTH = 3.0  # [m]
+LANDER_WIDTH = 3.0  # [m]  (approximate)
+LANDER_HEIGHT = 3.0  # [m]  (approximate)
 LANDER_GLOBAL = np.array(
     [
         [-LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0],  # top left

@@ -9,7 +9,11 @@ from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
-##### ------------------- 2D ------------------- #####
+from lac.params import LANDER_GLOBAL, LANDER_HEIGHT
+
+# ==================================================================================================
+#                                    2D Plotting Functions
+# ==================================================================================================
 
 
 def plot_heatmap(data, fig=None, colorscale="Viridis", no_axes=False):
@@ -268,7 +272,9 @@ def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, waypoint=No
     return fig
 
 
-##### ------------------- 3D ------------------- #####
+# ==================================================================================================
+#                                    3D Plotting Functions
+# ==================================================================================================
 
 
 def plot_surface(grid, fig=None, colorscale="Viridis", no_axes=False, showscale=True, **kwargs):
@@ -474,6 +480,47 @@ def plot_poses(poses, fig=None, no_axes=False, **kwargs):
     else:
         fig.add_traces(pose_traces(poses))
     fig.update_layout(width=1600, height=900, scene_aspectmode="data")
+    return fig
+
+
+def plot_lander_3d(lander_height, fig=None, color="silver"):
+    """Plot the lander as a box in 3D."""
+    if fig is None:
+        fig = go.Figure()
+
+    vertices = np.vstack([LANDER_GLOBAL, LANDER_GLOBAL + np.array([0, 0, LANDER_HEIGHT])])
+    vertices[:, 2] += lander_height
+
+    # Define the triangular faces of the box
+    faces = [
+        [0, 1, 2],
+        [0, 2, 3],  # Bottom face
+        [4, 5, 6],
+        [4, 6, 7],  # Top face
+        [0, 1, 5],
+        [0, 5, 4],  # Side face 1
+        [1, 2, 6],
+        [1, 6, 5],  # Side face 2
+        [2, 3, 7],
+        [2, 7, 6],  # Side face 3
+        [3, 0, 4],
+        [3, 4, 7],  # Side face 4
+    ]
+
+    # Create 3D mesh plot
+    fig.add_trace(
+        go.Mesh3d(
+            x=vertices[:, 0],
+            y=vertices[:, 1],
+            z=vertices[:, 2],
+            i=[face[0] for face in faces],
+            j=[face[1] for face in faces],
+            k=[face[2] for face in faces],
+            color=color,
+            opacity=0.5,
+        )
+    )
+
     return fig
 
 

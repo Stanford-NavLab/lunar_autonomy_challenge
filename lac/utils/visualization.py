@@ -219,6 +219,7 @@ def image_grid(
     fill: bool = True,
     show_axes: bool = False,
     rgb: bool = True,
+    figsize=(15, 9),
 ):
     """
     A utility function for plotting a grid of images.
@@ -243,7 +244,7 @@ def image_grid(
         cols = 1
 
     gridspec_kw = {"wspace": 0.0, "hspace": 0.0} if fill else {}
-    fig, axarr = plt.subplots(rows, cols, gridspec_kw=gridspec_kw, figsize=(15, 9))
+    fig, axarr = plt.subplots(rows, cols, gridspec_kw=gridspec_kw, figsize=figsize)
 
     axarr = np.array(axarr).reshape(-1)  # Flatten in case of 2D grid
 
