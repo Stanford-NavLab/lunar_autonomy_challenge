@@ -1,0 +1,16 @@
+<missions>
+  <mission id="0" map="Moon_Map_01" preset="0"/>
+  <mission id="1" map="Moon_Map_01" preset="1"/>
+  <mission id="2" map="Moon_Map_01" preset="2"/>
+  <mission id="3" map="Moon_Map_01" preset="3"/>
+  <mission id="4" map="Moon_Map_01" preset="4"/>
+  <mission id="5" map="Moon_Map_01" preset="5"/>
+  <mission id="6" map="Moon_Map_01" preset="6"/>
+  <mission id="7" map="Moon_Map_01" preset="7"/>
+  <mission id="8" map="Moon_Map_01" preset="8"/>
+  <mission id="9" map="Moon_Map_01" preset="9"/>
+  <mission id="10" map="Moon_Map_01" preset="10"/>
+  <mission id="11" map="Moon_Map_02" preset="11"/>
+  <mission id="12" map="Moon_Map_02" preset="12"/>
+  <mission id="13" map="Moon_Map_02" preset="13"/>
+</missions>
