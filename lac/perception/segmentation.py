@@ -35,9 +35,7 @@ class UnetSegmentation:
             .to(self.device)
             .to(memory_format=torch.channels_last)
         )
-        self.model.load_state_dict(
-            torch.load(model_path, map_location=self.device, weights_only=True)
-        )
+        self.model.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=True))
         self.model.eval()
 
         self.downscale_factor = 2

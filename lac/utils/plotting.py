@@ -31,12 +31,8 @@ def plot_heightmaps(ground_map, agent_map):
         horizontal_spacing=0.1,
     )
     error = ground_map[:, :, 2] - agent_map[:, :, 2]
-    fig.add_trace(
-        go.Heatmap(z=ground_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1
-    )
-    fig.add_trace(
-        go.Heatmap(z=agent_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2
-    )
+    fig.add_trace(go.Heatmap(z=ground_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1)
+    fig.add_trace(go.Heatmap(z=agent_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2)
     fig.add_trace(go.Heatmap(z=error, colorscale="Viridis", colorbar=dict(x=1.0)), row=1, col=3)
     fig.update_layout(
         width=1400,  # Adjust the figure width
@@ -60,12 +56,8 @@ def plot_rock_maps(ground_map, agent_map):
         horizontal_spacing=0.1,
     )
     error = ground_map[:, :, 3] - agent_map[:, :, 3]
-    fig.add_trace(
-        go.Heatmap(z=ground_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1
-    )
-    fig.add_trace(
-        go.Heatmap(z=agent_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2
-    )
+    fig.add_trace(go.Heatmap(z=ground_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1)
+    fig.add_trace(go.Heatmap(z=agent_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2)
     fig.add_trace(go.Heatmap(z=error, colorscale="Viridis", colorbar=dict(x=1.0)), row=1, col=3)
     fig.update_layout(
         width=1400,  # Adjust the figure width
@@ -298,11 +290,7 @@ def plot_surface(grid, fig=None, colorscale="Viridis", no_axes=False, showscale=
     )
     fig.update_layout(width=1600, height=900, scene_aspectmode="data")
     if no_axes:
-        fig.update_layout(
-            scene=dict(
-                xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)
-            )
-        )
+        fig.update_layout(scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)))
     return fig
 
 
@@ -327,11 +315,7 @@ def plot_rock_map(grid, fig=None, no_axes=False, **kwargs):
     )
     fig.update_layout(width=1600, height=900, scene_aspectmode="data")
     if no_axes:
-        fig.update_layout(
-            scene=dict(
-                xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)
-            )
-        )
+        fig.update_layout(scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)))
     return fig
 
 
@@ -435,7 +419,7 @@ def pose_trace(pose, name: str = "", line_style: str = "solid", line_width: int 
                 x=[arrow_start[0], arrow_end[0]],
                 y=[arrow_start[1], arrow_end[1]],
                 z=[arrow_start[2], arrow_end[2]],
-                mode="lines+markers",
+                mode="lines",
                 marker=dict(size=4),
                 line=dict(color=colors[i], width=5),
                 showlegend=False,
@@ -446,7 +430,7 @@ def pose_trace(pose, name: str = "", line_style: str = "solid", line_width: int 
                 x=[arrow_start[0], arrow_end[0]],
                 y=[arrow_start[1], arrow_end[1]],
                 z=[arrow_start[2], arrow_end[2]],
-                mode="lines+markers",
+                mode="lines",
                 marker=dict(size=4),
                 line=dict(color=colors[i], width=line_width, dash=line_style),
                 name=name + f"_{AXES_NAMES[i]}",
@@ -619,9 +603,7 @@ def plot_mesh(mesh, show_edges=True, textured=False):
         # TODO: handle TexturesUV
     else:
         colors = "lightblue"
-    vertices_plot = go.Scatter3d(
-        x=x, y=y, z=z, mode="markers", marker=dict(color=colors, size=2), name="Vertices"
-    )
+    vertices_plot = go.Scatter3d(x=x, y=y, z=z, mode="markers", marker=dict(color=colors, size=2), name="Vertices")
 
     data = [mesh_plot, vertices_plot]
 
