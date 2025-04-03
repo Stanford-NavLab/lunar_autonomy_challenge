@@ -60,7 +60,7 @@ class RecoveryAgent(AutonomousAgent):
         """Controller variables"""
         self.current_v = 0.0
         self.current_w = 0.0
-
+        
         """ Perception modules """
         self.segmentation = UnetSegmentation()
 
@@ -119,6 +119,15 @@ class RecoveryAgent(AutonomousAgent):
 
         """ Path planner """
         self.arc_planner = ArcPlanner()
+        self.path_planner_statistics = {} 
+        self.path_planner_statistics["collision detections"] = [] # frame number and current pose
+        self.path_planner_statistics["time taken"] = 0
+        self.path_planner_statistics["success"] = False
+
+        # #with open('my_dict.pickle', 'wb') as file: at the end of the run
+        #     pickle.dump(my_dict, file)
+
+        #     print("Dictionary saved to my_dict.pickle")
 
         """ Data logging """
         if LOG_DATA:
