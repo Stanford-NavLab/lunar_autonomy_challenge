@@ -13,7 +13,8 @@ import time
 import warnings
 
 warnings.filterwarnings(
-    "ignore", message="torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument"
+    "ignore",
+    message="torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument",
 )
 
 from droid_slam.droid import Droid
@@ -92,8 +93,6 @@ if __name__ == "__main__":
     traj_est = droid.terminate(stream)
     print("BA ran in {} seconds".format(time.time() - start_time))
 
-    # np.save(Path(LAC_BASE_PATH) / f"results/slam/droid/trajs/{len(traj_est)}_frames.npy", traj_est)
-    # np.save(Path(data_path) / f"droid_traj_{len(traj_est)}_frames.npy", traj_est)
     np.savez(
         Path(data_path) / "droid.npz",
         start_frame=START_FRAME,
@@ -103,8 +102,3 @@ if __name__ == "__main__":
         trajectory=traj_est,
     )
     print("Trajectory saved")
-
-    # fig = plot_poses(poses[START_FRAME:END_FRAME], no_axes=True, color="black", name="Ground truth")
-    # fig = plot_poses(traj_est, fig=fig, no_axes=True, color="orange", name="Droid SLAM")
-    # fig.update_layout(height=900, width=1600, scene_aspectmode="data")
-    # fig.show()

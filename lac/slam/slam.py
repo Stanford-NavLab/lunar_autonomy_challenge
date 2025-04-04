@@ -19,13 +19,12 @@ from gtsam import (
 from lac.utils.geometry import in_bbox
 from lac.params import FL_X, FL_Y, IMG_HEIGHT, IMG_WIDTH, SCENE_BBOX
 from lac.utils.frames import get_cam_pose_rover, CAMERA_TO_OPENCV_PASSIVE
+from lac.utils.plotting import plot_poses, plot_3d_points
 
 # 0.3 rad std on roll,pitch,yaw and 0.1m on x,y,z
 POSE_SIGMA = np.array([0.3, 0.3, 0.3, 0.1, 0.1, 0.1])
 PIXEL_NOISE = gtsam.noiseModel.Isotropic.Sigma(2, 1.0)  # one pixel in u and v
-ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
-    np.array([0.00087, 0.00087, 0.00087, 0.005, 0.005, 0.005])
-)
+ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.00087, 0.00087, 0.00087, 0.005, 0.005, 0.005]))
 HUBER_PIXEL_NOISE = gtsam.noiseModel.Robust(gtsam.noiseModel.mEstimator.Huber(1.5), PIXEL_NOISE)
 POINT_NOISE = gtsam.noiseModel.Isotropic.Sigma(3, 1e-2)
 
@@ -42,9 +41,9 @@ class SLAM:
     def __init__(self):
         self.poses = {}
 
-        self.projection_factors: dict[int, list] = {}
+        self.projection_factors: dict[int, list] = {}  # List of projection factors for each pose
         self.odometry_factors = {}
-        self.pose_to_landmark_map: dict[int, np.ndarray] = {}
+        self.pose_to_landmark_map: dict[int, np.ndarray] = {}  # Map of pose to landmark ids
         self.landmarks = {}
 
         self.landmark_ids = set()
@@ -59,9 +58,7 @@ class SLAM:
 
     def add_odometry_factor(self, i: int, odometry: np.ndarray):
         """Add an odometry factor to the graph"""
-        self.odometry_factors[i] = gtsam.BetweenFactorPose3(
-            X(i - 1), X(i), Pose3(odometry), ODOMETRY_NOISE
-        )
+        self.odometry_factors[i] = gtsam.BetweenFactorPose3(X(i - 1), X(i), Pose3(odometry), ODOMETRY_NOISE)
 
     def add_vision_factors(self, i: int, points: np.ndarray, pixels: np.ndarray, ids: np.ndarray):
         """Add a group of vision factors"""
@@ -72,9 +69,7 @@ class SLAM:
             if in_bbox(points[j], SCENE_BBOX):  # Don't add landmarks outside scene bbox
                 self.pose_to_landmark_map[i].append(id)
                 self.projection_factors[i].append(
-                    GenericProjectionFactorCal3_S2(
-                        pixels[j], PIXEL_NOISE, X(i), L(id), K, ROVER_T_CAM
-                    )
+                    GenericProjectionFactorCal3_S2(pixels[j], PIXEL_NOISE, X(i), L(id), K, ROVER_T_CAM)
                 )
                 if id not in self.landmark_ids:
                     # if in_bbox(points[j], SCENE_BBOX):  # Don't add landmarks outside scene bbox
@@ -134,6 +129,21 @@ class SLAM:
                 #     ]
 
         return result
+
+    def plot(self, start: int = 0, end: int = -1, step: int = 1):
+        """Plot the graph"""
+        if end == -1:
+            end = len(self.poses)
+        idxs = list(range(start, end, step))
+        poses_to_plot = [self.poses[i] for i in idxs]
+        active_landmarks = set()
+        for i in idxs:
+            active_landmarks.update(self.pose_to_landmark_map[i])
+        landmarks_to_plot = np.array([self.landmarks[j] for j in active_landmarks])
+        fig = plot_poses(poses_to_plot, no_axes=True, color="green", name="SLAM poses")
+        fig = plot_3d_points(landmarks_to_plot, fig=fig, color="orange", name="Landmarks")
+        fig.update_layout(height=900, width=1600, scene_aspectmode="data")
+        return fig
 
 
 class RockSLAM:

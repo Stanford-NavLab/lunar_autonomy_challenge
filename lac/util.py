@@ -8,9 +8,9 @@ from pathlib import Path
 import os
 from tqdm import tqdm
 from typing import Optional
-
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
+import multiprocessing
 
 
 def load_data(data_path: str | Path):
@@ -106,18 +106,36 @@ def load_stereo_images(
         if int(img.split(".")[0]) % step == 0 and start_frame <= int(img.split(".")[0]) <= end_frame
     ]
 
-    with ThreadPoolExecutor() as executor:
-        front_left_results = executor.map(
-            lambda img: _load_image(front_left_path / img, int(img.split(".")[0])),
-            tqdm(front_left_files, desc="FrontLeft"),
-        )
-        front_right_results = executor.map(
-            lambda img: _load_image(front_right_path / img, int(img.split(".")[0])),
-            tqdm(front_right_files, desc="FrontRight"),
-        )
+    num_workers = min(8, multiprocessing.cpu_count() // 2)
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        # front_left_results = executor.map(
+        #     lambda img: _load_image(front_left_path / img, int(img.split(".")[0])),
+        #     tqdm(front_left_files, desc="FrontLeft"),
+        # )
+        # front_right_results = executor.map(
+        #     lambda img: _load_image(front_right_path / img, int(img.split(".")[0])),
+        #     tqdm(front_right_files, desc="FrontRight"),
+        # )
+        futures_left = {
+            executor.submit(_load_image, front_left_path / img, int(img.split(".")[0])): img for img in front_left_files
+        }
+        futures_right = {
+            executor.submit(_load_image, front_right_path / img, int(img.split(".")[0])): img
+            for img in front_right_files
+        }
 
-    front_left_imgs = dict(front_left_results)
-    front_right_imgs = dict(front_right_results)
+        front_left_imgs = {}
+        for future in tqdm(as_completed(futures_left), total=len(futures_left), desc="FrontLeft"):
+            frame_idx, img = future.result()
+            front_left_imgs[frame_idx] = img
+
+        front_right_imgs = {}
+        for future in tqdm(as_completed(futures_right), total=len(futures_right), desc="FrontRight"):
+            frame_idx, img = future.result()
+            front_right_imgs[frame_idx] = img
+
+    # front_left_imgs = dict(front_left_results)
+    # front_right_imgs = dict(front_right_results)
 
     assert len(front_left_imgs) == len(front_right_imgs)
     return front_left_imgs, front_right_imgs
