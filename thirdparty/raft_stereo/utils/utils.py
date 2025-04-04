@@ -18,6 +18,7 @@ class InputPadder:
 
     def pad(self, *inputs):
         assert all((x.ndim == 4) for x in inputs)
+        torch.cuda.synchronize()
         return [F.pad(x, self._pad, mode="replicate") for x in inputs]
 
     def unpad(self, x):
