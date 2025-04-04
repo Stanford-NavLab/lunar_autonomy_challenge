@@ -14,7 +14,7 @@ import numpy as np
 import json
 from PIL import Image
 import signal
-
+import pickle
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.util import (
@@ -118,23 +118,19 @@ class RecoveryAgent(AutonomousAgent):
         self.planner = Planner(initial_pose, spiral_min=3.5, spiral_max=13.5, spiral_step=2.0)
 
         """ Path planner """
-        self.arc_planner = ArcPlanner()
+        self.arc_planner = ArcPlanner(arc_config=20, arc_duration=4.0)
         self.path_planner_statistics = {} 
         self.path_planner_statistics["collision detections"] = [] # frame number and current pose
         self.path_planner_statistics["time taken"] = 0
         self.path_planner_statistics["success"] = False
-
-        # #with open('my_dict.pickle', 'wb') as file: at the end of the run
-        #     pickle.dump(my_dict, file)
-
-        #     print("Dictionary saved to my_dict.pickle")
-
+        self.first_time_stuck = True
+        self.success = False
         """ Data logging """
         if LOG_DATA:
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.cameras)
-            self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
-            self.rock_detections_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/rock_detections.json"
+            self.path_planner_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/path_planner_stats.pkl"
+
 
         if ENABLE_RERUN:
             Rerun.init_vo()
@@ -179,6 +175,9 @@ class RecoveryAgent(AutonomousAgent):
         waypoint, advanced = self.planner.get_waypoint(nav_pose, print_progress=True)
         if waypoint is None:
             self.mission_complete()
+            self.success = True
+            self.path_planner_statistics["success"] = True
+            
             return carla.VehicleVelocityControl(0.0, 0.0)
         nominal_steering = waypoint_steering(waypoint, nav_pose)
 
@@ -212,6 +211,7 @@ class RecoveryAgent(AutonomousAgent):
         is_stuck = np.linalg.norm(rov_vel) < 0.05
         if is_stuck:
             self.stuck_counter += 1
+            
         else:
             self.stuck_counter = 0
         return is_stuck and self.stuck_counter >= frame_rate  # 1 second
@@ -294,9 +294,14 @@ class RecoveryAgent(AutonomousAgent):
         # If agent is stuck, perform backup maneuver
         elif self.backup_counter > 0 or self.check_stuck(rov_vel):
             print("Agent is stuck.")
+            if self.first_time_stuck:
+                self.path_planner_statistics["collision detections"].append((self.step, ground_truth_pose))
+                self.first_time_stuck = False
+            self.path_planner_statistics["c"]
             control = self.run_backup_maneuver()
         else:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+            self.first_time_stuck = True
 
         """ Data logging """
         if LOG_DATA:
@@ -308,6 +313,12 @@ class RecoveryAgent(AutonomousAgent):
 
     def finalize(self):
         print("Running finalize")
+        self.path_planner_statistics["time taken"] = self.step
+
+        with open(self.path_planner_file, 'wb') as file:
+            pickle.dump(self.path_planner_statistics, file)
+
+            print("Dictionary saved to my_dict.pkl")
 
         if LOG_DATA:
             self.data_logger.save_log()

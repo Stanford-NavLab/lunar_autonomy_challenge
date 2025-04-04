@@ -86,10 +86,10 @@ def rock_avoidance_steering(depth_results: dict, cam_config: dict) -> float:
 class ArcPlanner:
     """Arc planner"""
 
-    def __init__(self, arc_config: int | tuple[int, int] = (5, 5)):
+    def __init__(self, arc_config: int | tuple[int, int] = 20, arc_duration: float | tuple[float, float] = 4.0):
 
         MAX_OMEGA = 1  # [rad/s]
-        ARC_DURATION = 2.0  # [s]
+        ARC_DURATION = arc_duration  # [s]
         NUM_ARC_POINTS = int(ARC_DURATION / params.DT)
         self.speeds = [params.TARGET_SPEED]  # [0.05, 0.1, 0.15, 0.2]  # [m/s]
         self.root_arcs = []
@@ -127,6 +127,9 @@ class ArcPlanner:
                         self.vw.append(self.root_vw[count])
     
             self.candidate_arcs = concatenated_arcs
+        else:
+            self.vw = self.root_vw
+        print(self.vw)
         self.np_candidate_arcs = np.array(self.candidate_arcs)
 
     def plan_arc(
@@ -164,7 +167,8 @@ class ArcPlanner:
         )
 
         sorted_indices = np.argsort(path_costs)
-
+        print(f"len sorted indices {len(sorted_indices)}")
+        print(f"len self.vw {len(self.vw)}")
         for i in sorted_indices:
             arc = self.np_candidate_arcs[i]
             valid = True
@@ -189,6 +193,7 @@ class ArcPlanner:
                             valid = False
                             break
             if valid:
+                print(f"i: {i}")
                 return self.vw[i], arc, waypoint_local
 
         # TODO: handle case if no paths are valid
