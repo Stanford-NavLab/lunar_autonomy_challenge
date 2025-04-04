@@ -84,11 +84,12 @@ class AutoAgent(AutonomousAgent):
 
         """ Planner """
         self.initial_pose = transform_to_numpy(self.get_initial_position())
-        self.lander_pose = self.initial_pose @ transform_to_numpy(self.get_initial_lander_position())
+        self.lander_pose = self.initial_pose @ transform_to_numpy(
+            self.get_initial_lander_position()
+        )
         self.planner = Planner(self.initial_pose)
 
         """ Path planner """
-        # TODO: initialize ArcPlanner
         self.arc_planner = ArcPlanner()
 
         """ Data logging """
@@ -96,7 +97,9 @@ class AutoAgent(AutonomousAgent):
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.cameras)
             self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
-            self.rock_detections_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/rock_detections.json"
+            self.rock_detections_file = (
+                f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/rock_detections.json"
+            )
         Rerun.init_vo()
         self.gt_poses = [self.initial_pose]
 
@@ -163,7 +166,9 @@ class AutoAgent(AutonomousAgent):
             rock_radii = compute_rock_radii(stereo_depth_results)
 
             # Path planning
-            control, path, waypoint_local = self.arc_planner.plan_arc(waypoint, nav_pose, rock_coords, rock_radii)
+            control, path, waypoint_local = self.arc_planner.plan_arc(
+                waypoint, nav_pose, rock_coords, rock_radii
+            )
             self.current_v, self.current_w = control
             print(f"Control: linear = {self.current_v}, angular = {self.current_w}")
             print(f"Waypoint_local: {waypoint_local}")
@@ -180,22 +185,13 @@ class AutoAgent(AutonomousAgent):
 
             """ Rerun visualization """
             gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
-            Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 120, 255])
+            Rerun.log_3d_trajectory(
+                self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 120, 255]
+            )
             print(f"path: {path.shape}")
-            # Rerun.log_2d_trajectory(
-            #     topic="/trajectory_2d/img/path", frame_id=self.step, trajectory=path
-            # )
-            # if len(rock_coords) > 0:
-            #     rock_centers = np.array(rock_coords)[:, :2]
-            #     print(f"Rock centers: {rock_centers.shape}")
-            #     Rerun.log_2d_obstacle_map(
-            #         topic="/trajectory_2d/img/obstacles",
-            #         frame_id=self.step,
-            #         centers=rock_centers,
-            #         radii=rock_radii,
-            #     )
             Rerun.log_2d_trajectory(topic="/local/path", frame_id=self.step, trajectory=path)
             if len(rock_coords) > 0:
+                # TODO: crop rocks within certain bounds
                 rock_centers = np.array(rock_coords)[:, :2]
                 print(f"Rock centers: {rock_centers.shape}")
                 Rerun.log_2d_obstacle_map(
