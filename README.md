@@ -18,3 +18,5 @@ Create an `outputs/` folder to store generated data, and a `data/` folder to sto
 `a_T_b` denotes the transformation from frame `b` to frame `a`.
 
 - Also equivalent to the pose of frame `b` in frame `a`.
+- `a_T_b * b_T_c = a_T_c`
+- `a_T_b * b_P = a_P`
