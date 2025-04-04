@@ -7,6 +7,7 @@ from scipy.spatial.transform import Rotation
 from pathlib import Path
 import os
 from tqdm import tqdm
+from typing import Optional
 
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -29,55 +30,144 @@ def load_data(data_path: str | Path):
     return initial_pose, lander_pose, poses, imu_data, cam_config
 
 
-def _load_image(img_path, name):
-    return name, cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+def _load_image(img_path: str | Path, frame: int):
+    return frame, cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
 
 
-def load_stereo_images(data_path: str | Path, step: int = 1):
-    """Load stereo images from data log file."""
+def load_images(
+    data_path: str | Path,
+    cameras: list[str],
+    start_frame: Optional[int] = None,
+    end_frame: Optional[int] = None,
+    step: int = 1,
+):
+    """Load images from set of cameras in data log file.
+
+    TODO: fix this
+
+    """
     data_path = Path(data_path)
-    left_path = data_path / "FrontLeft"
-    right_path = data_path / "FrontRight"
+    all_frames = [int(img.split(".")[0]) for img in os.listdir(data_path / cameras[0])]
 
-    left_files = [img for img in os.listdir(left_path) if int(img.split(".")[0]) % step == 0]
-    right_files = [img for img in os.listdir(right_path) if int(img.split(".")[0]) % step == 0]
+    if start_frame is None:
+        start_frame = min(all_frames)
+    if end_frame is None:
+        end_frame = max(all_frames)
+
+    camera_files = {
+        cam: [
+            img
+            for img in os.listdir(data_path / cam)
+            if int(img.split(".")[0]) % step == 0
+            and start_frame <= int(img.split(".")[0]) <= end_frame
+        ]
+        for cam in cameras
+    }
 
     with ThreadPoolExecutor() as executor:
-        left_results = executor.map(
-            lambda img: _load_image(left_path / img, int(img.split(".")[0])), tqdm(left_files, desc="FrontLeft")
-        )
-        right_results = executor.map(
-            lambda img: _load_image(right_path / img, int(img.split(".")[0])), tqdm(right_files, desc="FrontRight")
+        results = executor.map(
+            partial(_load_image, data_path),
+            tqdm(camera_files[cameras[0]], desc=cameras[0]),
         )
 
-    left_imgs = dict(left_results)
-    right_imgs = dict(right_results)
+    images = {cam: dict() for cam in cameras}
+    for frame, img in results:
+        for cam in cameras:
+            images[cam][frame] = cv2.imread(
+                str(data_path / cam / f"{frame}.png"), cv2.IMREAD_GRAYSCALE
+            )
 
-    assert len(left_imgs) == len(right_imgs)
-    return left_imgs, right_imgs
+    return images
 
 
-def load_side_images(data_path: str | Path, step: int = 1):
+def load_stereo_images(
+    data_path: str | Path,
+    start_frame: Optional[int] = None,
+    end_frame: Optional[int] = None,
+    step: int = 1,
+):
+    """Load stereo images from data log file."""
+    data_path = Path(data_path)
+    front_left_path = data_path / "FrontLeft"
+    front_right_path = data_path / "FrontRight"
+
+    all_frames = [int(img.split(".")[0]) for img in os.listdir(front_left_path)]
+
+    if start_frame is None:
+        start_frame = min(all_frames)
+    if end_frame is None:
+        end_frame = max(all_frames)
+
+    front_left_files = [
+        img
+        for img in os.listdir(front_left_path)
+        if int(img.split(".")[0]) % step == 0 and start_frame <= int(img.split(".")[0]) <= end_frame
+    ]
+    front_right_files = [
+        img
+        for img in os.listdir(front_right_path)
+        if int(img.split(".")[0]) % step == 0 and start_frame <= int(img.split(".")[0]) <= end_frame
+    ]
+
+    with ThreadPoolExecutor() as executor:
+        front_left_results = executor.map(
+            lambda img: _load_image(front_left_path / img, int(img.split(".")[0])),
+            tqdm(front_left_files, desc="FrontLeft"),
+        )
+        front_right_results = executor.map(
+            lambda img: _load_image(front_right_path / img, int(img.split(".")[0])),
+            tqdm(front_right_files, desc="FrontRight"),
+        )
+
+    front_left_imgs = dict(front_left_results)
+    front_right_imgs = dict(front_right_results)
+
+    assert len(front_left_imgs) == len(front_right_imgs)
+    return front_left_imgs, front_right_imgs
+
+
+def load_side_images(
+    data_path: str | Path,
+    start_frame: Optional[int] = None,
+    end_frame: Optional[int] = None,
+    step: int = 1,
+):
     """Load side images from data log file."""
     data_path = Path(data_path)
     side_left_imgs_path = data_path / "Left"
     side_right_imgs_path = data_path / "Right"
 
-    left_files = [img for img in os.listdir(side_left_imgs_path) if int(img.split(".")[0]) % step == 0]
-    right_files = [img for img in os.listdir(side_right_imgs_path) if int(img.split(".")[0]) % step == 0]
+    all_frames = [int(img.split(".")[0]) for img in os.listdir(side_left_imgs_path)]
+
+    if start_frame is None:
+        start_frame = min(all_frames)
+    if end_frame is None:
+        end_frame = max(all_frames)
+
+    side_left_files = [
+        img
+        for img in os.listdir(side_left_imgs_path)
+        if int(img.split(".")[0]) % step == 0 and start_frame <= int(img.split(".")[0]) <= end_frame
+    ]
+    side_right_files = [
+        img
+        for img in os.listdir(side_right_imgs_path)
+        if int(img.split(".")[0]) % step == 0 and start_frame <= int(img.split(".")[0]) <= end_frame
+    ]
 
     with ThreadPoolExecutor() as executor:
-        left_results = executor.map(
-            lambda img: _load_image(side_left_imgs_path / img, int(img.split(".")[0])), tqdm(left_files, desc="Left")
+        side_left_results = executor.map(
+            lambda img: _load_image(side_left_imgs_path / img, int(img.split(".")[0])),
+            tqdm(side_left_files, desc="Left"),
         )
-        right_results = executor.map(
+        side_right_results = executor.map(
             lambda img: _load_image(side_right_imgs_path / img, int(img.split(".")[0])),
-            tqdm(right_files, desc="Right"),
+            tqdm(side_right_files, desc="Right"),
         )
-    left_imgs = dict(left_results)
-    right_imgs = dict(right_results)
-    assert len(left_imgs) == len(right_imgs)
-    return left_imgs, right_imgs
+    side_left_imgs = dict(side_left_results)
+    side_right_imgs = dict(side_right_results)
+    assert len(side_left_imgs) == len(side_right_imgs)
+    return side_left_imgs, side_right_imgs
 
 
 def transform_to_pos_rpy(transform):
