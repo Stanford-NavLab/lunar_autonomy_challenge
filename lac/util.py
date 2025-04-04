@@ -58,26 +58,23 @@ def load_images(
         cam: [
             img
             for img in os.listdir(data_path / cam)
-            if int(img.split(".")[0]) % step == 0
-            and start_frame <= int(img.split(".")[0]) <= end_frame
+            if int(img.split(".")[0]) % step == 0 and start_frame <= int(img.split(".")[0]) <= end_frame
         ]
         for cam in cameras
     }
 
     with ThreadPoolExecutor() as executor:
-        results = executor.map(
-            partial(_load_image, data_path),
-            tqdm(camera_files[cameras[0]], desc=cameras[0]),
-        )
-
-    images = {cam: dict() for cam in cameras}
-    for frame, img in results:
+        results = {}
         for cam in cameras:
-            images[cam][frame] = cv2.imread(
-                str(data_path / cam / f"{frame}.png"), cv2.IMREAD_GRAYSCALE
+            results[cam] = executor.map(
+                lambda img: _load_image(data_path / cam / img, int(img.split(".")[0])),
+                tqdm(camera_files[cam], desc=cam),
             )
 
-    return images
+    for cam in cameras:
+        results[cam] = dict(results[cam])
+
+    return results
 
 
 def load_stereo_images(
