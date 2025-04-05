@@ -12,7 +12,8 @@ from lac.util import load_data
 
 if __name__ == "__main__":
     # Load the data logs
-    data_path = "/home/shared/data_raw/LAC/runs/full_spiral_map1_preset0_recovery_agent"
+    # data_path = "/home/shared/data_raw/LAC/runs/full_spiral_map1_preset0_recovery_agent"
+    data_path = "/home/shared/data_raw/LAC/runs/full_spiral_map1_preset0"
     initial_pose, lander_pose, poses, imu_data, cam_config = load_data(data_path)
     left_path = Path(data_path) / "FrontLeft"
     right_path = Path(data_path) / "FrontRight"
@@ -21,8 +22,8 @@ if __name__ == "__main__":
     svo = StereoVisualOdometry(cam_config)
     svo_poses = []
 
-    START_FRAME = 30000
-    END_FRAME = 33000
+    START_FRAME = 100
+    END_FRAME = 1000
 
     print("Running VO...")
     progress_bar = tqdm(range(START_FRAME, END_FRAME, 2), dynamic_ncols=True)
