@@ -46,8 +46,8 @@ import lac.params as params
 TARGET_SPEED = 0.15  # [m/s]
 IMAGE_PROCESS_RATE = 10  # [Hz]
 
-DISPLAY_IMAGES = False  # Whether to display the camera views
-ENABLE_RERUN = False  # Whether to enable Rerun dashboard
+DISPLAY_IMAGES = True  # Whether to display the camera views
+ENABLE_RERUN = True  # Whether to enable Rerun dashboard
 LOG_DATA = True  # Whether to log data
 
 
@@ -121,6 +121,7 @@ class RecoveryAgent(AutonomousAgent):
         self.arc_planner = ArcPlanner(arc_config=20, arc_duration=4.0)
         self.path_planner_statistics = {} 
         self.path_planner_statistics["collision detections"] = [] # frame number and current pose
+        self.path_planner_statistics["planner_failure"] = []
         self.path_planner_statistics["time taken"] = 0
         self.path_planner_statistics["success"] = False
         self.first_time_stuck = True
@@ -274,6 +275,11 @@ class RecoveryAgent(AutonomousAgent):
 
             # Path planning
             control, path, waypoint_local = self.arc_planner.plan_arc(waypoint, nav_pose, rock_coords, rock_radii)
+            if control is None:
+                control = self.run_backup_maneuver()
+                self.path_planner_statistics["planner_failure"].append((self.step, ground_truth_pose))
+                self.mission_complete()  # For now, end the mission, but in reality we probably want some tolerance
+                return carla.VehicleVelocityControl(0.0, 0.0) 
             self.current_v, self.current_w = control
             print(f"Control: linear = {self.current_v}, angular = {self.current_w}")
             print(f"Waypoint_local: {waypoint_local}")
@@ -288,28 +294,46 @@ class RecoveryAgent(AutonomousAgent):
                 cv.imshow("Rock segmentation", overlay)
                 cv.waitKey(1)
 
+            """ Rerun visualization """
+            if ENABLE_RERUN:
+                gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
+                Rerun.log_3d_trajectory(
+                    self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 120, 255]
+                )
+                print(f"path: {path.shape}")
+                Rerun.log_2d_trajectory(topic="/local/path", frame_id=self.step, trajectory=path)
+                if len(rock_coords) > 0:
+                    # TODO: crop rocks within certain bounds
+                    rock_centers = np.array(rock_coords)[:, :2]
+                    print(f"Rock centers: {rock_centers.shape}")
+                    Rerun.log_2d_obstacle_map(
+                        topic="/local/obstacles",
+                        frame_id=self.step,
+                        centers=rock_centers,
+                        radii=rock_radii,
+                    )
+            
         """ Control """
         if self.step < 100:  # Wait for arms to raise before moving
-            control = carla.VehicleVelocityControl(0.0, 0.0)
+            carla_control = carla.VehicleVelocityControl(0.0, 0.0)
         # If agent is stuck, perform backup maneuver
         elif self.backup_counter > 0 or self.check_stuck(rov_vel):
             print("Agent is stuck.")
             if self.first_time_stuck:
                 self.path_planner_statistics["collision detections"].append((self.step, ground_truth_pose))
                 self.first_time_stuck = False
-            self.path_planner_statistics["c"]
-            control = self.run_backup_maneuver()
+            carla_control = self.run_backup_maneuver()
         else:
-            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+            carla_control = carla.VehicleVelocityControl(self.current_v, self.current_w)
             self.first_time_stuck = True
 
         """ Data logging """
         if LOG_DATA:
-            self.data_logger.log_data(self.step, control)
+            self.data_logger.log_data(self.step, carla_control)
 
         print("\n-----------------------------------------------")
 
-        return control
+        return carla_control
 
     def finalize(self):
         print("Running finalize")

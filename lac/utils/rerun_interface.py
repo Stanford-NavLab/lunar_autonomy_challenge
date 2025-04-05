@@ -64,7 +64,7 @@ class Rerun:
                     name="Local frame",
                     origin="/local",
                     background=[50, 50, 50],
-                    visual_bounds=rrb.VisualBounds2D(x_range=[0, 5], y_range=[-5, 5]),
+                    visual_bounds=rrb.VisualBounds2D(x_range=np.array([0, 5]), y_range=np.array([-5, 5])),
                 ),
                 column_shares=[3, 2],
             ),
