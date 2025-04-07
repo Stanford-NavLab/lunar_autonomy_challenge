@@ -1,6 +1,7 @@
 """SLAM master class"""
 
 import numpy as np
+import plotly.graph_objects as go
 import gtsam
 import gtsam_unstable
 from gtsam.symbol_shorthand import B, V, X, L
@@ -50,7 +51,12 @@ class SLAM:
 
         self.optimizer_params = gtsam.LevenbergMarquardtParams()
         # self.optimizer_params = gtsam.GncLMParams()
-        # self.optimizer_params.setVerbosity("TERMINATION")
+        self.optimizer_params.setVerbosity("TERMINATION")
+
+        self.isam_params = gtsam.ISAM2Params()
+        self.isam_params.setRelinearizeThreshold(0.1)
+        self.isam_params.relinearizeSkip = 1
+        self.isam = gtsam.ISAM2(self.isam_params)
 
     def add_pose(self, i: int, pose: np.ndarray):
         """Add a pose to the graph"""
@@ -102,6 +108,10 @@ class SLAM:
             #     # Constrain initial landmarks
             #     graph.push_back(PriorFactorPoint3(L(id), self.landmarks[id], POINT_NOISE))
 
+        # self.isam.update(graph, values)
+        # current_estimate = self.isam.calculateEstimate()
+        # return current_estimate
+
         # Optimize
         optimizer = LevenbergMarquardtOptimizer(graph, values, self.optimizer_params)
         # optimizer = gtsam.GncLMOptimizer(graph, values, self.optimizer_params)
@@ -128,7 +138,7 @@ class SLAM:
                 #         x for x in self.pose_to_landmark_map[key] if x != id
                 #     ]
 
-        return result
+        return result, graph, values
 
     def plot(self, start: int = 0, end: int = -1, step: int = 1):
         """Plot the graph"""
@@ -142,6 +152,18 @@ class SLAM:
         landmarks_to_plot = np.array([self.landmarks[j] for j in active_landmarks])
         fig = plot_poses(poses_to_plot, no_axes=True, color="green", name="SLAM poses")
         fig = plot_3d_points(landmarks_to_plot, fig=fig, color="orange", name="Landmarks")
+
+        # Plot the reprojection factors
+        # for i in idxs:
+        #     for j, id in enumerate(self.pose_to_landmark_map[i]):
+        #         if id in active_landmarks:
+        #             fig.add_trace(go.Scatter3d(x=[self.poses[i][0, 3], self.landmarks[id][0]],
+        #                                         y=[self.poses[i][1, 3], self.landmarks[id][1]],
+        #                                         z=[self.poses[i][2, 3], self.landmarks[id][2]],
+        #                                         mode="lines",
+        #                                         line=dict(color="red", width=2),
+        #                                         name=f"Reprojection {i}_{id}"))
+
         fig.update_layout(height=900, width=1600, scene_aspectmode="data")
         return fig
 
