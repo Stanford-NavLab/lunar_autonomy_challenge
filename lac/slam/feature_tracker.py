@@ -70,21 +70,18 @@ class FeatureTracker:
         self.track_ids = None
         self.prev_image = None
         self.prev_pts = None
+        self.prev_pts_right = None
         self.prev_feats = None
         self.world_points = None
         self.max_id = 0
 
-    def extract_feats(
-        self, image: np.ndarray, min_score: float = None, max_keypoints: int = None
-    ) -> dict:
+    def extract_feats(self, image: np.ndarray, min_score: float = None, max_keypoints: int = None) -> dict:
         """Extract features from image"""
         # TODO: handle min_score and max_keypoints
         feats = self.extractor.extract(grayscale_to_3ch_tensor(image).cuda())
         return feats
 
-    def match_feats(
-        self, feats1: dict, feats2: dict, max_matches: int = None, min_score: float = None
-    ) -> torch.Tensor:
+    def match_feats(self, feats1: dict, feats2: dict, max_matches: int = None, min_score: float = None) -> torch.Tensor:
         """Match features between two images"""
         matches = rbd(self.matcher({"image0": feats1, "image1": feats2}))
         if min_score is not None:
@@ -183,21 +180,19 @@ class FeatureTracker:
         matches = self.match_feats(self.prev_feats, next_feats)
         pass
 
-    def track_keyframe(
-        self, curr_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray
-    ):
+    def track_keyframe(self, curr_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray):
         """Initialize world points and features"""
         # Triangulate new points
         feats_left, feats_right, matches_stereo, depths = self.process_stereo(
-            left_image, right_image, max_matches=MAX_STEREO_MATCHES
+            left_image, right_image, max_matches=MAX_STEREO_MATCHES, return_matched_feats=True
         )
-        new_feats = prune_features(feats_left, matches_stereo[:, 0])
-        matched_pts_left = new_feats["keypoints"][0]
+        # new_feats = prune_features(feats_left, matches_stereo[:, 0])
+        matched_pts_left = feats_left["keypoints"][0]
         num_new_pts = len(matched_pts_left)
         points_world = self.project_stereo(curr_pose, matched_pts_left, depths)
 
         # Match with previously tracked points
-        matches = self.match_feats(new_feats, self.prev_feats)
+        matches = self.match_feats(feats_left, self.prev_feats)
 
         # Matched features get old track IDs, and unmatched features get new IDs
         new_track_ids = np.zeros(num_new_pts, dtype=int) - 1
@@ -214,5 +209,6 @@ class FeatureTracker:
         self.track_ids = new_track_ids
         self.prev_image = left_image
         self.prev_pts = matched_pts_left.cpu().numpy()
-        self.prev_feats = new_feats
+        self.prev_pts_right = feats_right["keypoints"][0].cpu().numpy()
+        self.prev_feats = feats_left
         self.world_points = points_world
