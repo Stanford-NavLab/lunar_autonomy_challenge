@@ -60,7 +60,7 @@ class RecoveryAgent(AutonomousAgent):
         """Controller variables"""
         self.current_v = 0.0
         self.current_w = 0.0
-        
+
         """ Perception modules """
         self.segmentation = UnetSegmentation()
 
@@ -118,9 +118,11 @@ class RecoveryAgent(AutonomousAgent):
         self.planner = Planner(initial_pose, spiral_min=3.5, spiral_max=13.5, spiral_step=2.0)
 
         """ Path planner """
-        self.arc_planner = ArcPlanner(arc_config=20, arc_duration=4.0)
-        self.path_planner_statistics = {} 
-        self.path_planner_statistics["collision detections"] = [] # frame number and current pose
+        arc_config_val = 20
+        arc_duration_val = 6.0
+        self.arc_planner = ArcPlanner(arc_config=arc_config_val, arc_duration=arc_duration_val)
+        self.path_planner_statistics = {}
+        self.path_planner_statistics["collision detections"] = []  # frame number and current pose
         self.path_planner_statistics["planner_failure"] = []
         self.path_planner_statistics["time taken"] = 0
         self.path_planner_statistics["success"] = False
@@ -130,8 +132,9 @@ class RecoveryAgent(AutonomousAgent):
         if LOG_DATA:
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.cameras)
-            self.path_planner_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/path_planner_stats.pkl"
-
+            self.path_planner_file = (
+                f"results/planner_stats/path_planner_stats_arc{arc_config_val}_{arc_duration_val}s.pkl"
+            )
 
         if ENABLE_RERUN:
             Rerun.init_vo()
@@ -178,7 +181,7 @@ class RecoveryAgent(AutonomousAgent):
             self.mission_complete()
             self.success = True
             self.path_planner_statistics["success"] = True
-            
+
             return carla.VehicleVelocityControl(0.0, 0.0)
         nominal_steering = waypoint_steering(waypoint, nav_pose)
 
@@ -212,7 +215,7 @@ class RecoveryAgent(AutonomousAgent):
         is_stuck = np.linalg.norm(rov_vel) < 0.05
         if is_stuck:
             self.stuck_counter += 1
-            
+
         else:
             self.stuck_counter = 0
         return is_stuck and self.stuck_counter >= frame_rate  # 1 second
@@ -279,7 +282,7 @@ class RecoveryAgent(AutonomousAgent):
                 control = self.run_backup_maneuver()
                 self.path_planner_statistics["planner_failure"].append((self.step, ground_truth_pose))
                 self.mission_complete()  # For now, end the mission, but in reality we probably want some tolerance
-                return carla.VehicleVelocityControl(0.0, 0.0) 
+                return carla.VehicleVelocityControl(0.0, 0.0)
             self.current_v, self.current_w = control
             print(f"Control: linear = {self.current_v}, angular = {self.current_w}")
             print(f"Waypoint_local: {waypoint_local}")
@@ -297,9 +300,7 @@ class RecoveryAgent(AutonomousAgent):
             """ Rerun visualization """
             if ENABLE_RERUN:
                 gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
-                Rerun.log_3d_trajectory(
-                    self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 120, 255]
-                )
+                Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 120, 255])
                 print(f"path: {path.shape}")
                 Rerun.log_2d_trajectory(topic="/local/path", frame_id=self.step, trajectory=path)
                 if len(rock_coords) > 0:
@@ -312,7 +313,7 @@ class RecoveryAgent(AutonomousAgent):
                         centers=rock_centers,
                         radii=rock_radii,
                     )
-            
+
         """ Control """
         if self.step < 100:  # Wait for arms to raise before moving
             carla_control = carla.VehicleVelocityControl(0.0, 0.0)
@@ -339,10 +340,10 @@ class RecoveryAgent(AutonomousAgent):
         print("Running finalize")
         self.path_planner_statistics["time taken"] = self.step
 
-        with open(self.path_planner_file, 'wb') as file:
+        with open(self.path_planner_file, "wb") as file:
             pickle.dump(self.path_planner_statistics, file)
 
-            print("Dictionary saved to my_dict.pkl")
+            print("Dictionary saved ")
 
         if LOG_DATA:
             self.data_logger.save_log()
