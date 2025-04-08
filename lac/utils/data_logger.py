@@ -21,12 +21,15 @@ from lac.params import DEFAULT_RUN_NAME
 
 
 class DataLogger:
-    def __init__(self, agent: AutonomousAgent, agent_name: str, camera_config: dict):
+    def __init__(self, agent: AutonomousAgent, agent_name: str, camera_config: dict, log_file: str = None):
         self.agent_name = agent_name
         self.data = {}
         self.frames = []
         self.run_name = DEFAULT_RUN_NAME
-        self.log_file = f"output/{self.agent_name}/{self.run_name}/data_log.json"
+        if log_file is not None:
+            self.log_file = log_file
+        else:
+            self.log_file = f"output/{self.agent_name}/{self.run_name}/data_log.json"
 
         self.agent = agent
         self.cameras = camera_config

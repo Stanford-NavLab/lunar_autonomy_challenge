@@ -46,8 +46,8 @@ import lac.params as params
 TARGET_SPEED = 0.15  # [m/s]
 IMAGE_PROCESS_RATE = 10  # [Hz]
 
-DISPLAY_IMAGES = True  # Whether to display the camera views
-ENABLE_RERUN = True  # Whether to enable Rerun dashboard
+DISPLAY_IMAGES = False  # Whether to display the camera views
+ENABLE_RERUN = False  # Whether to enable Rerun dashboard
 LOG_DATA = True  # Whether to log data
 
 

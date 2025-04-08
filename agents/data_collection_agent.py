@@ -27,7 +27,7 @@ MAX_SPEED = 0.2
 SPEED_INCREMENT = 0.05
 TURN_RATE = 0.3
 
-MODE = "waypoint"  # {"teleop", "waypoint", "dynamics"}
+MODE = "dynamics"  # {"teleop", "waypoint", "dynamics"}
 DISPLAY_IMAGES = False  # Set to False to disable image display
 
 
@@ -112,7 +112,12 @@ class DataCollectionAgent(AutonomousAgent):
             "semantic": False,
         }
         agent_name = get_entry_point()
-        self.data_logger = DataLogger(self, agent_name, self.cameras)
+
+        # For dynamics data collection
+        self.v = 0.2
+        self.w = -1.0
+        log_file = f"results/dynamics/v{self.v}_w{self.w}.json"
+        self.data_logger = DataLogger(self, agent_name, self.cameras, log_file=log_file)
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
 
@@ -175,9 +180,7 @@ class DataCollectionAgent(AutonomousAgent):
                 control = carla.VehicleVelocityControl(0.2, nominal_steering)
         elif MODE == "dynamics":
             if self.step >= 100:
-                V = 0.2
-                W = -0.5
-                control = carla.VehicleVelocityControl(V, W)
+                control = carla.VehicleVelocityControl(self.v, self.w)
             else:
                 control = carla.VehicleVelocityControl(0.0, 0.0)
 

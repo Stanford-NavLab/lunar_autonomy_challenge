@@ -13,9 +13,12 @@ from functools import partial
 import multiprocessing
 
 
-def load_data(data_path: str | Path):
+def load_data(data_path: str | Path, dynamics=False):
     """Load data from data log file."""
-    json_data = json.load(open(f"{data_path}/data_log.json"))
+    if dynamics:
+        json_data = json.load(open(f"{data_path}"))
+    else:
+        json_data = json.load(open(f"{data_path}/data_log.json"))
     initial_pose = np.array(json_data["initial_pose"])
     lander_pose = np.array(json_data["lander_pose_world"])
     cam_config = json_data["cameras"]
