@@ -143,17 +143,18 @@ class FeatureTracker:
     def initialize(self, initial_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray):
         """Initialize world points and features"""
         feats_left, feats_right, matches_stereo, depths = self.process_stereo(
-            left_image, right_image, max_matches=MAX_STEREO_MATCHES
+            left_image, right_image, max_matches=MAX_STEREO_MATCHES, return_matched_feats=True
         )
-        matched_feats = prune_features(feats_left, matches_stereo[:, 0])
-        matched_pts_left = matched_feats["keypoints"][0]
-        num_pts = len(matched_pts_left)
-        points_world = self.project_stereo(initial_pose, matched_pts_left, depths)
+        # matched_feats = prune_features(feats_left, matches_stereo[:, 0])
+        left_pts = feats_left["keypoints"][0]
+        num_pts = len(left_pts)
+        points_world = self.project_stereo(initial_pose, left_pts, depths)
 
         self.track_ids = np.arange(num_pts)  # 0, 1, 2, ..., num_pts - 1
         self.prev_image = left_image
-        self.prev_pts = matched_pts_left.cpu().numpy()
-        self.prev_feats = matched_feats
+        self.prev_pts = left_pts.cpu().numpy()
+        self.prev_pts_right = feats_right["keypoints"][0].cpu().numpy()
+        self.prev_feats = feats_left
         self.world_points = points_world
         self.max_id = num_pts  # Next ID to assign
 
