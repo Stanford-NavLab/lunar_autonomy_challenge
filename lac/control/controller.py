@@ -106,7 +106,7 @@ class ArcPlanner:
 
         for v in self.speeds:
             for w in self.omegas1:
-                new_arc = dubins_traj(np.zeros(3), [v, w * self.scale], NUM_ARC_POINTS, params.DT)
+                new_arc = dubins_traj(np.zeros(3), [v, w], NUM_ARC_POINTS, params.DT)
                 self.root_arcs.append(new_arc)
                 self.candidate_arcs.append(new_arc)
                 self.root_vw.append((v, w))

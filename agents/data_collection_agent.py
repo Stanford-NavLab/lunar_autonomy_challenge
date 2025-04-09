@@ -115,7 +115,7 @@ class DataCollectionAgent(AutonomousAgent):
 
         # For dynamics data collection
         self.v = 0.2
-        self.w = 0.2
+        self.w = 0.4
         log_file = f"results/dynamics/v{self.v}_w{self.w}_scaled2.json"
         self.data_logger = DataLogger(self, agent_name, self.cameras, log_file=log_file)
 
