@@ -39,9 +39,7 @@ def segmentation_steering(masks: list[np.ndarray]) -> float:
         x, _, w, _ = cv.boundingRect(max_mask)
         offset = params.IMG_WIDTH / 2 - cx
         if offset > 0:  # Turn right
-            steer_delta = -min(
-                params.MAX_STEER_DELTA * ((x + w) - cx) / 100, params.MAX_STEER_DELTA
-            )
+            steer_delta = -min(params.MAX_STEER_DELTA * ((x + w) - cx) / 100, params.MAX_STEER_DELTA)
         else:  # Turn left
             steer_delta = min(params.MAX_STEER_DELTA * (cx - x) / 100, params.MAX_STEER_DELTA)
     return steer_delta
@@ -56,9 +54,7 @@ def rock_avoidance_steering(depth_results: dict, cam_config: dict) -> float:
     mask_areas = []
     distances = []
     for rock in depth_results:
-        rock_point_rover_frame = project_pixel_to_rover(
-            rock["left_centroid"], rock["depth"], "FrontLeft", cam_config
-        )
+        rock_point_rover_frame = project_pixel_to_rover(rock["left_centroid"], rock["depth"], "FrontLeft", cam_config)
         distance = np.linalg.norm(rock_point_rover_frame)
         if distance < ROCK_AVOID_DIST:
             rock_points_rover_frame.append(rock_point_rover_frame)
@@ -96,7 +92,8 @@ class ArcPlanner:
         self.candidate_arcs = []
         self.root_vw = []
         self.vw = []
-        if (type(arc_config) == int):
+        self.scale = 0.5
+        if type(arc_config) == int:
             self.is_branch = False
             NUM_OMEGAS_1 = arc_config
             self.omegas1 = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS_1)
@@ -109,11 +106,10 @@ class ArcPlanner:
 
         for v in self.speeds:
             for w in self.omegas1:
-                new_arc = dubins_traj(np.zeros(3), [v, w], NUM_ARC_POINTS, params.DT)
+                new_arc = dubins_traj(np.zeros(3), [v, w * self.scale], NUM_ARC_POINTS, params.DT)
                 self.root_arcs.append(new_arc)
                 self.candidate_arcs.append(new_arc)
                 self.root_vw.append((v, w))
-     
 
         if self.is_branch:
             concatenated_arcs = []
@@ -125,7 +121,7 @@ class ArcPlanner:
                         new_arc = dubins_traj(last_state, [v, w], NUM_ARC_POINTS, params.DT)
                         concatenated_arcs.append(np.concatenate((root_arc, new_arc)))
                         self.vw.append(self.root_vw[count])
-    
+
             self.candidate_arcs = concatenated_arcs
         else:
             self.vw = self.root_vw
@@ -162,9 +158,7 @@ class ArcPlanner:
         lander_bbox = np.array([min_x, max_x, min_y, max_y])
 
         # Distance to waypoint cost
-        path_costs = np.linalg.norm(
-            self.np_candidate_arcs[:, -1, :2] - (waypoint_local[:2]), axis=1
-        )
+        path_costs = np.linalg.norm(self.np_candidate_arcs[:, -1, :2] - (waypoint_local[:2]), axis=1)
 
         sorted_indices = np.argsort(path_costs)
         print(f"len sorted indices {len(sorted_indices)}")
