@@ -3,11 +3,11 @@
 import numpy as np
 import plotly.graph_objects as go
 import gtsam
-from gtsam.symbol_shorthand import X, L
+from gtsam.symbol_shorthand import X, L, B, V
 
 from lac.slam.feature_tracker import FeatureTracker
 from lac.utils.geometry import in_bbox
-from lac.params import FL_X, FL_Y, IMG_HEIGHT, IMG_WIDTH, SCENE_BBOX
+from lac.params import FL_X, FL_Y, IMG_HEIGHT, IMG_WIDTH, SCENE_BBOX, DT
 from lac.utils.frames import get_cam_pose_rover, CAMERA_TO_OPENCV_PASSIVE
 from lac.utils.plotting import plot_poses, plot_3d_points
 
@@ -33,10 +33,24 @@ rover_T_cam_FR = get_cam_pose_rover("FrontRight")
 rover_T_cam_FR[:3, :3] = rover_T_cam_FR[:3, :3] @ CAMERA_TO_OPENCV_PASSIVE
 ROVER_T_CAM_FRONT_RIGHT = gtsam.Pose3(rover_T_cam_FR)
 
+IMU_PARAMS = gtsam.PreintegrationParams.MakeSharedU(g=1.622)
+gyro_sigma = 1e-5
+accel_sigma = 1e-5
+integration_sigma = 1e-5
+I_3x3 = np.eye(3)
+IMU_PARAMS.setGyroscopeCovariance(gyro_sigma**2 * I_3x3)
+IMU_PARAMS.setAccelerometerCovariance(accel_sigma**2 * I_3x3)
+IMU_PARAMS.setIntegrationCovariance(integration_sigma**2 * I_3x3)
+BIAS_NOISE = gtsam.noiseModel.Isotropic.Sigma(6, 1e-5)
+ZERO_BIAS = gtsam.imuBias.ConstantBias(np.zeros(3), np.zeros(3))
+INITIAL_VELOCITY_NOISE = gtsam.noiseModel.Isotropic.Sigma(3, 1e-3)
+
 
 class SLAM:
     """
     Factor graph SLAM class
+
+    Assumes pose indices are in order with no skips (0, 1, 2, ...)
 
     """
 
@@ -50,10 +64,15 @@ class SLAM:
 
         self.landmark_ids = set()
 
+        self.accum = gtsam.PreintegratedImuMeasurements(IMU_PARAMS)
+        self.bias_key = B(0)
+        self.imu_factors = {}
+
         self.lm_params = gtsam.LevenbergMarquardtParams()
         self.lm_params.setVerbosity("TERMINATION")
-
         self.gnc_params = gtsam.GncLMParams()
+        self.gnc_params.setLossType(gtsam.GncLossType.TLS)  # GM, TLS
+        self.gnc_params.setVerbosityGNC(gtsam.GncLMParams.Verbosity.SUMMARY)
 
     def add_pose(self, i: int, pose: np.ndarray):
         """Add a pose to the graph"""
@@ -62,6 +81,17 @@ class SLAM:
     def add_odometry_factor(self, i: int, odometry: np.ndarray):
         """Add an odometry factor to the graph"""
         self.odometry_factors[i] = gtsam.BetweenFactorPose3(X(i - 1), X(i), gtsam.Pose3(odometry), ODOMETRY_NOISE)
+
+    def accumulate_imu_measurement(self, imu: np.ndarray):
+        """Accumulate IMU measurement"""
+        acc = imu[:3]
+        gyro = np.array([imu[4], -imu[3], imu[5]])
+        self.accum.integrateMeasurement(acc, gyro, DT)
+
+    def add_imu_factor(self, i: int):
+        """Add an IMU factor to the graph"""
+        self.imu_factors[i] = gtsam.ImuFactor(X(i - 1), V(i - 1), X(i), V(i), self.bias_key, self.accum)
+        self.accum.resetIntegration()
 
     def add_vision_factors(self, i: int, tracker: FeatureTracker):
         """Add a group of vision factors"""
@@ -75,7 +105,7 @@ class SLAM:
                 # Front left camera
                 self.projection_factors[i].append(
                     gtsam.GenericProjectionFactorCal3_S2(
-                        tracker.prev_pts[j],
+                        tracker.prev_pts[j].copy(),
                         HUBER_PIXEL_NOISE,
                         X(i),
                         L(id),
@@ -86,7 +116,7 @@ class SLAM:
                 # Front right camera
                 self.projection_factors[i].append(
                     gtsam.GenericProjectionFactorCal3_S2(
-                        tracker.prev_pts_right[j],
+                        tracker.prev_pts_right[j].copy(),
                         HUBER_PIXEL_NOISE,
                         X(i),
                         L(id),
@@ -96,20 +126,33 @@ class SLAM:
                 )
                 if id not in self.landmark_ids:
                     self.landmark_ids.add(id)
-                    self.landmarks[id] = tracker.world_points[j]
+                    self.landmarks[id] = tracker.world_points[j].copy()
 
-    def build_graph(self, window: list, first_pose: str = "fix"):
+    def build_graph(self, window: list, use_imu: bool = True, first_pose: str = "fix"):
         """Build the graph for a window of poses"""
         graph = gtsam.NonlinearFactorGraph()
         values = gtsam.Values()
         active_landmarks = set()
+        if use_imu:
+            values.insert(self.bias_key, ZERO_BIAS)
+            graph.add(gtsam.PriorFactorConstantBias(self.bias_key, ZERO_BIAS, BIAS_NOISE))
+
         for i in window:
             values.insert(X(i), gtsam.Pose3(self.poses[i]))
+            if use_imu:
+                values.insert(V(i), np.zeros(3))
+
             # Fix first pose
             if i == window[0]:
                 graph.add(gtsam.NonlinearEqualityPose3(X(i), gtsam.Pose3(self.poses[i])))
+                if use_imu:
+                    # NOTE: currently assuming stationary at first pose
+                    graph.add(gtsam.PriorFactorVector(V(i), np.zeros(3), INITIAL_VELOCITY_NOISE))
+
             else:
-                graph.add(self.odometry_factors[i])
+                # graph.add(self.odometry_factors[i])
+                if use_imu:
+                    graph.add(self.imu_factors[i])
 
             for factor in self.projection_factors[i]:
                 graph.add(factor)
@@ -118,41 +161,24 @@ class SLAM:
         for id in active_landmarks:
             values.insert(L(id), self.landmarks[id])
 
-        return graph, values
+        return graph, values, active_landmarks
 
     def optimize(self, window: list, use_gnc: bool = False, verbose: bool = False):
         """Optimize over window of poses"""
         # Build the graph
-        graph = gtsam.NonlinearFactorGraph()
-        values = gtsam.Values()
-        active_landmarks = set()
-        for i in window:
-            values.insert(X(i), gtsam.Pose3(self.poses[i]))
-            # Fix first pose
-            if i == window[0]:
-                graph.add(gtsam.NonlinearEqualityPose3(X(i), gtsam.Pose3(self.poses[i])))
-            else:
-                graph.add(self.odometry_factors[i])
-
-            for factor in self.projection_factors[i]:
-                graph.add(factor)
-            active_landmarks.update(self.pose_to_landmark_map[i])
-
-        for id in active_landmarks:
-            values.insert(L(id), self.landmarks[id])
-            # if window[0] == 0:
-            #     # Constrain initial landmarks
-            #     graph.push_back(PriorFactorPoint3(L(id), self.landmarks[id], POINT_NOISE))
+        graph, values, active_landmarks = self.build_graph(window)
 
         # Optimize
-        optimizer = LevenbergMarquardtOptimizer(graph, values, self.optimizer_params)
-        # optimizer = gtsam.GncLMOptimizer(graph, values, self.optimizer_params)
+        if use_gnc:
+            optimizer = gtsam.GncLMOptimizer(graph, values, self.gnc_params)
+        else:
+            optimizer = gtsam.LevenbergMarquardtOptimizer(graph, values, self.lm_params)
         result = optimizer.optimize()
         if verbose:
-            print("initial error = {}".format(graph.error(values)))
-            print("final error = {}".format(graph.error(result)))
+            print(f"initial error = {graph.error(values)}")
+            print(f"final error = {graph.error(result)}")
 
-        # Update the initial poses
+        # Update the poses
         for i in window:
             self.poses[i] = result.atPose3(X(i)).matrix()
 
@@ -162,17 +188,22 @@ class SLAM:
                 self.landmarks[id] = result.atPoint3(L(id))
             else:
                 print(f"Landmark {id} optimized outside scene bbox")
-                # # Remove landmarks outside scene bbox
-                # del self.landmarks[id]
-                # # TODO: Remove associated factors
-                # for key in self.pose_to_landmark_map:
-                #     self.pose_to_landmark_map[key] = [
-                #         x for x in self.pose_to_landmark_map[key] if x != id
-                #     ]
+                # Remove landmarks outside scene bbox
+                del self.landmarks[id]
+                # TODO: Remove associated factors
+                for key in self.pose_to_landmark_map:
+                    self.pose_to_landmark_map[key] = [x for x in self.pose_to_landmark_map[key] if x != id]
 
         return result, graph, values
 
-    def plot(self, start: int = 0, end: int = -1, step: int = 1, show_factors: bool = False):
+    def plot(
+        self,
+        start: int = 0,
+        end: int = -1,
+        step: int = 1,
+        show_landmarks: bool = True,
+        show_factors: bool = False,
+    ):
         """Plot the graph"""
         if end == -1:
             end = len(self.poses)
@@ -183,7 +214,9 @@ class SLAM:
             active_landmarks.update(self.pose_to_landmark_map[i])
         landmarks_to_plot = np.array([self.landmarks[j] for j in active_landmarks])
         fig = plot_poses(poses_to_plot, no_axes=True, color="green", name="SLAM poses")
-        fig = plot_3d_points(landmarks_to_plot, fig=fig, color="orange", name="Landmarks")
+
+        if show_landmarks:
+            fig = plot_3d_points(landmarks_to_plot, fig=fig, color="orange", name="Landmarks")
 
         # Plot the reprojection factors
         if show_factors:
