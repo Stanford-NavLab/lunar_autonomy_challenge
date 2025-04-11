@@ -35,6 +35,8 @@ def prune_features(feats: dict, indices: np.ndarray) -> dict:
 
 
 def highest_score_features(feats: dict, N: int) -> dict:
+    if len(feats["keypoints"][0]) <= N:
+        return feats
     scores = feats["keypoint_scores"][0]
     _, best_indices = torch.topk(scores, N, largest=True, sorted=False)
     best_indices = best_indices.cpu().numpy()
@@ -42,6 +44,8 @@ def highest_score_features(feats: dict, N: int) -> dict:
 
 
 def highest_score_matches(matches: dict, N: int) -> np.ndarray:
+    if len(matches["matches"]) <= N:
+        return matches["matches"]
     scores = matches["scores"]
     _, best_indices = torch.topk(scores, N, largest=True, sorted=False)
     best_matches = matches["matches"][best_indices]
@@ -67,6 +71,7 @@ class FeatureTracker:
             criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.03),
         )
 
+        # TODO: use a TrackerState dataclass instead and pass that around
         self.track_ids = None
         self.prev_image = None
         self.prev_pts = None
@@ -98,6 +103,7 @@ class FeatureTracker:
         right_image: np.ndarray,
         max_matches: int = None,
         min_score: float = None,
+        max_depth: float = MAX_DEPTH,
         return_matched_feats: bool = False,
     ):
         """Process stereo pair to get features and depths"""
@@ -110,7 +116,7 @@ class FeatureTracker:
         depths = FL_X * STEREO_BASELINE / (disparities + 1e-8)  # Avoid division by zero
 
         # Filter out depths that are too large
-        outliers = depths > MAX_DEPTH
+        outliers = depths > max_depth
         if torch.sum(outliers) > 0:
             matches = matches[~outliers]
             depths = depths[~outliers]
@@ -135,7 +141,6 @@ class FeatureTracker:
             pixels = pixels.cpu().numpy()
         if isinstance(depths, torch.Tensor):
             depths = depths.cpu().numpy()
-        # TODO: check for invalid-valued pixels/depths
         points_rover = project_pixels_to_rover(pixels, depths, cam_name, self.cam_config)
         points_world = apply_transform(pose, points_rover)
         return points_world
@@ -145,7 +150,6 @@ class FeatureTracker:
         feats_left, feats_right, matches_stereo, depths = self.process_stereo(
             left_image, right_image, max_matches=MAX_STEREO_MATCHES, return_matched_feats=True
         )
-        # matched_feats = prune_features(feats_left, matches_stereo[:, 0])
         left_pts = feats_left["keypoints"][0]
         num_pts = len(left_pts)
         points_world = self.project_stereo(initial_pose, left_pts, depths)
@@ -185,7 +189,11 @@ class FeatureTracker:
         """Initialize world points and features"""
         # Triangulate new points
         feats_left, feats_right, matches_stereo, depths = self.process_stereo(
-            left_image, right_image, max_matches=MAX_STEREO_MATCHES, return_matched_feats=True
+            left_image,
+            right_image,
+            max_matches=MAX_STEREO_MATCHES,
+            max_depth=10.0,
+            return_matched_feats=True,
         )
         # new_feats = prune_features(feats_left, matches_stereo[:, 0])
         matched_pts_left = feats_left["keypoints"][0]
