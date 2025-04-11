@@ -128,12 +128,13 @@ class RecoveryAgent(AutonomousAgent):
         self.path_planner_statistics["success"] = False
         self.first_time_stuck = True
         self.success = False
+        self.backup_counter = 0
         """ Data logging """
         if LOG_DATA:
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.cameras)
             self.path_planner_file = (
-                f"results/planner_stats/path_planner_stats_arc{arc_config_val}_{arc_duration_val}s.pkl"
+                f"results/planner_stats/path_planner_stats_arc{arc_config_val}_{arc_duration_val}s_scale2_rad0.75.pkl"
             )
 
         if ENABLE_RERUN:
@@ -279,9 +280,11 @@ class RecoveryAgent(AutonomousAgent):
             # Path planning
             control, path, waypoint_local = self.arc_planner.plan_arc(waypoint, nav_pose, rock_coords, rock_radii)
             if control is None:
+
                 control = self.run_backup_maneuver()
                 self.path_planner_statistics["planner_failure"].append((self.step, ground_truth_pose))
-                self.mission_complete()  # For now, end the mission, but in reality we probably want some tolerance
+                if self.backup_counter == 5:
+                    self.mission_complete()  # For now, end the mission, but in reality we probably want some tolerance
                 return carla.VehicleVelocityControl(0.0, 0.0)
             self.current_v, self.current_w = control
             print(f"Control: linear = {self.current_v}, angular = {self.current_w}")
