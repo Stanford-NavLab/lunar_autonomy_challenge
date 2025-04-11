@@ -109,7 +109,7 @@ class ArcPlanner:
                 new_arc = dubins_traj(np.zeros(3), [v, w], NUM_ARC_POINTS, params.DT)
                 self.root_arcs.append(new_arc)
                 self.candidate_arcs.append(new_arc)
-                self.root_vw.append((v, w))
+                self.root_vw.append((v, w * 1 / (self.scale)))
 
         if self.is_branch:
             concatenated_arcs = []

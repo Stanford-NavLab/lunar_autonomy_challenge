@@ -44,7 +44,7 @@ LANDER_GLOBAL = np.array(
     ]
 )
 
-ROVER_RADIUS = 0.4  # [m]
+ROVER_RADIUS = 0.75  # [m]
 
 CELL_WIDTH = 0.15  # [m] width of each cell in the map
 
