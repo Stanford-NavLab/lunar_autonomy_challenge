@@ -14,6 +14,9 @@ CAMERA_TO_OPENCV_ACTIVE = OPENCV_TO_CAMERA_ACTIVE.T
 OPENCV_TO_CAMERA_PASSIVE = OPENCV_TO_CAMERA_ACTIVE.T
 CAMERA_TO_OPENCV_PASSIVE = OPENCV_TO_CAMERA_ACTIVE
 
+OPENGL_T_OPENCV = np.array([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+OPENCV_T_OPENGL = np.linalg.inv(OPENGL_T_OPENCV)
+
 
 def make_transform_mat(R: np.ndarray, t: np.ndarray) -> np.ndarray:
     """
@@ -135,8 +138,8 @@ def positions_rmse(traj_a: Trajectory, traj_b: Trajectory):
 
 
 def cam_to_world(world_T_rover: np.array, cam_name: str) -> np.ndarray:
-    rover_T_cam = get_cam_pose_rover("FrontLeft")
-    rover_T_cam_ocv = rover_T_cam.copy()
-    rover_T_cam_ocv[:3, :3] = rover_T_cam_ocv[:3, :3] @ CAMERA_TO_OPENCV_PASSIVE
-    cam_T_world = np.linalg.inv(world_T_rover @ rover_T_cam_ocv)
-    return cam_T_world
+    rover_T_cam = get_cam_pose_rover(cam_name)
+    rover_T_ocv = rover_T_cam.copy()
+    rover_T_ocv[:3, :3] = rover_T_ocv[:3, :3] @ CAMERA_TO_OPENCV_PASSIVE
+    ocv_T_world = np.linalg.inv(world_T_rover @ rover_T_ocv)
+    return ocv_T_world

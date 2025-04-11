@@ -447,7 +447,7 @@ def pose_trace(pose, name: str = "", line_style: str = "solid", line_width: int 
     return traces
 
 
-def pose_traces(pose_list):
+def pose_traces(pose_list, **kwargs):
     """Create traces for a list of poses
 
     Parameters
@@ -464,7 +464,7 @@ def pose_traces(pose_list):
     all_traces = []
 
     for pose in pose_list:
-        traces = pose_trace(pose)
+        traces = pose_trace(pose, **kwargs)
         all_traces.extend(traces)
 
     return all_traces
@@ -478,7 +478,7 @@ def plot_poses(poses, fig=None, no_axes=False, **kwargs):
         positions = np.array([pose[:3, 3] for pose in poses])
         fig = plot_path_3d(positions, fig=fig, **kwargs)
     else:
-        fig.add_traces(pose_traces(poses))
+        fig.add_traces(pose_traces(poses, **kwargs))
     fig.update_layout(width=1600, height=900, scene_aspectmode="data")
     return fig
 

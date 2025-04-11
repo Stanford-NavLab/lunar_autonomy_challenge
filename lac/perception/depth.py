@@ -414,7 +414,7 @@ class DepthEstimator:
         self.config = munch.Munch.fromDict(config_dict)
 
         self.model = torch.nn.DataParallel(RAFTStereo(self.config), device_ids=[0])
-        self.model.load_state_dict(torch.load(self.config.restore_ckpt))
+        self.model.load_state_dict(torch.load(self.config.restore_ckpt, weights_only=True))
 
         self.model = self.model.module
         self.model.to(self.config.device)
