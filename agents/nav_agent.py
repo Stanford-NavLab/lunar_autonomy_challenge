@@ -43,7 +43,7 @@ import lac.params as params
 
 
 """ Agent parameters and settings """
-EVAL = True  # Whether running in evaluation mode (disable ground truth)
+EVAL = False  # Whether running in evaluation mode (disable ground truth)
 USE_FIDUCIALS = False
 BACK_CAMERAS = True
 

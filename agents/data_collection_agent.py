@@ -27,7 +27,7 @@ MAX_SPEED = 0.2
 SPEED_INCREMENT = 0.05
 TURN_RATE = 0.3
 
-MODE = "dynamics"  # {"teleop", "waypoint", "dynamics"}
+MODE = "waypoint"  # {"teleop", "waypoint", "dynamics"}
 DISPLAY_IMAGES = False  # Set to False to disable image display
 
 
@@ -51,7 +51,7 @@ class DataCollectionAgent(AutonomousAgent):
         """ Planner """
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(initial_pose, spiral_min=3.5, spiral_max=13.5, spiral_step=2.0)
+        self.planner = Planner(initial_pose, spiral_min=3.5, spiral_max=3.6, spiral_step=0.1)
 
         # Camera config
         self.cameras = params.CAMERA_CONFIG_INIT
@@ -117,7 +117,10 @@ class DataCollectionAgent(AutonomousAgent):
         self.v = 0.2
         self.w = 0.4
         log_file = f"results/dynamics/v{self.v}_w{self.w}_scaled2.json"
-        self.data_logger = DataLogger(self, agent_name, self.cameras, log_file=log_file)
+        if MODE == "dynamics":
+            self.data_logger = DataLogger(self, agent_name, self.cameras, log_file=log_file)
+        else:
+            self.data_logger = DataLogger(self, agent_name, self.cameras)
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
 
@@ -177,7 +180,7 @@ class DataCollectionAgent(AutonomousAgent):
             if self.step < 100:  # Wait for arms to raise before moving
                 control = carla.VehicleVelocityControl(0.0, 0.0)
             else:
-                control = carla.VehicleVelocityControl(0.2, nominal_steering)
+                control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
         elif MODE == "dynamics":
             if self.step >= 100:
                 control = carla.VehicleVelocityControl(self.v, 2 * self.w)

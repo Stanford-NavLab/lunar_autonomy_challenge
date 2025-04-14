@@ -128,7 +128,13 @@ class SLAM:
                     self.landmark_ids.add(id)
                     self.landmarks[id] = tracker.world_points[j].copy()
 
-    def build_graph(self, window: list, use_imu: bool = True, first_pose: str = "fix"):
+    def build_graph(
+        self,
+        window: list,
+        use_imu: bool = False,
+        use_odometry: bool = False,
+        first_pose: str = "fix",
+    ):
         """Build the graph for a window of poses"""
         graph = gtsam.NonlinearFactorGraph()
         values = gtsam.Values()
@@ -150,7 +156,8 @@ class SLAM:
                     graph.add(gtsam.PriorFactorVector(V(i), np.zeros(3), INITIAL_VELOCITY_NOISE))
 
             else:
-                # graph.add(self.odometry_factors[i])
+                if use_odometry:
+                    graph.add(self.odometry_factors[i])
                 if use_imu:
                     graph.add(self.imu_factors[i])
 
@@ -163,10 +170,16 @@ class SLAM:
 
         return graph, values, active_landmarks
 
-    def optimize(self, window: list, use_gnc: bool = False, verbose: bool = False):
+    def optimize(
+        self,
+        window: list,
+        use_gnc: bool = False,
+        remove_outliers: bool = False,
+        verbose: bool = False,
+    ):
         """Optimize over window of poses"""
         # Build the graph
-        graph, values, active_landmarks = self.build_graph(window)
+        graph, values, active_landmarks = self.build_graph(window, use_odometry=True)
 
         # Optimize
         if use_gnc:
@@ -193,6 +206,20 @@ class SLAM:
                 # TODO: Remove associated factors
                 for key in self.pose_to_landmark_map:
                     self.pose_to_landmark_map[key] = [x for x in self.pose_to_landmark_map[key] if x != id]
+
+        # Remove outliers
+        if remove_outliers:
+            for i in window:
+                for factor in self.projection_factors[i][:]:
+                    residual = factor.unwhitenedError(result)
+                    pixel_error = np.linalg.norm(residual)
+                    if pixel_error > 5.0:
+                        # Remove factor from self.projection_factors[i]
+                        self.projection_factors[i].remove(factor)
+                        id = gtsam.Symbol(factor.keys()[1]).index()
+                        # Remove landmark from self.landmarks
+                        if id in self.pose_to_landmark_map[i]:
+                            self.pose_to_landmark_map[i].remove(id)
 
         return result, graph, values
 

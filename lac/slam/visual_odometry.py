@@ -15,7 +15,8 @@ from lac.utils.frames import (
 from lac.params import CAMERA_INTRINSICS
 
 
-MIN_MATCH_SCORE = 0.5
+MIN_MATCH_SCORE = 0.0
+PNP_REPROJECTION_ERROR_THRESHOLD = 1.0  # pixels
 
 
 class StereoVisualOdometry:
@@ -24,7 +25,7 @@ class StereoVisualOdometry:
     def __init__(self, cam_config: dict):
         self.cam_config = cam_config
 
-        self.tracker = FeatureTracker(cam_config, max_keypoints=2048, max_stereo_matches=1000)
+        self.tracker = FeatureTracker(cam_config, max_keypoints=2048, max_stereo_matches=2048)
 
         self.feats0_left = None
         self.matches0_stereo = None
@@ -77,8 +78,9 @@ class StereoVisualOdometry:
             cameraMatrix=CAMERA_INTRINSICS,
             distCoeffs=None,
             flags=cv2.SOLVEPNP_ITERATIVE,
-            reprojectionError=8.0,
-            iterationsCount=100,
+            reprojectionError=PNP_REPROJECTION_ERROR_THRESHOLD,
+            iterationsCount=500,
+            confidence=0.99,
         )
         if success:
             # TODO: clean up this code
