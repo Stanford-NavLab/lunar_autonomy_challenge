@@ -133,7 +133,7 @@ class SLAM:
         window: list,
         use_imu: bool = False,
         use_odometry: bool = False,
-        first_pose: str = "fix",
+        first_pose: str = "fix",  # ["fix", "prior"]
     ):
         """Build the graph for a window of poses"""
         graph = gtsam.NonlinearFactorGraph()
@@ -150,7 +150,10 @@ class SLAM:
 
             # Fix first pose
             if i == window[0]:
-                graph.add(gtsam.NonlinearEqualityPose3(X(i), gtsam.Pose3(self.poses[i])))
+                if first_pose == "fix":
+                    graph.add(gtsam.NonlinearEqualityPose3(X(i), gtsam.Pose3(self.poses[i])))
+                elif first_pose == "prior":
+                    graph.add(gtsam.PriorFactorPose3(X(i), gtsam.Pose3(self.poses[i]), POSE_SIGMA))
                 if use_imu:
                     # NOTE: currently assuming stationary at first pose
                     graph.add(gtsam.PriorFactorVector(V(i), np.zeros(3), INITIAL_VELOCITY_NOISE))
@@ -174,12 +177,13 @@ class SLAM:
         self,
         window: list,
         use_gnc: bool = False,
+        use_odometry: bool = False,
         remove_outliers: bool = False,
         verbose: bool = False,
     ):
         """Optimize over window of poses"""
         # Build the graph
-        graph, values, active_landmarks = self.build_graph(window, use_odometry=True)
+        graph, values, active_landmarks = self.build_graph(window, use_odometry=use_odometry)
 
         # Optimize
         if use_gnc:

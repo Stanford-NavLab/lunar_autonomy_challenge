@@ -183,7 +183,7 @@ class FeatureTracker:
         # TODO
         next_feats = self.extract_feats(next_image)
         matches = self.match_feats(self.prev_feats, next_feats)
-        pass
+        tracked_feats = prune_features(self.prev_feats, matches[:, 0])
 
     def track_keyframe(self, curr_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray):
         """Initialize world points and features"""

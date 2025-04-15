@@ -23,6 +23,8 @@ from lac.util import (
 )
 from lac.planning.waypoint_planner import Planner
 from lac.slam.visual_odometry import StereoVisualOdometry
+from lac.slam.feature_tracker import FeatureTracker
+from lac.slam.slam import SLAM
 from lac.control.controller import waypoint_steering
 from lac.utils.data_logger import DataLogger
 from lac.utils.rerun_interface import Rerun
@@ -31,6 +33,7 @@ import lac.params as params
 """ Agent parameters and settings """
 USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 100  # Number of frames to wait for the arms to raise
+GRAPH_OPTIMIZE_RATE = 500  # Optimize graph every N steps
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
 TELEOP = False  # Whether to use teleop control or autonomous control
@@ -84,6 +87,9 @@ class SlamAgent(AutonomousAgent):
 
         """ SLAM """
         self.svo = StereoVisualOdometry(self.cameras)
+        self.tracker = FeatureTracker(self.cameras)
+        self.graph = SLAM()
+        self.graph_idx = 0
 
         """ Data logging """
         agent_name = get_entry_point()
@@ -144,8 +150,14 @@ class SlamAgent(AutonomousAgent):
             if self.step >= ARM_RAISE_WAIT_FRAMES:
                 if self.step == ARM_RAISE_WAIT_FRAMES:
                     self.svo.initialize(self.initial_pose, images_gray["FrontLeft"], images_gray["FrontRight"])
+                    self.tracker.initialize(self.initial_pose, images_gray["FrontLeft"], images_gray["FrontRight"])
                 else:
                     self.svo.track(images_gray["FrontLeft"], images_gray["FrontRight"])
+                    self.tracker.track_keyframe(self.current_pose, images_gray["FrontLeft"], images_gray["FrontRight"])
+
+                self.graph.add_pose(self.graph_idx, self.initial_pose)
+                self.graph.add_vision_factors(self.graph_idx, self.tracker)
+                self.graph_idx += 1
                 self.svo_poses.append(self.svo.get_pose())
                 self.current_pose = self.svo.get_pose()
 
@@ -154,16 +166,33 @@ class SlamAgent(AutonomousAgent):
                 cv.waitKey(1)
 
             self.data_logger.log_images(self.step, input_data)
+            Rerun.log_img(images_gray["FrontLeft"])
+
+        if self.step % GRAPH_OPTIMIZE_RATE == 0:
+            print("Optimizing graph...")
+            window = list(range(0, self.graph_idx))
+            self.graph.optimize(window, verbose=True)
 
         # Rerun logging
         position_error = self.current_pose[:3, 3] - ground_truth_pose[:3, 3]
         gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
         svo_trajectory = np.array([pose[:3, 3] for pose in self.svo_poses])
-        Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255])
-        Rerun.log_3d_trajectory(self.step, svo_trajectory, trajectory_string="EKF", color=[255, 165, 0])
+        slam_poses = list(self.graph.poses.values())
+        slam_trajectory = np.array([pose[:3, 3] for pose in slam_poses])
+        Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 0])
+        Rerun.log_3d_trajectory(self.step, svo_trajectory, trajectory_string="visual_odometry", color=[0, 0, 255])
+        Rerun.log_3d_trajectory(self.step, slam_trajectory, trajectory_string="slam", color=[0, 255, 0])
         Rerun.log_2d_seq_scalar("trajectory_error/err_x", self.step, position_error[0])
         Rerun.log_2d_seq_scalar("trajectory_error/err_y", self.step, position_error[1])
         Rerun.log_2d_seq_scalar("trajectory_error/err_z", self.step, position_error[2])
+
+        landmark_points = np.array(list(self.graph.landmarks.values()))
+        if len(landmark_points) > 0:
+            Rerun.log_3d_points(
+                landmark_points,
+                topic="/world/landmarks",
+                color=[255, 165, 0],
+            )
 
         if USE_GROUND_TRUTH_NAV:
             nav_pose = ground_truth_pose

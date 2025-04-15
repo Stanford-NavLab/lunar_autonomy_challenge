@@ -7,20 +7,15 @@ import numpy as np
 from lac.slam.feature_tracker import FeatureTracker, prune_features
 from lac.utils.frames import (
     invert_transform_mat,
+    get_cam_pose_rover,
     OPENCV_TO_CAMERA_PASSIVE,
 )
 from lac.params import CAMERA_INTRINSICS
 
 
-def estimate_loop_closure_pose(
-    tracker: FeatureTracker, left_img1, right_img1, left_img2, right_img2
-):
-    feats_left1, feats_right1, stereo_matches1, depths1 = tracker.process_stereo(
-        left_img1, right_img1
-    )
-    feats_left2, feats_right2, stereo_matches2, depths2 = tracker.process_stereo(
-        left_img2, right_img2
-    )
+def estimate_loop_closure_pose(tracker: FeatureTracker, left_img1, right_img1, left_img2, right_img2):
+    feats_left1, feats_right1, stereo_matches1, depths1 = tracker.process_stereo(left_img1, right_img1)
+    feats_left2, feats_right2, stereo_matches2, depths2 = tracker.process_stereo(left_img2, right_img2)
 
     matched_feats1 = prune_features(feats_left1, stereo_matches1[:, 0])
     matched_pts_left1 = matched_feats1["keypoints"][0]
@@ -31,9 +26,7 @@ def estimate_loop_closure_pose(
     stereo_indices = stereo_matches1[:, 0]
     frame_indices = matches12_left[:, 0]
 
-    common_indices = torch.tensor(
-        list(set(stereo_indices.cpu().numpy()) & set(frame_indices.cpu().numpy()))
-    ).cuda()
+    common_indices = torch.tensor(list(set(stereo_indices.cpu().numpy()) & set(frame_indices.cpu().numpy()))).cuda()
     frame_common = matches12_left[torch.isin(frame_indices, common_indices)]
 
     points3D = points_local1[torch.isin(stereo_indices, common_indices).cpu().numpy()]
@@ -45,8 +38,8 @@ def estimate_loop_closure_pose(
         cameraMatrix=CAMERA_INTRINSICS,
         distCoeffs=None,
         flags=cv2.SOLVEPNP_ITERATIVE,
-        reprojectionError=8.0,
-        iterationsCount=100,
+        reprojectionError=1.0,
+        iterationsCount=500,
     )
 
     R, _ = cv2.Rodrigues(rvec)
@@ -54,5 +47,7 @@ def estimate_loop_closure_pose(
     est_pose = np.vstack((T, [0, 0, 0, 1]))
     w_T_c = invert_transform_mat(est_pose)
     w_T_c[:3, :3] = w_T_c[:3, :3] @ OPENCV_TO_CAMERA_PASSIVE
-    rel_pose = w_T_c  # relative pose from frame 1 to frame 2, i.e. pose2 = pose1 @ rel_pose
+    cam_to_rover = invert_transform_mat(get_cam_pose_rover("FrontLeft"))
+    # relative pose from frame 1 to frame 2, i.e. pose2 = pose1 @ rel_pose
+    rel_pose = w_T_c @ cam_to_rover
     return rel_pose
