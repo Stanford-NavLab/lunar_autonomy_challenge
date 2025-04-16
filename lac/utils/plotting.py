@@ -518,6 +518,8 @@ def plot_lander_3d(lander_height, fig=None, color="silver"):
             k=[face[2] for face in faces],
             color=color,
             opacity=0.5,
+            name="Lander",
+            showlegend=True,
         )
     )
 

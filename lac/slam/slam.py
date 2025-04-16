@@ -269,13 +269,27 @@ class SLAM:
         return fig
 
 
-class RockSLAM:
+class PoseGraph:
+    """Graph for odometry and loop closure relative pose optimization"""
+
     def __init__(self):
         self.poses = {}
-        self.rocks_positions = {}  # id -> point (3D centroid)
-        self.rock_features = {}
-        self.landmark_ids = set()
+        self.odometry_factors = {}  # i -> factor between i-1 and i
+        self.loop_closure_factors = {}  # (i,j) -> factor between i and j
 
-        self.optimizer_params = gtsam.LevenbergMarquardtParams()
-        # self.optimizer_params = gtsam.GncLMParams()
-        # self.optimizer_params.setVerbosity("TERMINATION")
+        self.graph = gtsam.NonlinearFactorGraph()
+        self.values = gtsam.Values()
+
+        self.lm_params = gtsam.LevenbergMarquardtParams()
+
+    def add_pose(self, i: int, pose: np.ndarray):
+        """Add a pose to the graph"""
+        self.values.insert(X(i), gtsam.Pose3(pose))
+
+    def add_odometry_factor(self, i: int, odometry: np.ndarray):
+        """Add an odometry factor to the graph"""
+        self.graph.add(gtsam.BetweenFactorPose3(X(i - 1), X(i), gtsam.Pose3(odometry), ODOMETRY_NOISE))
+
+    def add_loop_closure_factor(self, i: int, j: int, relative_pose: np.ndarray):
+        """Add an loop closure factor to the graph"""
+        self.graph.add(gtsam.BetweenFactorPose3(X(i), X(j), gtsam.Pose3(relative_pose), ODOMETRY_NOISE))
