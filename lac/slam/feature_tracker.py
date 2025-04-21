@@ -13,6 +13,7 @@ NOTE: features and matches from LightGlue come with a batch dimension. We keep t
 import numpy as np
 import cv2
 import torch
+from dataclasses import dataclass
 
 from lightglue import LightGlue, SuperPoint
 from lightglue.utils import rbd
@@ -28,6 +29,14 @@ EXTRACTOR_MAX_KEYPOINTS = 512
 MAX_TRACKED_POINTS = 100
 MAX_STEREO_MATCHES = 100
 MIN_SCORE = 0.01
+
+
+@dataclass
+class TrackedPoints:
+    points: np.ndarray  # 2D pixel coordinates in left image
+    ids: np.ndarray  # Track IDs
+    points_local: np.ndarray  # 3D points projected in rover frame
+    depths: np.ndarray  # Triangulated depths
 
 
 def prune_features(feats: dict, indices: np.ndarray) -> dict:
@@ -79,6 +88,10 @@ class FeatureTracker:
         self.prev_feats = None
         self.world_points = None
         self.max_id = 0
+
+        self.tracked_points = None
+        self.prev_feats = None  # all (stereo) matched features from previous left image
+        self.prev_points_local = None  # all previous triangulated points in rover frame
 
     def extract_feats(self, image: np.ndarray, min_score: float = None, max_keypoints: int = None) -> dict:
         """Extract features from image"""
@@ -154,6 +167,13 @@ class FeatureTracker:
         num_pts = len(left_pts)
         points_world = self.project_stereo(initial_pose, left_pts, depths)
 
+        self.tracked_points = TrackedPoints(
+            points=left_pts.cpu().numpy(),
+            ids=np.arange(num_pts),  # 0, 1, 2, ..., num_pts - 1
+            points_local=points_world,
+            depths=depths.cpu().numpy(),
+        )
+
         self.track_ids = np.arange(num_pts)  # 0, 1, 2, ..., num_pts - 1
         self.prev_image = left_image
         self.prev_pts = left_pts.cpu().numpy()
@@ -163,7 +183,11 @@ class FeatureTracker:
         self.max_id = num_pts  # Next ID to assign
 
     def track(self, next_image: np.ndarray):
-        """Track keypoints using optical flow"""
+        """Track keypoints using optical flow
+
+        TODO: test RAFT for optical flow
+
+        """
         next_pts, status, err = cv2.calcOpticalFlowPyrLK(
             self.prev_image, next_image, self.prev_pts, None, **self.lk_params
         )
@@ -221,3 +245,17 @@ class FeatureTracker:
         self.prev_pts_right = feats_right["keypoints"][0].cpu().numpy()
         self.prev_feats = feats_left
         self.world_points = points_world
+
+    def track_pnp(self, left_image: np.ndarray, right_image: np.ndarray):
+        """Track points and estimate odometry with PnP"""
+        # Extract features and stereo matching
+        feats_left, feats_right, matches_stereo, depths = self.process_stereo(
+            left_image, right_image, return_matched_feats=True
+        )
+        # Match with previous frame
+        matches_frame = self.match_feats(self.prev_feats, feats_left)
+
+        # PnP
+        # odometry = solve_vision_pnp()
+
+        # Propagate tracks (limit based on number and depth)

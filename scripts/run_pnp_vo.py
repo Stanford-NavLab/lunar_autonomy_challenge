@@ -12,8 +12,8 @@ from lac.util import load_data, positions_rmse_from_poses
 
 if __name__ == "__main__":
     # Load the data logs
-    # data_path = "/home/shared/data_raw/LAC/runs/full_spiral_map1_preset0_recovery_agent"
-    data_path = "/home/shared/data_raw/LAC/runs/full_spiral_map1_preset0"
+    data_path = "/home/shared/data_raw/LAC/runs/full_spiral_map1_preset0_recovery_agent"
+    # data_path = "/home/shared/data_raw/LAC/runs/full_spiral_map1_preset0"
     initial_pose, lander_pose, poses, imu_data, cam_config = load_data(data_path)
     left_path = Path(data_path) / "FrontLeft"
     right_path = Path(data_path) / "FrontRight"
@@ -24,7 +24,7 @@ if __name__ == "__main__":
     eval_poses = []
 
     START_FRAME = 100
-    END_FRAME = 4000
+    END_FRAME = len(frames) - 1
 
     print("Running VO...")
     progress_bar = tqdm(range(START_FRAME, END_FRAME, 2), dynamic_ncols=True)
@@ -42,12 +42,18 @@ if __name__ == "__main__":
             svo_poses.append(poses[frame])
             continue
 
-        svo.track(left_img, right_img)
+        # svo.track(left_img, right_img)
+        svo.track_old(left_img, right_img)
         svo_poses.append(svo.rover_pose)
 
     print(f"RMSE: {positions_rmse_from_poses(eval_poses, svo_poses)}")
+    # np.save(
+    #     os.path.join(data_path, "svo_poses.npy"),
+    #     np.array(svo_poses),
+    # )
 
     fig = plot_poses(eval_poses, no_axes=True, color="black", name="Ground truth")
     fig = plot_poses(svo_poses, fig=fig, no_axes=True, color="orange", name="VO")
     fig.update_layout(height=900, width=1600, scene_aspectmode="data")
+    fig.write_html(os.path.join(data_path, "svo_poses_old.html"))
     fig.show()

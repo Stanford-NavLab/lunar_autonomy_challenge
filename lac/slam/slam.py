@@ -293,3 +293,12 @@ class PoseGraph:
     def add_loop_closure_factor(self, i: int, j: int, relative_pose: np.ndarray):
         """Add an loop closure factor to the graph"""
         self.graph.add(gtsam.BetweenFactorPose3(X(i), X(j), gtsam.Pose3(relative_pose), ODOMETRY_NOISE))
+
+    def optimize(self, verbose=False):
+        """Optimize the graph"""
+        optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, self.values, self.lm_params)
+        result = optimizer.optimize()
+        if verbose:
+            print(f"initial error = {self.graph.error(self.values)}")
+            print(f"final error = {self.graph.error(result)}")
+        return result
