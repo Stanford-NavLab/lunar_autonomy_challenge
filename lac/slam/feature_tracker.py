@@ -31,14 +31,6 @@ MAX_STEREO_MATCHES = 100
 MIN_SCORE = 0.01
 
 
-@dataclass
-class TrackedPoints:
-    points: np.ndarray  # 2D pixel coordinates in left image
-    ids: np.ndarray  # Track IDs
-    points_local: np.ndarray  # 3D points projected in rover frame
-    depths: np.ndarray  # Triangulated depths
-
-
 def prune_features(feats: dict, indices: np.ndarray) -> dict:
     return {k: v if k == "image_size" else v[0, indices].unsqueeze(0) for k, v in feats.items()}
 
@@ -89,10 +81,6 @@ class FeatureTracker:
         self.world_points = None
         self.max_id = 0
 
-        self.tracked_points = None
-        self.prev_feats = None  # all (stereo) matched features from previous left image
-        self.prev_points_local = None  # all previous triangulated points in rover frame
-
     def extract_feats(self, image: np.ndarray, min_score: float = None, max_keypoints: int = None) -> dict:
         """Extract features from image"""
         # TODO: handle min_score and max_keypoints
@@ -134,7 +122,6 @@ class FeatureTracker:
             matches = matches[~outliers]
             depths = depths[~outliers]
 
-        # TODO: should we just return the matched left and right feats?
         if return_matched_feats:
             matched_feats_left = prune_features(feats_left, matches[:, 0])
             matched_feats_right = prune_features(feats_right, matches[:, 1])
@@ -166,13 +153,6 @@ class FeatureTracker:
         left_pts = feats_left["keypoints"][0]
         num_pts = len(left_pts)
         points_world = self.project_stereo(initial_pose, left_pts, depths)
-
-        self.tracked_points = TrackedPoints(
-            points=left_pts.cpu().numpy(),
-            ids=np.arange(num_pts),  # 0, 1, 2, ..., num_pts - 1
-            points_local=points_world,
-            depths=depths.cpu().numpy(),
-        )
 
         self.track_ids = np.arange(num_pts)  # 0, 1, 2, ..., num_pts - 1
         self.prev_image = left_image
@@ -219,7 +199,6 @@ class FeatureTracker:
             max_depth=10.0,
             return_matched_feats=True,
         )
-        # new_feats = prune_features(feats_left, matches_stereo[:, 0])
         matched_pts_left = feats_left["keypoints"][0]
         num_new_pts = len(matched_pts_left)
         points_world = self.project_stereo(curr_pose, matched_pts_left, depths)
@@ -245,17 +224,3 @@ class FeatureTracker:
         self.prev_pts_right = feats_right["keypoints"][0].cpu().numpy()
         self.prev_feats = feats_left
         self.world_points = points_world
-
-    def track_pnp(self, left_image: np.ndarray, right_image: np.ndarray):
-        """Track points and estimate odometry with PnP"""
-        # Extract features and stereo matching
-        feats_left, feats_right, matches_stereo, depths = self.process_stereo(
-            left_image, right_image, return_matched_feats=True
-        )
-        # Match with previous frame
-        matches_frame = self.match_feats(self.prev_feats, feats_left)
-
-        # PnP
-        # odometry = solve_vision_pnp()
-
-        # Propagate tracks (limit based on number and depth)

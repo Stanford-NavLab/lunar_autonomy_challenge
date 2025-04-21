@@ -168,10 +168,10 @@ class SlamAgent(AutonomousAgent):
             self.data_logger.log_images(self.step, input_data)
             Rerun.log_img(images_gray["FrontLeft"])
 
-        if self.step % GRAPH_OPTIMIZE_RATE == 0:
-            print("Optimizing graph...")
-            window = list(range(0, self.graph_idx))
-            self.graph.optimize(window, verbose=True)
+        # if self.step % GRAPH_OPTIMIZE_RATE == 0:
+        #     print("Optimizing graph...")
+        #     window = list(range(0, self.graph_idx))
+        #     self.graph.optimize(window, verbose=True)
 
         # Rerun logging
         position_error = self.current_pose[:3, 3] - ground_truth_pose[:3, 3]
@@ -181,7 +181,9 @@ class SlamAgent(AutonomousAgent):
         slam_trajectory = np.array([pose[:3, 3] for pose in slam_poses])
         Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 0])
         Rerun.log_3d_trajectory(self.step, svo_trajectory, trajectory_string="visual_odometry", color=[0, 0, 255])
-        Rerun.log_3d_trajectory(self.step, slam_trajectory, trajectory_string="slam", color=[0, 255, 0])
+        # Rerun.log_3d_trajectory(
+        #     self.step, slam_trajectory, trajectory_string="slam", color=[0, 255, 0]
+        # )
         Rerun.log_2d_seq_scalar("trajectory_error/err_x", self.step, position_error[0])
         Rerun.log_2d_seq_scalar("trajectory_error/err_y", self.step, position_error[1])
         Rerun.log_2d_seq_scalar("trajectory_error/err_z", self.step, position_error[2])
