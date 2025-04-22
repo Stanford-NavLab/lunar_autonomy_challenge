@@ -6,3 +6,6 @@ version = "0.1.0"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["lac", "thirdparty"]
+
+[tool.ruff]
+line-length = 100

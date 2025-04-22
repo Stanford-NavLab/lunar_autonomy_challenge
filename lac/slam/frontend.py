@@ -11,8 +11,8 @@ KEYFRAME_INTERVAL = 10  # Interval for keyframe selection
 class Frontend:
     """Frontend for SLAM"""
 
-    def __init__(self, camera_config: dict):
-        self.feature_tracker = SemanticFeatureTracker(camera_config)
+    def __init__(self, feature_tracker: SemanticFeatureTracker):
+        self.feature_tracker = feature_tracker
         self.segmentation = UnetSegmentation()
 
     def initialize(self, left_image: np.ndarray, right_image: np.ndarray):
@@ -32,7 +32,9 @@ class Frontend:
         """
         left_pred = self.segmentation.predict(data["left_image"])
 
-        odometry = self.feature_tracker.track_pnp(data["left_image"], data["right_image"], left_pred)
+        odometry = self.feature_tracker.track_pnp(
+            data["left_image"], data["right_image"], left_pred
+        )
 
         # If VO failed, use IMU odometry instead
         if odometry is None:
