@@ -13,6 +13,7 @@ NOTE: features and matches from LightGlue come with a batch dimension. We keep t
 import numpy as np
 import cv2
 import torch
+from dataclasses import dataclass
 
 from lightglue import LightGlue, SuperPoint
 from lightglue.utils import rbd
@@ -121,7 +122,6 @@ class FeatureTracker:
             matches = matches[~outliers]
             depths = depths[~outliers]
 
-        # TODO: should we just return the matched left and right feats?
         if return_matched_feats:
             matched_feats_left = prune_features(feats_left, matches[:, 0])
             matched_feats_right = prune_features(feats_right, matches[:, 1])
@@ -135,7 +135,7 @@ class FeatureTracker:
         pixels: np.ndarray | torch.Tensor,
         depths: np.ndarray | torch.Tensor,
         cam_name: str = "FrontLeft",
-    ):
+    ) -> np.ndarray:
         """Project stereo pixel-depth pairs to world points"""
         if isinstance(pixels, torch.Tensor):
             pixels = pixels.cpu().numpy()
@@ -163,7 +163,11 @@ class FeatureTracker:
         self.max_id = num_pts  # Next ID to assign
 
     def track(self, next_image: np.ndarray):
-        """Track keypoints using optical flow"""
+        """Track keypoints using optical flow
+
+        TODO: test RAFT for optical flow
+
+        """
         next_pts, status, err = cv2.calcOpticalFlowPyrLK(
             self.prev_image, next_image, self.prev_pts, None, **self.lk_params
         )
@@ -183,7 +187,7 @@ class FeatureTracker:
         # TODO
         next_feats = self.extract_feats(next_image)
         matches = self.match_feats(self.prev_feats, next_feats)
-        pass
+        tracked_feats = prune_features(self.prev_feats, matches[:, 0])
 
     def track_keyframe(self, curr_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray):
         """Initialize world points and features"""
@@ -195,7 +199,6 @@ class FeatureTracker:
             max_depth=10.0,
             return_matched_feats=True,
         )
-        # new_feats = prune_features(feats_left, matches_stereo[:, 0])
         matched_pts_left = feats_left["keypoints"][0]
         num_new_pts = len(matched_pts_left)
         points_world = self.project_stereo(curr_pose, matched_pts_left, depths)

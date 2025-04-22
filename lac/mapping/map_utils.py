@@ -8,9 +8,7 @@ import sys
 import numpy as np
 import os
 
-sys.path.append(os.path.abspath("../../Leaderboard/"))
-
-from leaderboard.agents.geometric_map import ROCK_UNCOMPLETED_VALUE
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../Leaderboard/")))
 
 GEOMETRIC_MAP_MAX_SCORE = 300.0
 GEOMETRIC_MAP_MIN_SCORE = 0.0
