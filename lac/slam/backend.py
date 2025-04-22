@@ -10,29 +10,33 @@ from lac.slam.gtsam_util import ODOMETRY_NOISE
 class Backend:
     """Backend for SLAM"""
 
-    def __init__(self, camera_config: dict):
+    def __init__(self, initial_pose: np.ndarray):
         """Initialize the backend"""
-        self.camera_config = camera_config
-
         self.graph = gtsam.NonlinearFactorGraph()
         self.values = gtsam.Values()
         self.opt_params = gtsam.LevenbergMarquardtParams()
-        self.pose_idx = 0
 
-        self.point_map = {}  # id -> ((x,y,z), anchor_pose_idx)
-        self.keyframes = {}  # store images at keyframes (for loop closure)
-
-    def initialize(self, initial_pose: np.ndarray):
-        """Initialize the backend"""
         self.values.insert(X(0), gtsam.Pose3(initial_pose))
         self.graph.add(gtsam.NonlinearEqualityPose3(X(0), gtsam.Pose3(initial_pose)))
-        self.pose_idx += 1
+        self.pose_idx = 1  # Index for the next pose
 
-    def update(self, input):
-        """Update the backend with new data"""
+        self.point_map = {}  # id -> ((x,y,z), anchor_pose_idx)
+        self.keyframes = {}  # store data at keyframes (for loop closure)
+
+    def update(self, data: dict):
+        """Update the backend with new data
+
+        data : dict
+            - left_image : np.ndarray (H, W, 3) - left image
+            - right_image : np.ndarray (H, W, 3) - right image
+            - imu : np.ndarray (6,) - IMU measurement
+            - odometry : np.ndarray (4, 4) - estimated odometry
+            - keyframe : bool - whether this is a keyframe
+
+        """
         # Add new pose
-        last_pose = np.eye(4)  # TODO: get this
-        new_pose = last_pose @ input["odometry"]  # New pose initialization from odometry
+        last_pose = self.values.atPose3(X(self.pose_idx - 1)).matrix()
+        new_pose = last_pose @ data["odometry"]  # New pose initialization from odometry
         self.values.insert(X(self.pose_idx), gtsam.Pose3(new_pose))
 
         # Add odometry factor
@@ -40,15 +44,17 @@ class Backend:
             gtsam.BetweenFactorPose3(
                 X(self.pose_idx - 1),
                 X(self.pose_idx),
-                gtsam.Pose3(input["odometry"]),
+                gtsam.Pose3(data["odometry"]),
                 ODOMETRY_NOISE,
             )
         )
 
-        if input["keyframe"]:
-            self.keyframes[self.pose_idx] = input["keyframe"]
+        if data["keyframe"]:
+            self.keyframes[self.pose_idx] = data
 
-        # Proximity check for loop closure (optionally only do this if keyframe)
+        # TODO: Proximity check for loop closure (optionally only do this if keyframe)
+
+        self.pose_idx += 1
 
     def optimize(self):
         """Optimize the graph"""
@@ -59,3 +65,7 @@ class Backend:
 
         # Update the values with the optimized result
         self.values = result
+
+    def get_trajectory(self):
+        """Get the trajectory as a list of poses"""
+        return [self.values.atPose3(X(i)).matrix() for i in range(self.pose_idx)]
