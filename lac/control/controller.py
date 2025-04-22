@@ -82,7 +82,7 @@ def rock_avoidance_steering(depth_results: dict, cam_config: dict) -> float:
 class ArcPlanner:
     """Arc planner"""
 
-    def __init__(self, arc_config: int | tuple[int, int] = 20, arc_duration: float | tuple[float, float] = 4.0):
+    def __init__(self, arc_config: int | tuple[int, int] = 21, arc_duration: float | tuple[float, float] = 4.0):
 
         MAX_OMEGA = 1  # [rad/s]
         ARC_DURATION = arc_duration  # [s]

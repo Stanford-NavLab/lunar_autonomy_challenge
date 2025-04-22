@@ -24,13 +24,15 @@ def load_data(data_path: str | Path, dynamics=False):
     cam_config = json_data["cameras"]
 
     poses = [initial_pose]
+    waypoints = []
     imu_data = []
     for frame in json_data["frames"]:
         poses.append(np.array(frame["pose"]))
         imu_data.append(np.array(frame["imu"]))
+        waypoints.append(np.array(frame["waypoint"]))
     imu_data = np.array(imu_data)
 
-    return initial_pose, lander_pose, poses, imu_data, cam_config
+    return initial_pose, lander_pose, poses, imu_data, cam_config, waypoints
 
 
 def _load_image(img_path: str | Path, frame: int):

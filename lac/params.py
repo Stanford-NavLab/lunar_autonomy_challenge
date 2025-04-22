@@ -170,7 +170,7 @@ ROCK_MASK_MAX_AREA = 50000
 
 # Minimum area of a rock segmentation mask in pixels to be considered for obstacle avoidance
 ROCK_MASK_AVOID_MIN_AREA = 1000
-ROCK_MIN_RADIUS = 0.1  # [m] minimum radius of a rock to be considered for obstacle avoidance
+ROCK_MIN_RADIUS = 0.05  # [m] minimum radius of a rock to be considered for obstacle avoidance
 
 ROCK_AVOID_DIST = 2.0  # [m] distance to avoid rocks
 ROCK_BRIGHTNESS_THRESHOLD = 50  # [0-255] pixel threshold for segmentation to be consider rock
