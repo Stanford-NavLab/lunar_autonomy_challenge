@@ -36,17 +36,17 @@ class StereoVisualOdometry:
     def initialize(self, initial_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray):
         """Initialize world points and features"""
         # Old
-        # feats_left, feats_right, matches_stereo, depths = self.tracker.process_stereo(
-        #     left_image, right_image, min_score=MIN_MATCH_SCORE
-        # )
-        # matched_feats = prune_features(feats_left, matches_stereo[:, 0])
-        # matched_pts_left = matched_feats["keypoints"][0]
+        feats_left, feats_right, matches_stereo, depths = self.tracker.process_stereo(
+            left_image, right_image, min_score=MIN_MATCH_SCORE
+        )
+        matched_feats = prune_features(feats_left, matches_stereo[:, 0])
+        matched_pts_left = matched_feats["keypoints"][0]
 
         # New
-        feats_left, feats_right, matches_stereo, depths = self.tracker.process_stereo(
-            left_image, right_image, min_score=MIN_MATCH_SCORE, return_matched_feats=True
-        )
-        matched_pts_left = feats_left["keypoints"][0]
+        # feats_left, feats_right, matches_stereo, depths = self.tracker.process_stereo(
+        #     left_image, right_image, min_score=MIN_MATCH_SCORE, return_matched_feats=True
+        # )
+        # matched_pts_left = feats_left["keypoints"][0]
 
         points_world = self.tracker.project_stereo(initial_pose, matched_pts_left, depths)
 
@@ -97,7 +97,6 @@ class StereoVisualOdometry:
 
             self.pose_delta = invert_transform_mat(self.rover_pose) @ rover_pose
 
-            # self.feats0_left = feats1_left
             self.feats0_left = prune_features(feats1_left, matches1_stereo[:, 0])
             self.matches0_stereo = matches1_stereo
             self.points0_world = points1_world

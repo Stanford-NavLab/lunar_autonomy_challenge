@@ -124,10 +124,20 @@ def solve_vision_pnp(
         confidence=0.99,
     )
     if success:
+        # R, _ = cv2.Rodrigues(rvec)
+        # w_T_c = invert_transform_mat(np.vstack((np.hstack((R, tvec)), [0, 0, 0, 1])))
+        # w_T_c[:3, :3] @= OPENCV_TO_CAMERA_PASSIVE
+        # rover_pose = w_T_c @ invert_transform_mat(get_cam_pose_rover(cam_name))
+
         R, _ = cv2.Rodrigues(rvec)
-        w_T_c = invert_transform_mat(np.vstack((np.hstack((R, tvec)), [0, 0, 0, 1])))
-        w_T_c[:3, :3] @= OPENCV_TO_CAMERA_PASSIVE
-        rover_pose = w_T_c @ invert_transform_mat(get_cam_pose_rover(cam_name))
+        T = np.hstack((R, tvec))
+        est_pose = np.vstack((T, [0, 0, 0, 1]))
+        w_T_c = invert_transform_mat(est_pose)
+        w_T_c[:3, :3] = w_T_c[:3, :3] @ OPENCV_TO_CAMERA_PASSIVE
+        rover_to_cam = get_cam_pose_rover(cam_name)
+        cam_to_rover = invert_transform_mat(rover_to_cam)
+        rover_pose = w_T_c @ cam_to_rover
+
         return rover_pose
     else:
         print("PnP solve failed.")

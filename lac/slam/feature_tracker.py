@@ -135,7 +135,7 @@ class FeatureTracker:
         pixels: np.ndarray | torch.Tensor,
         depths: np.ndarray | torch.Tensor,
         cam_name: str = "FrontLeft",
-    ):
+    ) -> np.ndarray:
         """Project stereo pixel-depth pairs to world points"""
         if isinstance(pixels, torch.Tensor):
             pixels = pixels.cpu().numpy()

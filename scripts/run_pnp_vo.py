@@ -12,7 +12,7 @@ from lac.util import load_data, positions_rmse_from_poses
 
 if __name__ == "__main__":
     # Load the data logs
-    data_path = "/home/shared/data_raw/LAC/runs/full_spiral_map1_preset0_recovery_agent"
+    data_path = "/home/shared/data_raw/LAC/runs/full_spiral_map1_preset1_recovery_agent"
     # data_path = "/home/shared/data_raw/LAC/runs/full_spiral_map1_preset0"
     initial_pose, lander_pose, poses, imu_data, cam_config = load_data(data_path)
     left_path = Path(data_path) / "FrontLeft"
@@ -23,8 +23,9 @@ if __name__ == "__main__":
     svo_poses = []
     eval_poses = []
 
-    START_FRAME = 100
-    END_FRAME = len(frames) - 1
+    START_FRAME = 250
+    END_FRAME = 2000
+    # END_FRAME = len(frames) - 1
 
     print("Running VO...")
     progress_bar = tqdm(range(START_FRAME, END_FRAME, 2), dynamic_ncols=True)
