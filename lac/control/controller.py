@@ -39,7 +39,9 @@ def segmentation_steering(masks: list[np.ndarray]) -> float:
         x, _, w, _ = cv.boundingRect(max_mask)
         offset = params.IMG_WIDTH / 2 - cx
         if offset > 0:  # Turn right
-            steer_delta = -min(params.MAX_STEER_DELTA * ((x + w) - cx) / 100, params.MAX_STEER_DELTA)
+            steer_delta = -min(
+                params.MAX_STEER_DELTA * ((x + w) - cx) / 100, params.MAX_STEER_DELTA
+            )
         else:  # Turn left
             steer_delta = min(params.MAX_STEER_DELTA * (cx - x) / 100, params.MAX_STEER_DELTA)
     return steer_delta
@@ -54,7 +56,9 @@ def rock_avoidance_steering(depth_results: dict, cam_config: dict) -> float:
     mask_areas = []
     distances = []
     for rock in depth_results:
-        rock_point_rover_frame = project_pixel_to_rover(rock["left_centroid"], rock["depth"], "FrontLeft", cam_config)
+        rock_point_rover_frame = project_pixel_to_rover(
+            rock["left_centroid"], rock["depth"], "FrontLeft", cam_config
+        )
         distance = np.linalg.norm(rock_point_rover_frame)
         if distance < ROCK_AVOID_DIST:
             rock_points_rover_frame.append(rock_point_rover_frame)
@@ -82,9 +86,14 @@ def rock_avoidance_steering(depth_results: dict, cam_config: dict) -> float:
 class ArcPlanner:
     """Arc planner"""
 
-    def __init__(self, arc_config: int | tuple[int, int] = 21, arc_duration: float | tuple[float, float] = 4.0):
+    def __init__(
+        self,
+        arc_config: int | tuple[int, int] = 21,
+        arc_duration: float | tuple[float, float] = 4.0,
+        max_omega: float | tuple[float, float] = 1,
+    ):
 
-        MAX_OMEGA = 1  # [rad/s]
+        MAX_OMEGA = max_omega  # [rad/s]
         ARC_DURATION = arc_duration  # [s]
         NUM_ARC_POINTS = int(ARC_DURATION / params.DT)
         self.speeds = [params.TARGET_SPEED]  # [0.05, 0.1, 0.15, 0.2]  # [m/s]
@@ -158,7 +167,9 @@ class ArcPlanner:
         lander_bbox = np.array([min_x, max_x, min_y, max_y])
 
         # Distance to waypoint cost
-        path_costs = np.linalg.norm(self.np_candidate_arcs[:, -1, :2] - (waypoint_local[:2]), axis=1)
+        path_costs = np.linalg.norm(
+            self.np_candidate_arcs[:, -1, :2] - (waypoint_local[:2]), axis=1
+        )
 
         sorted_indices = np.argsort(path_costs)
         print(f"len sorted indices {len(sorted_indices)}")

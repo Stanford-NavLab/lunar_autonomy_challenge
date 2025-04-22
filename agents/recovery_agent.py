@@ -120,7 +120,10 @@ class RecoveryAgent(AutonomousAgent):
         """ Path planner """
         arc_config_val = 20
         arc_duration_val = 12.0
-        self.arc_planner = ArcPlanner(arc_config=arc_config_val, arc_duration=arc_duration_val)
+        max_omega = 0.6
+        self.arc_planner = ArcPlanner(
+            arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
+        )
         self.path_planner_statistics = {}
         self.path_planner_statistics["collision detections"] = []  # frame number and current pose
         self.path_planner_statistics["planner_failure"] = []
@@ -234,7 +237,9 @@ class RecoveryAgent(AutonomousAgent):
         gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
 
         if ENABLE_RERUN:
-            Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255])
+            Rerun.log_3d_trajectory(
+                self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255]
+            )
             # Rerun.log_2d_seq_scalar("ground_truth_pose/x", self.step, ground_truth_pose[0, 3])
             # Rerun.log_2d_seq_scalar("ground_truth_pose/y", self.step, ground_truth_pose[1, 3])
             # Rerun.log_2d_seq_scalar("ground_truth_pose/z", self.step, ground_truth_pose[2, 3])
@@ -281,11 +286,15 @@ class RecoveryAgent(AutonomousAgent):
 
             # Path planning
             if self.step % 20 == 0:
-                control, path, waypoint_local = self.arc_planner.plan_arc(waypoint, nav_pose, rock_coords, rock_radii)
+                control, path, waypoint_local = self.arc_planner.plan_arc(
+                    waypoint, nav_pose, rock_coords, rock_radii
+                )
                 if control is None:
 
                     control = self.run_backup_maneuver()
-                    self.path_planner_statistics["planner_failure"].append((self.step, ground_truth_pose))
+                    self.path_planner_statistics["planner_failure"].append(
+                        (self.step, ground_truth_pose)
+                    )
                     self.planner_failure_counter += 1
                     if self.planner_failure_counter == 20:
                         self.mission_complete()  # For now, end the mission, but in reality we probably want some tolerance
@@ -307,7 +316,9 @@ class RecoveryAgent(AutonomousAgent):
             """ Rerun visualization """
             if ENABLE_RERUN:
                 gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
-                Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 120, 255])
+                Rerun.log_3d_trajectory(
+                    self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 120, 255]
+                )
                 print(f"path: {path.shape}")
                 Rerun.log_2d_trajectory(topic="/local/path", frame_id=self.step, trajectory=path)
                 if len(rock_coords) > 0:
@@ -328,7 +339,9 @@ class RecoveryAgent(AutonomousAgent):
         elif self.backup_counter > 0 or self.check_stuck(rov_vel):
             print("Agent is stuck.")
             if self.first_time_stuck:
-                self.path_planner_statistics["collision detections"].append((self.step, ground_truth_pose))
+                self.path_planner_statistics["collision detections"].append(
+                    (self.step, ground_truth_pose)
+                )
                 self.first_time_stuck = False
             carla_control = self.run_backup_maneuver()
         else:
