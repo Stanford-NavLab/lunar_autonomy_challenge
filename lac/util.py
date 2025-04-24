@@ -63,7 +63,8 @@ def load_images(
         cam: [
             img
             for img in os.listdir(data_path / cam)
-            if int(img.split(".")[0]) % step == 0 and start_frame <= int(img.split(".")[0]) <= end_frame
+            if int(img.split(".")[0]) % step == 0
+            and start_frame <= int(img.split(".")[0]) <= end_frame
         ]
         for cam in cameras
     }
@@ -122,7 +123,8 @@ def load_stereo_images(
         #     tqdm(front_right_files, desc="FrontRight"),
         # )
         futures_left = {
-            executor.submit(_load_image, front_left_path / img, int(img.split(".")[0])): img for img in front_left_files
+            executor.submit(_load_image, front_left_path / img, int(img.split(".")[0])): img
+            for img in front_left_files
         }
         futures_right = {
             executor.submit(_load_image, front_right_path / img, int(img.split(".")[0])): img
@@ -135,7 +137,9 @@ def load_stereo_images(
             front_left_imgs[frame_idx] = img
 
         front_right_imgs = {}
-        for future in tqdm(as_completed(futures_right), total=len(futures_right), desc="FrontRight"):
+        for future in tqdm(
+            as_completed(futures_right), total=len(futures_right), desc="FrontRight"
+        ):
             frame_idx, img = future.result()
             front_right_imgs[frame_idx] = img
 
@@ -309,105 +313,6 @@ def mask_centroid(mask: np.ndarray) -> tuple | None:
     cx = int(M["m10"] / M["m00"])
     cy = int(M["m01"] / M["m00"])
     return cx, cy
-
-
-def gen_square_spiral(initial_pose, max_val, min_val, step):
-    """
-    Generate an Nx2 numpy array of 2D coordinates following a square spiral.
-
-    Parameters:
-      initial_pose (np.array): The initial pose of the rover.
-      max_val (float): The half-side length of the outermost square.
-      min_val (float): The half-side length of the innermost square.
-      step (float): The decrement between successive squares.
-
-    Returns:
-      np.array: An (N x 2) numpy array containing the 2D coordinates.
-    """
-    initial_xy = np.array(initial_pose[:1, 3])
-    # Have the starting waypoint to be the one closest to the rover's initial position
-
-    # TODO: (Kaila) Still need to implement this
-    points = []
-    r = max_val
-    # Use a small tolerance to account for floating point comparisons.
-    while r >= min_val - 1e-8:
-        # Order: top-left, top-right, bottom-right, bottom-left.
-        points.append([-r, r])  # top-left
-        points.append([r, r])  # top-right
-        points.append([r, -r])  # bottom-right
-        points.append([-r, -r])  # bottom-left
-        r -= step
-    return np.array(points)
-
-
-def gen_square_spiral_inside_out(initial_pose, min_val, max_val, step):
-    """
-    Generate an Nx2 numpy array of 2D coordinates following a square spiral.
-
-    Parameters:
-      initial_pose (np.array): The initial pose of the rover.
-      max_val (float): The half-side length of the outermost square.
-      min_val (float): The half-side length of the innermost square.
-      step (float): The decrement between successive squares.
-
-    Returns:
-      np.array: An (N x 2) numpy array containing the 2D coordinates.
-    """
-    points = []
-    r = min_val
-    # Use a small tolerance to account for floating point comparisons.
-    while r <= max_val + 1e-8:
-        # Order: top-left, top-right, bottom-right, bottom-left.
-        points.append([-r, r])  # top-left
-        points.append([r, r])  # top-right
-        points.append([r, -r])  # bottom-right
-        points.append([-r, -r])  # bottom-left
-        r += step
-    return np.array(points)
-
-
-def gen_spiral(initial_pose, min_val, max_val, step):
-    """
-    Generate an Nx2 numpy array of 2D coordinates following a square spiral,
-    ensuring that the last waypoint is repeated, and the next ring starts at
-    the next diagonal position.
-
-    Parameters:
-      initial_pose (np.array): The initial pose of the rover.
-      max_val (float): The half-side length of the outermost square.
-      min_val (float): The half-side length of the innermost square.
-      step (float): The decrement between successive squares.
-
-    Returns:
-      np.array: An (N x 2) numpy array containing the 2D coordinates.
-    """
-    points = []
-    r = min_val
-    default_order = np.array([[-1, 1], [1, 1], [1, -1], [-1, -1]])
-
-    def get_starting_direction_order(initial_pose):
-        signs = np.sign(initial_pose[:2, 3])
-        start_index = np.argwhere((default_order == signs).all(axis=1)).flatten()[0]
-        return np.roll(default_order, -start_index, axis=0)
-
-    direction_order = get_starting_direction_order(initial_pose)
-
-    while r <= max_val + 1e-8:
-        # Compute the four corners of the current square ring
-        corners = r * direction_order
-
-        # Add corners in order
-        points.extend(corners)
-
-        # Repeat the first waypoint
-        points.append(corners[0])
-
-        # Cycle the direction
-        direction_order = np.roll(direction_order, -1, axis=0)
-        r += step
-
-    return np.array(points)
 
 
 def get_positions_from_poses(poses):

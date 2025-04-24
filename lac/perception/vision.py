@@ -9,7 +9,12 @@ from lightglue import LightGlue, SuperPoint, match_pair
 from lightglue.utils import load_image, rbd
 
 from lac.perception.pnp import solve_tag_pnp
-from lac.utils.frames import invert_transform_mat, get_cam_pose_rover, OPENCV_TO_CAMERA_PASSIVE
+from lac.utils.frames import (
+    make_transform_mat,
+    invert_transform_mat,
+    get_cam_pose_rover,
+    OPENCV_TO_CAMERA_PASSIVE,
+)
 from lac.params import IMG_FOV_RAD, CAMERA_INTRINSICS
 
 
@@ -128,7 +133,7 @@ def solve_vision_pnp(
     )
     if success:
         R, _ = cv2.Rodrigues(rvec)
-        w_T_c = invert_transform_mat(np.vstack((np.hstack((R, tvec)), [0, 0, 0, 1])))
+        w_T_c = invert_transform_mat(make_transform_mat(R, tvec))
         w_T_c[:3, :3] = w_T_c[:3, :3] @ OPENCV_TO_CAMERA_PASSIVE
         rover_pose = w_T_c @ invert_transform_mat(get_cam_pose_rover(cam_name))
         return rover_pose

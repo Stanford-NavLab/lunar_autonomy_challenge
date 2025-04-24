@@ -103,6 +103,8 @@ class Backend:
                 data["left_image"],
                 data["right_image"],
             )
+            if relative_pose is None:
+                continue
             # Add loop closure factor
             self.graph.add(
                 gtsam.BetweenFactorPose3(

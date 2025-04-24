@@ -5,7 +5,7 @@ import numpy as np
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
 from lac.perception.segmentation import UnetSegmentation
 
-KEYFRAME_INTERVAL = 10  # Interval for keyframe selection
+KEYFRAME_INTERVAL = 20  # Interval for keyframe selection (steps)
 
 
 class Frontend:
