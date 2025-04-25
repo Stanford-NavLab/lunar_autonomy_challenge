@@ -193,6 +193,10 @@ class ArcPlanner:
                 # Check if arc is inside any rocks
                 for rock, radius in zip(rock_coords, rock_radii):
                     if radius > params.ROCK_MIN_RADIUS:
+                        if 0.19 < radius < 0.2:
+                            print(radius)
+
+                            print(" checking rock")
                         if np.linalg.norm(arc[j][:2] - rock[:2]) - params.ROVER_RADIUS <= radius:
                             path_costs[i] += 1000
                             valid = False

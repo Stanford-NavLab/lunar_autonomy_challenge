@@ -118,7 +118,7 @@ class RecoveryAgent(AutonomousAgent):
         self.planner = Planner(initial_pose, spiral_min=3.5, spiral_max=13.5, spiral_step=2.0)
 
         """ Path planner """
-        arc_config_val = 20
+        arc_config_val = 21
         arc_duration_val = 12.0
         max_omega = 0.6
         self.arc_planner = ArcPlanner(
@@ -137,7 +137,7 @@ class RecoveryAgent(AutonomousAgent):
         if LOG_DATA:
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.cameras)
-            self.path_planner_file = f"results/planner_stats/path_planner_stats_arc{arc_config_val}_{arc_duration_val}s_scale2_rad0.75_replan20.pkl"
+            self.path_planner_file = f"results/planner_stats/path_planner_stats_arc{arc_config_val}_{arc_duration_val}s_scale2_rad0.6_replan20_rockradius0.08_backup5.pkl"
 
         if ENABLE_RERUN:
             Rerun.init_vo()
@@ -195,16 +195,16 @@ class RecoveryAgent(AutonomousAgent):
         print("Running backup maneuver")
         frame_rate = params.FRAME_RATE
         self.backup_counter += 1
-        if self.backup_counter <= frame_rate * 3:  # Go backwards for 3 seconds
+        if self.backup_counter <= frame_rate * 5:  # Go backwards for 3 seconds
             control = carla.VehicleVelocityControl(-0.2, 0.0)
-        elif (
-            self.backup_counter <= frame_rate * 5
-        ):  # Rotate 90 deg/s for 2 seconds (overcorrecting because it isn't rotating in 1 second)
-            control = carla.VehicleVelocityControl(0.0, np.pi / 2)
-        elif (
-            self.backup_counter <= frame_rate * 7
-        ):  # Move in an arc around the rock for 2 seconds (overcorrecting because it isn't rotating in 1 second)
-            control = carla.VehicleVelocityControl(0.2, -np.pi / 2)
+        # elif (
+        #     self.backup_counter <= frame_rate * 5
+        # ):  # Rotate 90 deg/s for 2 seconds (overcorrecting because it isn't rotating in 1 second)
+        #     control = carla.VehicleVelocityControl(0.0, np.pi / 2)
+        # elif (
+        #     self.backup_counter <= frame_rate * 7
+        # ):  # Move in an arc around the rock for 2 seconds (overcorrecting because it isn't rotating in 1 second)
+        #     control = carla.VehicleVelocityControl(0.2, -np.pi / 2)
         else:
             self.backup_counter = 0
             # control = self.run_nominal_step()

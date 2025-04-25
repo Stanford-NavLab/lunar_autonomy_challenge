@@ -30,7 +30,9 @@ SCENE_MAX_Y = 20.0  # [m]
 SCENE_MIN_Y = -20.0  # [m]
 SCENE_MAX_Z = 10.0  # [m]  (could probably reduce this, based on max height of lander)
 SCENE_MIN_Z = 0.0  # [m]
-SCENE_BBOX = np.array([[SCENE_MIN_X, SCENE_MIN_Y, SCENE_MIN_Z], [SCENE_MAX_X, SCENE_MAX_Y, SCENE_MAX_Z]])
+SCENE_BBOX = np.array(
+    [[SCENE_MIN_X, SCENE_MIN_Y, SCENE_MIN_Z], [SCENE_MAX_X, SCENE_MAX_Y, SCENE_MAX_Z]]
+)
 
 # Lander dimensions
 LANDER_WIDTH = 3.0  # [m]  (approximate)
@@ -170,7 +172,7 @@ ROCK_MASK_MAX_AREA = 50000
 
 # Minimum area of a rock segmentation mask in pixels to be considered for obstacle avoidance
 ROCK_MASK_AVOID_MIN_AREA = 1000
-ROCK_MIN_RADIUS = 0.05  # [m] minimum radius of a rock to be considered for obstacle avoidance
+ROCK_MIN_RADIUS = 0.08  # [m] minimum radius of a rock to be considered for obstacle avoidance
 
 ROCK_AVOID_DIST = 2.0  # [m] distance to avoid rocks
 ROCK_BRIGHTNESS_THRESHOLD = 50  # [0-255] pixel threshold for segmentation to be consider rock
