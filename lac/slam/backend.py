@@ -7,6 +7,7 @@ from gtsam.symbol_shorthand import X
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker, TrackedPoints
 from lac.slam.loop_closure import estimate_loop_closure_pose
 from lac.slam.gtsam_util import ODOMETRY_NOISE, LOOP_CLOSURE_NOISE
+from lac.utils.frames import apply_transform
 from lac.util import rotation_matrix_error
 
 LOOP_CLOSURE_EXCLUDE = 10  # Exclude the last N keyframes
@@ -29,7 +30,7 @@ class Backend:
         self.graph.add(gtsam.NonlinearEqualityPose3(X(0), gtsam.Pose3(initial_pose)))
         self.pose_idx = 1  # Index for the next pose
 
-        self.point_map = {}  # id -> (local (x,y,z), anchor_pose_idx)
+        self.point_map = {}  # anchor_pose_idx -> (local points, labels)
         self.keyframe_data = {}  # store data at keyframes (for loop closure)
         self.keyframe_traj_list = []
         self.keyframe_traj = None
@@ -64,9 +65,10 @@ class Backend:
 
         # Add tracked points to map
         tracks: TrackedPoints = data["tracked_points"]
-        for id in tracks.ids:
-            if id not in self.point_map:
-                self.point_map[id] = (tracks.get_by_id(id)["point_local"], self.pose_idx)
+        self.point_map[self.pose_idx] = {
+            "points": tracks.points_local[tracks.lengths == 0],
+            "labels": tracks.labels[tracks.lengths == 0],
+        }
 
         # Handle keyframe
         if data["keyframe"]:
@@ -137,3 +139,16 @@ class Backend:
     def get_trajectory(self):
         """Get the trajectory as a list of poses"""
         return [self.values.atPose3(X(i)).matrix() for i in range(self.pose_idx)]
+
+    def project_point_map(self):
+        """Project the point map into world coordinates"""
+        all_points = []
+        all_labels = []
+        for idx, data in self.point_map.items():
+            pose = self.values.atPose3(X(idx)).matrix()
+            world_points = apply_transform(pose, data["points"])
+            all_points.append(world_points)
+            all_labels.append(data["labels"])
+        all_points = np.vstack(all_points)
+        all_labels = np.hstack(all_labels)
+        return all_points, all_labels

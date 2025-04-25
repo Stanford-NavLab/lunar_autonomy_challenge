@@ -10,9 +10,9 @@ from lac.slam.feature_tracker import FeatureTracker, prune_features
 from lac.perception.vision import solve_vision_pnp
 
 EXTRACTOR_MAX_KEYPOINTS = 2048
-MAX_TRACKED_POINTS = 100
-MAX_STEREO_MATCHES = 2048
-MIN_SCORE = 0.01
+MAX_STEREO_MATCHES = 1024
+MIN_SCORE = 0.01  # (currently unused)
+MAX_DEPTH = 15.0  # [m]
 
 
 @dataclass
@@ -23,7 +23,7 @@ class TrackedPoints:
     points_local: np.ndarray  # 3D points projected in rover frame
     depths: np.ndarray  # Triangulated depths
     labels: np.ndarray  # Semantic labels
-    lengths: int  # Number of frames tracked for
+    lengths: np.ndarray  # Number of frames tracked for
 
     def get_by_id(self, track_id):
         mask = self.ids == track_id
@@ -33,22 +33,14 @@ class TrackedPoints:
             "feat": rbd(prune_features(self.feats, mask)),
             "label": self.labels[mask][0],
             "point_local": self.points_local[mask][0],
+            "length": self.lengths[mask],
         }
 
 
 class SemanticFeatureTracker(FeatureTracker):
-    def __init__(
-        self,
-        cam_config: dict,
-        max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS,
-        max_stereo_matches: int = MAX_STEREO_MATCHES,
-    ):
+    def __init__(self, cam_config: dict, max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS):
         """Initialize the semantic feature tracker"""
-        super().__init__(
-            cam_config=cam_config,
-            max_keypoints=max_keypoints,
-            max_stereo_matches=max_stereo_matches,
-        )
+        super().__init__(cam_config=cam_config, max_keypoints=max_keypoints)
         self.tracked_points = None
         self.max_id = 0
 
@@ -60,7 +52,11 @@ class SemanticFeatureTracker(FeatureTracker):
     ):
         """Initialize world points and features"""
         feats_left, feats_right, matches_stereo, depths = self.process_stereo(
-            left_image, right_image, max_matches=MAX_STEREO_MATCHES, return_matched_feats=True
+            left_image,
+            right_image,
+            max_matches=MAX_STEREO_MATCHES,
+            max_depth=MAX_DEPTH,
+            return_matched_feats=True,
         )
         left_pts = feats_left["keypoints"][0].cpu().numpy()
         pixels = np.round(left_pts).astype(int)
@@ -75,7 +71,7 @@ class SemanticFeatureTracker(FeatureTracker):
             points_local=points_local,
             depths=depths.cpu().numpy(),
             labels=labels,
-            lengths=np.zeros(num_pts, dtype=int),
+            lengths=np.zeros(MAX_STEREO_MATCHES, dtype=int),
         )
         self.max_id = num_pts  # Next ID to assign
 
@@ -83,7 +79,7 @@ class SemanticFeatureTracker(FeatureTracker):
         self,
         feats_left: dict,
         depths: torch.Tensor,
-        matches_frame: torch.Tensor,
+        matches_frame: np.ndarray,
         left_semantic_pred: np.ndarray,
     ):
         """Update tracked points"""
@@ -96,9 +92,9 @@ class SemanticFeatureTracker(FeatureTracker):
         # Matched features get old track IDs, and unmatched features get new IDs
         new_track_ids = np.zeros(num_new_pts, dtype=int) - 1
         idxs = set(range(num_new_pts))
-        matched_idxs = matches_frame[:, 1].cpu().numpy()
+        matched_idxs = matches_frame[:, 1]
         unmatched_idxs = list(idxs - set(matched_idxs))
-        matched_ids = self.tracked_points.ids[matches_frame[:, 0].cpu().numpy()]
+        matched_ids = self.tracked_points.ids[matches_frame[:, 0]]
         new_track_ids[matched_idxs] = matched_ids
 
         new_ids = np.arange(self.max_id, self.max_id + len(unmatched_idxs))
@@ -114,6 +110,11 @@ class SemanticFeatureTracker(FeatureTracker):
         self.tracked_points.depths = depths.cpu().numpy()
         self.tracked_points.labels = left_semantic_pred[pixels[:, 1], pixels[:, 0]]
 
+        # Update lengths
+        new_lengths = np.zeros(num_new_pts, dtype=int)
+        new_lengths[matched_idxs] = self.tracked_points.lengths[matches_frame[:, 0]] + 1
+        self.tracked_points.lengths = new_lengths
+
     def track_pnp(
         self, left_image: np.ndarray, right_image: np.ndarray, left_semantic_pred: np.ndarray
     ) -> np.ndarray:
@@ -125,13 +126,17 @@ class SemanticFeatureTracker(FeatureTracker):
         """
         # Extract features and stereo matching
         feats_left, feats_right, matches_stereo, depths = self.process_stereo(
-            left_image, right_image, return_matched_feats=True
+            left_image,
+            right_image,
+            max_matches=MAX_STEREO_MATCHES,
+            max_depth=MAX_DEPTH,
+            return_matched_feats=True,
         )
         # Match with previous frame
-        matches_frame = self.match_feats(self.tracked_points.feats, feats_left)
+        matches_frame = self.match_feats(self.tracked_points.feats, feats_left).cpu().numpy()
 
         # Estimate odometry with PnP
-        points3D = self.tracked_points.points_local[matches_frame[:, 0].cpu().numpy()]
+        points3D = self.tracked_points.points_local[matches_frame[:, 0]]
         points2D = feats_left["keypoints"][0][matches_frame[:, 1]].cpu().numpy()
         odometry = solve_vision_pnp(points3D, points2D)
 

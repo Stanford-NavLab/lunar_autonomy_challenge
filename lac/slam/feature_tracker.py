@@ -53,14 +53,8 @@ def highest_score_matches(matches: dict, N: int) -> np.ndarray:
 
 
 class FeatureTracker:
-    def __init__(
-        self,
-        cam_config: dict,
-        max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS,
-        max_stereo_matches: int = MAX_STEREO_MATCHES,
-    ):
+    def __init__(self, cam_config: dict, max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS):
         self.cam_config = cam_config
-        self.max_stereo_matches = max_stereo_matches
         self.extractor = SuperPoint(max_num_keypoints=max_keypoints).eval().cuda()
         self.matcher = LightGlue(features="superpoint").eval().cuda()
 
@@ -109,7 +103,7 @@ class FeatureTracker:
         min_score: float = None,
         max_depth: float = MAX_DEPTH,
         return_matched_feats: bool = False,
-    ):
+    ) -> tuple[dict, dict, torch.Tensor, torch.Tensor]:
         """Process stereo pair to get features and depths"""
         feats_left = self.extract_feats(left_image)
         feats_right = self.extract_feats(right_image)
