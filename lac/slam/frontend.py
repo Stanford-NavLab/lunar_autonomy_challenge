@@ -5,7 +5,7 @@ import numpy as np
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
 from lac.perception.segmentation import UnetSegmentation
 
-KEYFRAME_INTERVAL = 10  # Interval for keyframe selection
+KEYFRAME_INTERVAL = 20  # Interval for keyframe selection (steps)
 
 
 class Frontend:
@@ -25,16 +25,14 @@ class Frontend:
 
         data : dict
             - step : int - step number
-            - left_image : np.ndarray (H, W, 3) - left image
-            - right_image : np.ndarray (H, W, 3) - right image
+            - FrontLeft : np.ndarray (H, W, 3) - front left image
+            - FrontRight : np.ndarray (H, W, 3) - front right image
             - imu : np.ndarray (6,) - IMU measurement
 
         """
-        left_pred = self.segmentation.predict(data["left_image"])
+        left_pred = self.segmentation.predict(data["FrontLeft"])
 
-        odometry = self.feature_tracker.track_pnp(
-            data["left_image"], data["right_image"], left_pred
-        )
+        odometry = self.feature_tracker.track_pnp(data["FrontLeft"], data["FrontRight"], left_pred)
 
         # If VO failed, use IMU odometry instead
         if odometry is None:
@@ -45,5 +43,6 @@ class Frontend:
         data["odometry"] = odometry
         # TODO: implement proper keyframe selection based on motion
         data["keyframe"] = data["step"] % KEYFRAME_INTERVAL == 0
+        data["tracked_points"] = self.feature_tracker.tracked_points
 
         return data

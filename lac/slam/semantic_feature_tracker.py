@@ -1,21 +1,13 @@
 """Semantic Feature Tracker"""
 
 import numpy as np
-import cv2
 import torch
 from dataclasses import dataclass
 
-from lightglue import LightGlue, SuperPoint
 from lightglue.utils import rbd
 
 from lac.slam.feature_tracker import FeatureTracker, prune_features
 from lac.perception.vision import solve_vision_pnp
-from lac.perception.depth import project_pixels_to_rover
-from lac.utils.frames import (
-    apply_transform,
-)
-from lac.util import grayscale_to_3ch_tensor
-from lac.params import FL_X, STEREO_BASELINE, MAX_DEPTH
 
 EXTRACTOR_MAX_KEYPOINTS = 2048
 MAX_TRACKED_POINTS = 100
@@ -31,6 +23,17 @@ class TrackedPoints:
     points_local: np.ndarray  # 3D points projected in rover frame
     depths: np.ndarray  # Triangulated depths
     labels: np.ndarray  # Semantic labels
+    lengths: int  # Number of frames tracked for
+
+    def get_by_id(self, track_id):
+        mask = self.ids == track_id
+        return {
+            "point": self.points[mask][0],
+            "depth": self.depths[mask][0],
+            "feat": rbd(prune_features(self.feats, mask)),
+            "label": self.labels[mask][0],
+            "point_local": self.points_local[mask][0],
+        }
 
 
 class SemanticFeatureTracker(FeatureTracker):
@@ -72,6 +75,7 @@ class SemanticFeatureTracker(FeatureTracker):
             points_local=points_local,
             depths=depths.cpu().numpy(),
             labels=labels,
+            lengths=np.zeros(num_pts, dtype=int),
         )
         self.max_id = num_pts  # Next ID to assign
 
@@ -80,6 +84,7 @@ class SemanticFeatureTracker(FeatureTracker):
         feats_left: dict,
         depths: torch.Tensor,
         matches_frame: torch.Tensor,
+        left_semantic_pred: np.ndarray,
     ):
         """Update tracked points"""
         left_pts = feats_left["keypoints"][0].cpu().numpy()
@@ -100,13 +105,18 @@ class SemanticFeatureTracker(FeatureTracker):
         new_track_ids[unmatched_idxs] = new_ids
         self.max_id += len(unmatched_idxs)
 
+        pixels = np.round(left_pts).astype(int)
+
         self.tracked_points.ids = new_track_ids
         self.tracked_points.points = left_pts
         self.tracked_points.feats = feats_left
         self.tracked_points.points_local = points_local
         self.tracked_points.depths = depths.cpu().numpy()
+        self.tracked_points.labels = left_semantic_pred[pixels[:, 1], pixels[:, 0]]
 
-    def track_pnp(self, left_image: np.ndarray, right_image: np.ndarray, left_semantic_pred: np.ndarray) -> np.ndarray:
+    def track_pnp(
+        self, left_image: np.ndarray, right_image: np.ndarray, left_semantic_pred: np.ndarray
+    ) -> np.ndarray:
         """Track points and estimate odometry with PnP
 
         TODO: handle semantics, check consistency with matching
@@ -126,6 +136,6 @@ class SemanticFeatureTracker(FeatureTracker):
         odometry = solve_vision_pnp(points3D, points2D)
 
         # Update tracks (limit based on number and depth)
-        self.update_tracks(feats_left, depths, matches_frame)
+        self.update_tracks(feats_left, depths, matches_frame, left_semantic_pred)
 
         return odometry

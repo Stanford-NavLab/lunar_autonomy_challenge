@@ -13,7 +13,6 @@ NOTE: features and matches from LightGlue come with a batch dimension. We keep t
 import numpy as np
 import cv2
 import torch
-from dataclasses import dataclass
 
 from lightglue import LightGlue, SuperPoint
 from lightglue.utils import rbd
@@ -81,13 +80,17 @@ class FeatureTracker:
         self.world_points = None
         self.max_id = 0
 
-    def extract_feats(self, image: np.ndarray, min_score: float = None, max_keypoints: int = None) -> dict:
+    def extract_feats(
+        self, image: np.ndarray, min_score: float = None, max_keypoints: int = None
+    ) -> dict:
         """Extract features from image"""
         # TODO: handle min_score and max_keypoints
         feats = self.extractor.extract(grayscale_to_3ch_tensor(image).cuda())
         return feats
 
-    def match_feats(self, feats1: dict, feats2: dict, max_matches: int = None, min_score: float = None) -> torch.Tensor:
+    def match_feats(
+        self, feats1: dict, feats2: dict, max_matches: int = None, min_score: float = None
+    ) -> torch.Tensor:
         """Match features between two images"""
         matches = rbd(self.matcher({"image0": feats1, "image1": feats2}))
         if min_score is not None:
@@ -189,7 +192,9 @@ class FeatureTracker:
         matches = self.match_feats(self.prev_feats, next_feats)
         tracked_feats = prune_features(self.prev_feats, matches[:, 0])
 
-    def track_keyframe(self, curr_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray):
+    def track_keyframe(
+        self, curr_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray
+    ):
         """Initialize world points and features"""
         # Triangulate new points
         feats_left, feats_right, matches_stereo, depths = self.process_stereo(

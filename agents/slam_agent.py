@@ -26,13 +26,12 @@ from lac.perception.depth import (
     compute_rock_coords_rover_frame,
     compute_rock_radii,
 )
-from lac.perception.segmentation import UnetSegmentation
-from lac.planning.waypoint_planner import Planner
+from lac.planning.waypoint_planner import WaypointPlanner
 from lac.control.controller import ArcPlanner
-from lac.slam.visual_odometry import StereoVisualOdometry
-from lac.slam.feature_tracker import FeatureTracker
-from lac.slam.slam import SLAM
 from lac.control.controller import waypoint_steering
+from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
+from lac.slam.frontend import Frontend
+from lac.slam.backend import Backend
 from lac.utils.data_logger import DataLogger
 from lac.utils.rerun_interface import Rerun
 from lac.utils.visualization import (
@@ -40,6 +39,7 @@ from lac.utils.visualization import (
     draw_steering_arc,
     overlay_stereo_rock_depths,
 )
+from lac.util import get_positions_from_poses
 import lac.params as params
 
 """ Agent parameters and settings """
@@ -61,7 +61,7 @@ class SlamAgent(AutonomousAgent):
         listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
 
-        """ For teleop """
+        """ Control variables """
         self.current_v = 0
         self.current_w = 0
 
@@ -94,16 +94,18 @@ class SlamAgent(AutonomousAgent):
 
         """ Planner """
         self.initial_pose = transform_to_numpy(self.get_initial_position())
-        self.lander_pose = self.initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(self.initial_pose)
+        self.lander_pose = self.initial_pose @ transform_to_numpy(
+            self.get_initial_lander_position()
+        )
+        self.planner = WaypointPlanner(
+            self.initial_pose, spiral_min=3.5, spiral_max=5.5, spiral_step=1.0, repeat=2
+        )
         self.arc_planner = ArcPlanner()
 
         """ SLAM """
-        self.svo = StereoVisualOdometry(self.cameras)
-        self.tracker = FeatureTracker(self.cameras)
-        self.segmentation = UnetSegmentation()
-        self.graph = SLAM()
-        self.graph_idx = 0
+        feature_tracker = SemanticFeatureTracker(self.cameras)
+        self.frontend = Frontend(feature_tracker)
+        self.backend = Backend(self.initial_pose, feature_tracker)
 
         """ Data logging """
         agent_name = get_entry_point()
@@ -164,7 +166,7 @@ class SlamAgent(AutonomousAgent):
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
-        # nominal_steering = waypoint_steering(waypoint, nav_pose)
+        nominal_steering = waypoint_steering(waypoint, nav_pose)
 
         """ Image processing """
         if self.image_available():
@@ -175,81 +177,37 @@ class SlamAgent(AutonomousAgent):
             # Stereo VO
             if self.step >= ARM_RAISE_WAIT_FRAMES:
                 if self.step == ARM_RAISE_WAIT_FRAMES:
-                    self.svo.initialize(self.initial_pose, images_gray["FrontLeft"], images_gray["FrontRight"])
-                    self.tracker.initialize(self.initial_pose, images_gray["FrontLeft"], images_gray["FrontRight"])
+                    self.frontend.initialize(images_gray["FrontLeft"], images_gray["FrontRight"])
                 else:
-                    self.svo.track(images_gray["FrontLeft"], images_gray["FrontRight"])
-                    self.tracker.track_keyframe(self.current_pose, images_gray["FrontLeft"], images_gray["FrontRight"])
-
-                self.graph.add_pose(self.graph_idx, self.initial_pose)
-                self.graph.add_vision_factors(self.graph_idx, self.tracker)
-                self.graph_idx += 1
-                self.svo_poses.append(self.svo.get_pose())
-                self.current_pose = self.svo.get_pose()
-
-                # Run segmentation
-                left_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(
-                    images_gray["FrontLeft"], output_pred=True
-                )
-                right_seg_masks, right_labels = self.segmentation.segment_rocks(images_gray["FrontRight"])
-                left_full_mask = np.clip(left_labels, 0, 1).astype(np.uint8)
-
-                # Stereo rock depth
-                stereo_depth_results = stereo_depth_from_segmentation(
-                    left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
-                )
-                rock_coords = compute_rock_coords_rover_frame(stereo_depth_results, self.cameras)
-                rock_radii = compute_rock_radii(stereo_depth_results)
-
-                control, path, waypoint_local = self.arc_planner.plan_arc(waypoint, nav_pose, rock_coords, rock_radii)
-                if control is not None:
-                    self.current_v, self.current_w = control
-                else:
-                    print("No safe paths found!")
-
-                # if DISPLAY_IMAGES:
-                #     overlay = overlay_mask(
-                #         images_gray["FrontLeft"], left_full_mask, color=(0, 0, 1)
-                #     )
-                #     overlay = draw_steering_arc(overlay, self.current_w, color=(255, 0, 0))
-                #     overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
-                #     cv.imshow(cam, overlay)
-                #     cv.waitKey(1)
-
-                overlay = overlay_mask(images_gray["FrontLeft"], left_full_mask, color=(0, 0, 1))
-                overlay = draw_steering_arc(overlay, self.current_w, color=(255, 0, 0))
-                overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
-                Rerun.log_img(overlay)
+                    images_gray["step"] = self.step
+                    images_gray["imu"] = self.get_imu_data()
+                    data = self.frontend.process_frame(images_gray)
+                    self.backend.update(data)
 
             self.data_logger.log_images(self.step, input_data)
-
-        # if self.step % GRAPH_OPTIMIZE_RATE == 0:
-        #     print("Optimizing graph...")
-        #     window = list(range(0, self.graph_idx))
-        #     self.graph.optimize(window, verbose=True)
+            Rerun.log_img(images_gray["FrontLeft"])
 
         # Rerun logging
-        position_error = self.current_pose[:3, 3] - ground_truth_pose[:3, 3]
         gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
-        svo_trajectory = np.array([pose[:3, 3] for pose in self.svo_poses])
-        slam_poses = list(self.graph.poses.values())
-        slam_trajectory = np.array([pose[:3, 3] for pose in slam_poses])
-        Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 0])
-        Rerun.log_3d_trajectory(self.step, svo_trajectory, trajectory_string="visual_odometry", color=[0, 0, 255])
-        # Rerun.log_3d_trajectory(
-        #     self.step, slam_trajectory, trajectory_string="slam", color=[0, 255, 0]
-        # )
+        slam_trajectory = get_positions_from_poses(self.backend.get_trajectory())
+        position_error = slam_trajectory[-1] - ground_truth_pose[:3, 3]
+        Rerun.log_3d_trajectory(
+            self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 0]
+        )
+        Rerun.log_3d_trajectory(
+            self.step, slam_trajectory, trajectory_string="slam", color=[0, 0, 255]
+        )
         Rerun.log_2d_seq_scalar("trajectory_error/err_x", self.step, position_error[0])
         Rerun.log_2d_seq_scalar("trajectory_error/err_y", self.step, position_error[1])
         Rerun.log_2d_seq_scalar("trajectory_error/err_z", self.step, position_error[2])
 
-        landmark_points = np.array(list(self.graph.landmarks.values()))
-        if len(landmark_points) > 0:
-            Rerun.log_3d_points(
-                landmark_points,
-                topic="/world/landmarks",
-                color=[255, 165, 0],
-            )
+        # landmark_points = np.array(list(self.graph.landmarks.values()))
+        # if len(landmark_points) > 0:
+        #     Rerun.log_3d_points(
+        #         landmark_points,
+        #         topic="/world/landmarks",
+        #         color=[255, 165, 0],
+        #     )
 
         """ Control """
         if self.step < ARM_RAISE_WAIT_FRAMES:
@@ -257,8 +215,8 @@ class SlamAgent(AutonomousAgent):
         elif TELEOP:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         else:
-            # control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
-            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+            control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
+            # control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         """ Data logging """
         self.data_logger.log_data(self.step, control)

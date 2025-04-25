@@ -16,7 +16,7 @@ from lac.params import LANDER_GLOBAL, LANDER_HEIGHT
 # ==================================================================================================
 
 
-def plot_heatmap(data, fig=None, colorscale="Viridis", no_axes=False):
+def plot_heatmap(data: np.ndarray, fig=None, colorscale="Viridis", no_axes=False):
     """Plot a 2D heatmap."""
     if fig is None:
         fig = go.Figure()
@@ -27,7 +27,7 @@ def plot_heatmap(data, fig=None, colorscale="Viridis", no_axes=False):
     return fig
 
 
-def plot_heightmaps(ground_map, agent_map):
+def plot_heightmaps(ground_map: np.ndarray, agent_map: np.ndarray):
     fig = make_subplots(
         rows=1,
         cols=3,
@@ -35,8 +35,12 @@ def plot_heightmaps(ground_map, agent_map):
         horizontal_spacing=0.1,
     )
     error = ground_map[:, :, 2] - agent_map[:, :, 2]
-    fig.add_trace(go.Heatmap(z=ground_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1)
-    fig.add_trace(go.Heatmap(z=agent_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2)
+    fig.add_trace(
+        go.Heatmap(z=ground_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1
+    )
+    fig.add_trace(
+        go.Heatmap(z=agent_map[:, :, 2], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2
+    )
     fig.add_trace(go.Heatmap(z=error, colorscale="Viridis", colorbar=dict(x=1.0)), row=1, col=3)
     fig.update_layout(
         width=1400,  # Adjust the figure width
@@ -48,7 +52,7 @@ def plot_heightmaps(ground_map, agent_map):
     fig.show()
 
 
-def plot_rock_maps(ground_map, agent_map):
+def plot_rock_maps(ground_map: np.ndarray, agent_map: np.ndarray):
     """
     rock_map is NxNx4 array where 4th channel is rock presence (0 or 1)
 
@@ -60,8 +64,12 @@ def plot_rock_maps(ground_map, agent_map):
         horizontal_spacing=0.1,
     )
     error = ground_map[:, :, 3] - agent_map[:, :, 3]
-    fig.add_trace(go.Heatmap(z=ground_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1)
-    fig.add_trace(go.Heatmap(z=agent_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2)
+    fig.add_trace(
+        go.Heatmap(z=ground_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1
+    )
+    fig.add_trace(
+        go.Heatmap(z=agent_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2
+    )
     fig.add_trace(go.Heatmap(z=error, colorscale="Viridis", colorbar=dict(x=1.0)), row=1, col=3)
     fig.update_layout(
         width=1400,  # Adjust the figure width
@@ -71,6 +79,22 @@ def plot_rock_maps(ground_map, agent_map):
         xaxis3=dict(scaleanchor="y3"),
     )
     fig.show()
+
+
+def plot_waypoints(waypoints: np.ndarray, fig=None):
+    if fig is None:
+        fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=waypoints[:, 0],
+            y=waypoints[:, 1],
+            mode="markers+lines",
+            line=dict(color="blue", width=2),
+            hovertext=np.arange(len(waypoints)),
+        )
+    )
+    fig.update_layout(width=600, height=600, xaxis=dict(scaleanchor="y"))
+    return fig
 
 
 def plot_rocks_rover_frame(rock_points, rock_radii, waypoint=None, fig=None, color="red", **kwargs):
@@ -167,7 +191,7 @@ def plot_rocks_rover_frame(rock_points, rock_radii, waypoint=None, fig=None, col
     return fig
 
 
-def plot_points_rover_frame(points, fig=None, color="red", **kwargs):
+def plot_points_rover_frame(points: np.ndarray, fig=None, color="red", **kwargs):
     """Plot points in the rover frame."""
     if fig is None:
         fig = go.Figure()
@@ -201,7 +225,9 @@ def plot_points_rover_frame(points, fig=None, color="red", **kwargs):
     return fig
 
 
-def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, waypoint=None, **kwargs):
+def plot_path_rover_frame(
+    path: np.ndarray, fig=None, color="blue", linewidth=2, waypoint=None, **kwargs
+):
     """Plot points in the rover frame."""
     if fig is None:
         fig = go.Figure()
@@ -277,7 +303,9 @@ def plot_path_rover_frame(path, fig=None, color="blue", linewidth=2, waypoint=No
 # ==================================================================================================
 
 
-def plot_surface(grid, fig=None, colorscale="Viridis", no_axes=False, showscale=True, **kwargs):
+def plot_surface(
+    grid: np.ndarray, fig=None, colorscale="Viridis", no_axes=False, showscale=True, **kwargs
+):
     """
     grid is NxNx3 array representing the coordinates and elevation data for a surface plot.
 
@@ -296,11 +324,15 @@ def plot_surface(grid, fig=None, colorscale="Viridis", no_axes=False, showscale=
     )
     fig.update_layout(width=1600, height=900, scene_aspectmode="data")
     if no_axes:
-        fig.update_layout(scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)))
+        fig.update_layout(
+            scene=dict(
+                xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)
+            )
+        )
     return fig
 
 
-def plot_rock_map(grid, fig=None, no_axes=False, **kwargs):
+def plot_rock_map(grid: np.ndarray, fig=None, no_axes=False, **kwargs):
     """
     grid is NxNx4 array where 4th channel is rock presence (0 or 1)
 
@@ -321,7 +353,11 @@ def plot_rock_map(grid, fig=None, no_axes=False, **kwargs):
     )
     fig.update_layout(width=1600, height=900, scene_aspectmode="data")
     if no_axes:
-        fig.update_layout(scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)))
+        fig.update_layout(
+            scene=dict(
+                xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)
+            )
+        )
     return fig
 
 
@@ -365,7 +401,7 @@ def plot_path_3d(
     return fig
 
 
-def plot_3d_points(points, fig=None, color="blue", markersize=3, name=None):
+def plot_3d_points(points: np.ndarray, fig=None, color="blue", markersize=3, name=None):
     """Plot 3D points."""
     if fig is None:
         fig = go.Figure()
@@ -383,7 +419,9 @@ def plot_3d_points(points, fig=None, color="blue", markersize=3, name=None):
     return fig
 
 
-def pose_trace(pose, name: str = "", line_style: str = "solid", line_width: int = 5):
+def pose_trace(
+    pose: np.ndarray | tuple, name: str = "", line_style: str = "solid", line_width: int = 5
+):
     """Create a plotly trace to visualize a pose
 
     RGB vectors are used to represent the X, Y, Z axes of the rotation matrix
@@ -447,8 +485,8 @@ def pose_trace(pose, name: str = "", line_style: str = "solid", line_width: int 
     return traces
 
 
-def pose_traces(pose_list, **kwargs):
-    """Create traces for a list of poses
+def pose_traces(pose_list: list | np.ndarray, **kwargs):
+    """Create traces for a sequence of poses
 
     Parameters
     ----------
@@ -470,7 +508,7 @@ def pose_traces(pose_list, **kwargs):
     return all_traces
 
 
-def plot_poses(poses, fig=None, no_axes=False, **kwargs):
+def plot_poses(poses: list | np.ndarray, fig=None, no_axes=False, **kwargs):
     """poses is a list of 4x4 arrays or an Nx4x4 array"""
     if fig is None:
         fig = go.Figure()
@@ -483,13 +521,38 @@ def plot_poses(poses, fig=None, no_axes=False, **kwargs):
     return fig
 
 
-def plot_lander_3d(lander_height, fig=None, color="silver"):
+def plot_loop_closures(trajectory, loop_closures: list, fig=None, **kwargs):
+    """Plot loop closures
+
+    trajectory: sequence of poses or positions
+    loop_closures: list of tuples
+
+    """
+    if fig is None:
+        fig = go.Figure()
+    for i, j in loop_closures:
+        fig.add_trace(
+            go.Scatter3d(
+                x=[trajectory[i][0, 3], trajectory[j][0, 3]],
+                y=[trajectory[i][1, 3], trajectory[j][1, 3]],
+                z=[trajectory[i][2, 3], trajectory[j][2, 3]],
+                mode="markers+lines",
+                marker=dict(color="red", size=5),
+                line=dict(color="red", width=5),
+                name=f"LC {i}-{j}",
+            )
+        )
+    fig.update_layout(width=1600, height=900, scene_aspectmode="data")
+    return fig
+
+
+def plot_lander_3d(lander_elevation: float, fig=None, color="silver"):
     """Plot the lander as a box in 3D."""
     if fig is None:
         fig = go.Figure()
 
     vertices = np.vstack([LANDER_GLOBAL, LANDER_GLOBAL + np.array([0, 0, LANDER_HEIGHT])])
-    vertices[:, 2] += lander_height
+    vertices[:, 2] += lander_elevation
 
     # Define the triangular faces of the box
     faces = [
@@ -614,7 +677,9 @@ def plot_mesh(mesh, show_edges=True, textured=False):
         # TODO: handle TexturesUV
     else:
         colors = "lightblue"
-    vertices_plot = go.Scatter3d(x=x, y=y, z=z, mode="markers", marker=dict(color=colors, size=2), name="Vertices")
+    vertices_plot = go.Scatter3d(
+        x=x, y=y, z=z, mode="markers", marker=dict(color=colors, size=2), name="Vertices"
+    )
 
     data = [mesh_plot, vertices_plot]
 

@@ -4,7 +4,7 @@ import numpy as np
 import gtsam
 from gtsam.symbol_shorthand import X
 
-from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
+from lac.slam.semantic_feature_tracker import SemanticFeatureTracker, TrackedPoints
 from lac.slam.loop_closure import estimate_loop_closure_pose
 from lac.slam.gtsam_util import ODOMETRY_NOISE, LOOP_CLOSURE_NOISE
 from lac.util import rotation_matrix_error
@@ -29,7 +29,7 @@ class Backend:
         self.graph.add(gtsam.NonlinearEqualityPose3(X(0), gtsam.Pose3(initial_pose)))
         self.pose_idx = 1  # Index for the next pose
 
-        self.point_map = {}  # id -> ((x,y,z), anchor_pose_idx)
+        self.point_map = {}  # id -> (local (x,y,z), anchor_pose_idx)
         self.keyframe_data = {}  # store data at keyframes (for loop closure)
         self.keyframe_traj_list = []
         self.keyframe_traj = None
@@ -39,10 +39,11 @@ class Backend:
         """Update the backend with new data
 
         data : dict
-            - left_image : np.ndarray (H, W, 3) - left image
-            - right_image : np.ndarray (H, W, 3) - right image
+            - FrontLeft : np.ndarray (H, W, 3) - left image
+            - FrontRight : np.ndarray (H, W, 3) - right image
             - imu : np.ndarray (6,) - IMU measurement
             - odometry : np.ndarray (4, 4) - estimated odometry
+            - tracked_points : TrackedPoints - tracked points
             - keyframe : bool - whether this is a keyframe
 
         """
@@ -61,6 +62,13 @@ class Backend:
             )
         )
 
+        # Add tracked points to map
+        tracks: TrackedPoints = data["tracked_points"]
+        for id in tracks.ids:
+            if id not in self.point_map:
+                self.point_map[id] = (tracks.get_by_id(id)["point_local"], self.pose_idx)
+
+        # Handle keyframe
         if data["keyframe"]:
             self.keyframe_data[self.pose_idx] = data
             self.keyframe_traj_list.append(new_pose)
@@ -98,11 +106,13 @@ class Backend:
             keyframe_data = self.keyframe_data[pose_idx]
             relative_pose = estimate_loop_closure_pose(
                 self.feature_tracker,
-                keyframe_data["left_image"],
-                keyframe_data["right_image"],
-                data["left_image"],
-                data["right_image"],
+                keyframe_data["FrontLeft"],
+                keyframe_data["FrontRight"],
+                data["FrontLeft"],
+                data["FrontRight"],
             )
+            if relative_pose is None:
+                continue
             # Add loop closure factor
             self.graph.add(
                 gtsam.BetweenFactorPose3(

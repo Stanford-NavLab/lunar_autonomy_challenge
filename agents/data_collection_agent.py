@@ -16,7 +16,7 @@ import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.planning.waypoint_planner import Planner
+from lac.planning.waypoint_planner import WaypointPlanner
 from lac.control.controller import waypoint_steering
 from lac.utils.data_logger import DataLogger
 from lac.util import transform_to_numpy
@@ -51,20 +51,20 @@ class DataCollectionAgent(AutonomousAgent):
         """ Planner """
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(initial_pose, spiral_min=3.5, spiral_max=3.6, spiral_step=0.1)
+        self.planner = WaypointPlanner(initial_pose, repeat=2)
 
         # Camera config
         self.cameras = params.CAMERA_CONFIG_INIT
         self.cameras["FrontLeft"] = {
             "active": True,
-            "light": 1.0,
+            "light": 0.75,
             "width": 1280,
             "height": 720,
             "semantic": False,
         }
         self.cameras["FrontRight"] = {
             "active": True,
-            "light": 1.0,
+            "light": 0.75,
             "width": 1280,
             "height": 720,
             "semantic": False,
@@ -77,22 +77,22 @@ class DataCollectionAgent(AutonomousAgent):
             "semantic": False,
         }
         self.cameras["BackLeft"] = {
-            "active": False,
-            "light": 0.0,
+            "active": True,
+            "light": 0.75,
             "width": 1280,
             "height": 720,
             "semantic": False,
         }
         self.cameras["BackRight"] = {
-            "active": False,
-            "light": 0.0,
+            "active": True,
+            "light": 0.75,
             "width": 1280,
             "height": 720,
             "semantic": False,
         }
         self.cameras["Back"] = {
             "active": False,
-            "light": 0.0,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
