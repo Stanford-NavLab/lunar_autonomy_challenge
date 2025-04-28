@@ -3,6 +3,7 @@
 import numpy as np
 import gtsam
 from gtsam.symbol_shorthand import X
+from dataclasses import dataclass
 
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker, TrackedPoints
 from lac.slam.loop_closure import estimate_loop_closure_pose
@@ -13,6 +14,12 @@ from lac.util import rotation_matrix_error
 LOOP_CLOSURE_EXCLUDE = 10  # Exclude the last N keyframes
 LOOP_CLOSURE_DIST_THRESHOLD = 0.25  # meters
 LOOP_CLOSURE_ANGLE_THRESHOLD = 5.0  # degrees
+
+
+@dataclass
+class SemanticPointCloud:
+    points: np.ndarray  # shape (N, 3)
+    labels: np.ndarray  # shape (N,)
 
 
 class Backend:
@@ -151,4 +158,13 @@ class Backend:
             all_labels.append(data["labels"])
         all_points = np.vstack(all_points)
         all_labels = np.hstack(all_labels)
-        return all_points, all_labels
+        return SemanticPointCloud(all_points, all_labels)
+
+    def get_local_map(self):
+        """Get the local map as a list of poses and points"""
+        local_map = []
+        for idx, data in self.point_map.items():
+            pose = self.values.atPose3(X(idx)).matrix()
+            world_points = apply_transform(pose, data["points"])
+            local_map.append((pose, world_points, data["labels"]))
+        return local_map
