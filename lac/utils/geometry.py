@@ -40,11 +40,12 @@ def crop_points(points, bbox, buffer=0):
         Cropped points
 
     """
-    return points[
+    keep_idxs = (
         (points[:, 0] >= bbox[0][0] - buffer)
         & (points[:, 0] <= bbox[1][0] + buffer)
         & (points[:, 1] >= bbox[0][1] - buffer)
         & (points[:, 1] <= bbox[1][1] + buffer)
         & (points[:, 2] >= bbox[0][2] - buffer)
         & (points[:, 2] <= bbox[1][2] + buffer)
-    ]
+    )
+    return points[keep_idxs], keep_idxs

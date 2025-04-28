@@ -26,6 +26,7 @@ from lac.perception.depth import (
     compute_rock_coords_rover_frame,
     compute_rock_radii,
 )
+from lac.perception.segmentation import SemanticClasses
 from lac.planning.waypoint_planner import WaypointPlanner
 from lac.control.controller import ArcPlanner
 from lac.control.controller import waypoint_steering
@@ -98,7 +99,7 @@ class SlamAgent(AutonomousAgent):
             self.get_initial_lander_position()
         )
         self.planner = WaypointPlanner(
-            self.initial_pose, spiral_min=3.5, spiral_max=5.5, spiral_step=1.0, repeat=2
+            self.initial_pose, spiral_min=3.5, spiral_max=4.0, spiral_step=0.25, repeat=0
         )
         self.arc_planner = ArcPlanner()
 
@@ -187,27 +188,30 @@ class SlamAgent(AutonomousAgent):
             self.data_logger.log_images(self.step, input_data)
             Rerun.log_img(images_gray["FrontLeft"])
 
+            if len(self.backend.point_map) > 0:
+                points, labels = self.backend.project_point_map()
+                ground_points = points[labels == SemanticClasses.GROUND.value]
+                rock_points = points[labels == SemanticClasses.ROCK.value]
+                lander_points = points[labels == SemanticClasses.LANDER.value]
+                Rerun.log_3d_points(
+                    ground_points, topic="/world/ground_points", color=[120, 0, 255]
+                )
+                Rerun.log_3d_points(rock_points, topic="/world/rock_points", color=[255, 0, 0])
+                Rerun.log_3d_points(lander_points, topic="/world/lander_points", color=[0, 255, 0])
+
         # Rerun logging
         gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
         slam_trajectory = get_positions_from_poses(self.backend.get_trajectory())
         position_error = slam_trajectory[-1] - ground_truth_pose[:3, 3]
         Rerun.log_3d_trajectory(
-            self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 0]
+            self.step, gt_trajectory, trajectory_string="ground_truth", color=[20, 20, 20]
         )
         Rerun.log_3d_trajectory(
-            self.step, slam_trajectory, trajectory_string="slam", color=[0, 0, 255]
+            self.step, slam_trajectory, trajectory_string="slam", color=[0, 50, 200]
         )
         Rerun.log_2d_seq_scalar("trajectory_error/err_x", self.step, position_error[0])
         Rerun.log_2d_seq_scalar("trajectory_error/err_y", self.step, position_error[1])
         Rerun.log_2d_seq_scalar("trajectory_error/err_z", self.step, position_error[2])
-
-        # landmark_points = np.array(list(self.graph.landmarks.values()))
-        # if len(landmark_points) > 0:
-        #     Rerun.log_3d_points(
-        #         landmark_points,
-        #         topic="/world/landmarks",
-        #         color=[255, 165, 0],
-        #     )
 
         """ Control """
         if self.step < ARM_RAISE_WAIT_FRAMES:

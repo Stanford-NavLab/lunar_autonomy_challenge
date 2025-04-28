@@ -94,7 +94,9 @@ class MappingAgent(AutonomousAgent):
 
         """ Planner """
         self.initial_pose = transform_to_numpy(self.get_initial_position())
-        self.lander_pose = self.initial_pose @ transform_to_numpy(self.get_initial_lander_position())
+        self.lander_pose = self.initial_pose @ transform_to_numpy(
+            self.get_initial_lander_position()
+        )
         self.planner = Planner(self.initial_pose)
 
         """ State variables """
@@ -174,7 +176,9 @@ class MappingAgent(AutonomousAgent):
 
             if self.step >= ARM_RAISE_WAIT_FRAMES:
                 # Run segmentation
-                left_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(FL_gray, output_pred=True)
+                left_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(
+                    FL_gray, output_pred=True
+                )
                 right_seg_masks, right_labels = self.segmentation.segment_rocks(FR_gray)
                 left_full_mask = np.clip(left_labels, 0, 1).astype(np.uint8)
 
@@ -190,7 +194,7 @@ class MappingAgent(AutonomousAgent):
                 lander_idxs = []
                 for i, kp in enumerate(kps_left):
                     pred_class = left_pred[int(kp[1]), int(kp[0])]
-                    if pred_class == SemanticClasses.ROCKS.value:
+                    if pred_class == SemanticClasses.ROCK.value:
                         rock_idxs.append(i)
                     elif pred_class == SemanticClasses.GROUND.value:
                         ground_idxs.append(i)
@@ -198,17 +202,23 @@ class MappingAgent(AutonomousAgent):
                         lander_idxs.append(i)
                 ground_kps = kps_left[ground_idxs]
                 ground_depths = depths[ground_idxs]
-                ground_points_world = self.feature_tracker.project_stereo(self.current_pose, ground_kps, ground_depths)
+                ground_points_world = self.feature_tracker.project_stereo(
+                    self.current_pose, ground_kps, ground_depths
+                )
                 self.ground_points.append(ground_points_world)
 
                 rock_kps = kps_left[rock_idxs]
                 rock_depths = depths[rock_idxs]
-                rock_points_world = self.feature_tracker.project_stereo(self.current_pose, rock_kps, rock_depths)
+                rock_points_world = self.feature_tracker.project_stereo(
+                    self.current_pose, rock_kps, rock_depths
+                )
                 self.rock_points.append(rock_points_world)
 
                 lander_kps = kps_left[lander_idxs]
                 lander_depths = depths[lander_idxs]
-                lander_points_world = self.feature_tracker.project_stereo(self.current_pose, lander_kps, lander_depths)
+                lander_points_world = self.feature_tracker.project_stereo(
+                    self.current_pose, lander_kps, lander_depths
+                )
                 self.lander_points.append(lander_points_world)
 
                 if DISPLAY_IMAGES:
@@ -241,7 +251,9 @@ class MappingAgent(AutonomousAgent):
 
         """ Rerun visualization """
         gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
-        Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 120, 255])
+        Rerun.log_3d_trajectory(
+            self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 120, 255]
+        )
 
         if TELEOP:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)

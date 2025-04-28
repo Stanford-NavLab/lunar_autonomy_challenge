@@ -30,7 +30,7 @@ from lac.perception.depth import (
 from lac.slam.visual_odometry import StereoVisualOdometry
 from lac.slam.feature_tracker import FeatureTracker
 from lac.control.controller import ArcPlanner
-from lac.planning.waypoint_planner import Planner
+from lac.planning.waypoint_planner import WaypointPlanner
 from lac.mapping.mapper import bin_points_to_grid, interpolate_heights
 from lac.utils.visualization import (
     overlay_mask,
@@ -119,8 +119,12 @@ class NavAgent(AutonomousAgent):
 
         """ Planner """
         self.initial_pose = transform_to_numpy(self.get_initial_position())
-        self.lander_pose = self.initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(self.initial_pose, spiral_min=2.5, spiral_max=2.5, spiral_step=1.0)
+        self.lander_pose = self.initial_pose @ transform_to_numpy(
+            self.get_initial_lander_position()
+        )
+        self.planner = WaypointPlanner(
+            self.initial_pose, spiral_min=2.5, spiral_max=2.5, spiral_step=1.0
+        )
 
         """ State variables """
         self.current_pose = self.initial_pose
@@ -265,11 +269,15 @@ class NavAgent(AutonomousAgent):
                 else:
                     self.svo.track(FL_gray, FR_gray)
                 self.svo_poses.append(self.svo.get_pose())
-                self.current_velocity = (self.svo.get_pose()[:3, 3] - self.current_pose[:3, 3]) / params.DT
+                self.current_velocity = (
+                    self.svo.get_pose()[:3, 3] - self.current_pose[:3, 3]
+                ) / params.DT
                 self.current_pose = self.svo.get_pose()
 
                 # Run segmentation
-                left_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(FL_gray, output_pred=True)
+                left_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(
+                    FL_gray, output_pred=True
+                )
                 right_seg_masks, right_labels = self.segmentation.segment_rocks(FR_gray)
                 left_full_mask = np.clip(left_labels, 0, 1).astype(np.uint8)
 
@@ -299,14 +307,18 @@ class NavAgent(AutonomousAgent):
                         ground_idxs.append(i)
                 ground_kps = kps_left[ground_idxs]
                 ground_depths = depths[ground_idxs]
-                ground_points_world = self.feature_tracker.project_stereo(self.current_pose, ground_kps, ground_depths)
+                ground_points_world = self.feature_tracker.project_stereo(
+                    self.current_pose, ground_kps, ground_depths
+                )
                 self.ground_points.append(ground_points_world)
 
                 if BACK_CAMERAS:
                     BL_gray = input_data["Grayscale"][carla.SensorPosition.BackLeft]
                     BR_gray = input_data["Grayscale"][carla.SensorPosition.BackRight]
 
-                    left_seg_masks, _, left_pred = self.segmentation.segment_rocks(BL_gray, output_pred=True)
+                    left_seg_masks, _, left_pred = self.segmentation.segment_rocks(
+                        BL_gray, output_pred=True
+                    )
                     right_seg_masks, _ = self.segmentation.segment_rocks(BR_gray)
 
                     back_stereo_depth_results = stereo_depth_from_segmentation(
@@ -341,7 +353,9 @@ class NavAgent(AutonomousAgent):
                     self.ground_points.append(ground_points_world)
 
                 # Path planning
-                control, path, waypoint_local = self.arc_planner.plan_arc(waypoint, nav_pose, rock_coords, rock_radii)
+                control, path, waypoint_local = self.arc_planner.plan_arc(
+                    waypoint, nav_pose, rock_coords, rock_radii
+                )
                 if control is not None:
                     self.current_v, self.current_w = control
                 else:

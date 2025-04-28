@@ -419,6 +419,39 @@ def plot_3d_points(points: np.ndarray, fig=None, color="blue", markersize=3, nam
     return fig
 
 
+def plot_semantic_points(
+    points: np.ndarray,
+    labels: np.ndarray,
+    names: list[str],
+    fig=None,
+    markersize=3,
+    **kwargs,
+):
+    """Plot 3D points with semantic labels.
+
+    labels: 1D array of labels
+    names: list of names for each label (0, 1, 2, ...)
+
+    """
+    if fig is None:
+        fig = go.Figure()
+    colors = px.colors.qualitative.Plotly[: len(names)]
+    for i, name in enumerate(names):
+        mask = labels == i
+        fig.add_trace(
+            go.Scatter3d(
+                x=points[mask, 0],
+                y=points[mask, 1],
+                z=points[mask, 2],
+                mode="markers",
+                marker=dict(size=markersize, color=colors[i]),
+                name=name,
+            )
+        )
+    fig.update_layout(width=1200, height=900, scene_aspectmode="data")
+    return fig
+
+
 def pose_trace(
     pose: np.ndarray | tuple, name: str = "", line_style: str = "solid", line_width: int = 5
 ):
@@ -540,6 +573,7 @@ def plot_loop_closures(trajectory, loop_closures: list, fig=None, **kwargs):
                 marker=dict(color="red", size=5),
                 line=dict(color="red", width=5),
                 name=f"LC {i}-{j}",
+                **kwargs,
             )
         )
     fig.update_layout(width=1600, height=900, scene_aspectmode="data")

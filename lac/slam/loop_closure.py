@@ -1,25 +1,18 @@
 """Methods for loop closure detection and pose estimation."""
 
-import cv2
 import torch
 import numpy as np
 
 from lac.slam.feature_tracker import FeatureTracker, prune_features
 from lac.perception.vision import solve_vision_pnp
-from lac.utils.frames import (
-    invert_transform_mat,
-    get_cam_pose_rover,
-    OPENCV_TO_CAMERA_PASSIVE,
-)
-from lac.params import CAMERA_INTRINSICS
 
 
 def estimate_loop_closure_pose(
     tracker: FeatureTracker, left_img1, right_img1, left_img2, right_img2
-):
+) -> np.ndarray | None:
     """Estimate the loop closure pose using stereo images.
 
-    TODO: add handling for not enough matches
+    Returns None if not enough points/matches or PnP fails.
 
     """
     feats_left1, feats_right1, stereo_matches1, depths1 = tracker.process_stereo(
@@ -45,25 +38,6 @@ def estimate_loop_closure_pose(
 
     points3D = points_local1[torch.isin(stereo_indices, common_indices).cpu().numpy()]
     points2D = feats_left2["keypoints"][0][frame_common[:, 1]].cpu().numpy()
-
-    # success, rvec, tvec, inliers = cv2.solvePnPRansac(
-    #     objectPoints=points3D,
-    #     imagePoints=points2D,
-    #     cameraMatrix=CAMERA_INTRINSICS,
-    #     distCoeffs=None,
-    #     flags=cv2.SOLVEPNP_ITERATIVE,
-    #     reprojectionError=1.0,
-    #     iterationsCount=500,
-    # )
-
-    # R, _ = cv2.Rodrigues(rvec)
-    # T = np.hstack((R, tvec))
-    # est_pose = np.vstack((T, [0, 0, 0, 1]))
-    # w_T_c = invert_transform_mat(est_pose)
-    # w_T_c[:3, :3] = w_T_c[:3, :3] @ OPENCV_TO_CAMERA_PASSIVE
-    # cam_to_rover = invert_transform_mat(get_cam_pose_rover("FrontLeft"))
-    # # relative pose from frame 1 to frame 2, i.e. pose2 = pose1 @ rel_pose
-    # rel_pose = w_T_c @ cam_to_rover
 
     # relative pose from frame 1 to frame 2, i.e. pose2 = pose1 @ rel_pose
     rel_pose = solve_vision_pnp(points3D, points2D)

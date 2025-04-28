@@ -89,15 +89,11 @@ def gen_spiral(
         # Add corners in order
         points.extend(corners)
 
-        # # Repeat the first waypoint
-        # points.append(corners[0])
         # Repeat the last `repeat` waypoints
         if repeat > 0:
             points.extend(corners[:repeat])
             direction_order = np.roll(direction_order, -repeat, axis=0)
 
-        # Cycle the direction
-        # direction_order = np.roll(direction_order, -1, axis=0)
         r += step
 
     return np.array(points)
