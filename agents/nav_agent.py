@@ -16,34 +16,36 @@ import signal
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.util import transform_to_numpy
-from lac.perception.segmentation import UnetSegmentation
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
 from lac.slam.frontend import Frontend
 from lac.slam.backend import Backend
 from lac.planning.arc_planner import ArcPlanner
 from lac.planning.waypoint_planner import WaypointPlanner
 from lac.mapping.mapper import process_map
+from lac.mapping.map_utils import get_geometric_score, get_rocks_score
 from lac.utils.data_logger import DataLogger
 from lac.utils.rerun_interface import Rerun
+from lac.util import get_positions_from_poses
 import lac.params as params
 
 
 """ Agent parameters and settings """
 EVAL = False  # Whether running in evaluation mode (disable ground truth)
 USE_FIDUCIALS = False
-BACK_CAMERAS = True
+BACK_CAMERAS = False
 
 EARLY_STOP_STEP = 0  # Number of steps before stopping the mission (0 for no early stop)
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 
-DISPLAY_IMAGES = True  # Whether to display the camera views
 LOG_DATA = True  # Whether to log data
+RERUN = True  # Whether to use rerun for visualization
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
     DISPLAY_IMAGES = False
     LOG_DATA = False
+    RERUN = False
 
 
 def get_entry_point():
@@ -52,13 +54,11 @@ def get_entry_point():
 
 class NavAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
-        """Controller variables"""
-        self.steer_delta = 0.0
+        """Control variables"""
+        self.current_v = 0
+        self.current_w = 0
 
-        """ Perception modules """
-        self.segmentation = UnetSegmentation()
-
-        """ Initialize a counter to keep track of the number of simulation steps. """
+        """Initialize a counter to keep track of the number of simulation steps."""
         self.step = 0
 
         """ Initialize a counter for backup maneuvers. """
@@ -109,7 +109,7 @@ class NavAgent(AutonomousAgent):
             self.get_initial_lander_position()
         )
         self.planner = WaypointPlanner(
-            self.initial_pose, spiral_min=2.5, spiral_max=2.5, spiral_step=1.0
+            self.initial_pose, spiral_min=3.5, spiral_max=5.0, spiral_step=0.25, repeat=0
         )
         self.arc_planner = ArcPlanner()
 
@@ -126,6 +126,16 @@ class NavAgent(AutonomousAgent):
         if LOG_DATA:
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.cameras)
+        if RERUN:
+            Rerun.init_vo()
+            self.gt_poses = [self.initial_pose]
+
+        """ Load the ground truth map for real-time score updates """
+        if not EVAL:
+            self.ground_truth_map = np.load(
+                "/home/shared/data_raw/LAC/heightmaps/competition/Moon_Map_01_preset_1.dat",
+                allow_pickle=True,
+            )
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
 
@@ -208,6 +218,7 @@ class NavAgent(AutonomousAgent):
 
         if not EVAL:
             ground_truth_pose = transform_to_numpy(self.get_transform())
+            self.gt_poses.append(ground_truth_pose)
 
         if USE_GROUND_TRUTH_NAV:
             nav_pose = ground_truth_pose
@@ -219,6 +230,13 @@ class NavAgent(AutonomousAgent):
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
+        if advanced:
+            agent_map = self.update_map()
+            if RERUN:
+                geometric_score = get_geometric_score(self.ground_truth_map, agent_map)
+                rocks_score = get_rocks_score(self.ground_truth_map, agent_map)
+                Rerun.log_2d_seq_scalar("/scores/geometric", self.step, geometric_score)
+                Rerun.log_2d_seq_scalar("/scores/rocks", self.step, rocks_score)
 
         """ Image processing """
         if self.image_available():
@@ -236,17 +254,33 @@ class NavAgent(AutonomousAgent):
                     data = self.frontend.process_frame(images_gray)
                     self.backend.update(data)
 
-                # Path planning
-                control, path, waypoint_local = self.arc_planner.plan_arc(
-                    waypoint, nav_pose, data["rock_data"]
-                )
-                if control is not None:
-                    self.current_v, self.current_w = control
-                else:
-                    print("No safe paths found!")
+                    # Path planning
+                    control, path, waypoint_local = self.arc_planner.plan_arc(
+                        waypoint, nav_pose, data["rock_data"]
+                    )
+                    if control is not None:
+                        self.current_v, self.current_w = control
+                        Rerun.log_2d_trajectory(
+                            topic="/local/path", frame_id=self.step, trajectory=path
+                        )
+                        if len(data["rock_data"]["centers"]) > 0:
+                            # TODO: crop rocks within certain bounds
+                            print(np.array(data["rock_data"]["centers"]).shape)
+                            rock_centers = np.array(data["rock_data"]["centers"])[:, :2]
+                            print(f"Rock centers: {rock_centers.shape}")
+                            Rerun.log_2d_obstacle_map(
+                                topic="/local/obstacles",
+                                frame_id=self.step,
+                                centers=rock_centers,
+                                radii=data["rock_data"]["radii"],
+                            )
+                    else:
+                        print("No safe paths found!")
 
             if LOG_DATA:
                 self.data_logger.log_images(self.step, input_data)
+            if RERUN:
+                Rerun.log_img(images_gray["FrontLeft"])
 
         """ Control """
         if self.step < ARM_RAISE_WAIT_FRAMES:  # Wait for arms to raise before moving
@@ -262,6 +296,26 @@ class NavAgent(AutonomousAgent):
         if LOG_DATA:
             self.data_logger.log_data(self.step, control, self.current_pose)
 
+        """ Update state """
+        slam_poses = self.backend.get_trajectory()
+        self.current_pose = slam_poses[-1]
+        self.current_velocity = self.frontend.current_velocity
+
+        """ Rerun logging """
+        if RERUN:
+            gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
+            slam_trajectory = get_positions_from_poses(slam_poses)
+            position_error = slam_trajectory[-1] - ground_truth_pose[:3, 3]
+            Rerun.log_3d_trajectory(
+                self.step, gt_trajectory, trajectory_string="ground_truth", color=[20, 20, 20]
+            )
+            Rerun.log_3d_trajectory(
+                self.step, slam_trajectory, trajectory_string="slam", color=[0, 50, 200]
+            )
+            Rerun.log_2d_seq_scalar("/trajectory_error/err_x", self.step, position_error[0])
+            Rerun.log_2d_seq_scalar("/trajectory_error/err_y", self.step, position_error[1])
+            Rerun.log_2d_seq_scalar("/trajectory_error/err_z", self.step, position_error[2])
+
         print("\n-----------------------------------------------")
 
         return control
@@ -273,6 +327,7 @@ class NavAgent(AutonomousAgent):
         map_array = g_map.get_map_array()
         semantic_points = self.backend.project_point_map()
         map_array = process_map(semantic_points, map_array)
+        return map_array.copy()
 
     def finalize(self):
         print("Running finalize")
@@ -280,6 +335,3 @@ class NavAgent(AutonomousAgent):
 
         if LOG_DATA:
             self.data_logger.save_log()
-
-        if DISPLAY_IMAGES:
-            cv.destroyAllWindows()

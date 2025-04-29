@@ -176,22 +176,20 @@ class SlamAgent(AutonomousAgent):
 
             if len(self.backend.point_map) > 0 and RERUN_PLOT_POINTS:
                 semantic_points = self.backend.project_point_map()
-                ground_points = semantic_points.points[
-                    semantic_points.labels == SemanticClasses.GROUND.value
-                ]
-                rock_points = semantic_points.points[
-                    semantic_points.labels == SemanticClasses.ROCK.value
-                ]
-                lander_points = semantic_points.points[
-                    semantic_points.labels == SemanticClasses.LANDER.value
-                ]
-                Rerun.log_3d_points(
-                    ground_points, topic="/world/ground_points", color=[120, 0, 255]
-                )
-                Rerun.log_3d_points(rock_points, topic="/world/rock_points", color=[255, 0, 0])
-                Rerun.log_3d_points(lander_points, topic="/world/lander_points", color=[0, 255, 0])
+                Rerun.log_3d_semantic_points(semantic_points)
 
-        # Rerun logging
+        """ Control """
+        if self.step < ARM_RAISE_WAIT_FRAMES:
+            control = carla.VehicleVelocityControl(0.0, 0.0)
+        elif TELEOP:
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        else:
+            control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
+
+        """ Data logging """
+        self.data_logger.log_data(self.step, control)
+
+        """ Rerun logging """
         gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
         slam_trajectory = get_positions_from_poses(self.backend.get_trajectory())
         position_error = slam_trajectory[-1] - ground_truth_pose[:3, 3]
@@ -205,17 +203,6 @@ class SlamAgent(AutonomousAgent):
         Rerun.log_2d_seq_scalar("trajectory_error/err_y", self.step, position_error[1])
         Rerun.log_2d_seq_scalar("trajectory_error/err_z", self.step, position_error[2])
 
-        """ Control """
-        if self.step < ARM_RAISE_WAIT_FRAMES:
-            control = carla.VehicleVelocityControl(0.0, 0.0)
-        elif TELEOP:
-            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
-        else:
-            control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
-            # control = carla.VehicleVelocityControl(self.current_v, self.current_w)
-
-        """ Data logging """
-        self.data_logger.log_data(self.step, control)
         print("\n-----------------------------------------------")
 
         return control

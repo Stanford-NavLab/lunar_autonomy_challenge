@@ -9,7 +9,7 @@ from lac.perception.depth import (
     compute_rock_coords_rover_frame,
     compute_rock_radii,
 )
-from lac.params import STEREO_BASELINE, FL_X
+from lac.params import STEREO_BASELINE, FL_X, DT
 
 KEYFRAME_INTERVAL = 20  # Interval for keyframe selection (steps)
 
@@ -18,8 +18,12 @@ class Frontend:
     """Frontend for SLAM"""
 
     def __init__(self, feature_tracker: SemanticFeatureTracker):
+        # Modules
         self.feature_tracker = feature_tracker
         self.segmentation = UnetSegmentation()
+
+        # State variables
+        self.current_velocity = np.zeros(3)
 
     def initialize(self, left_image: np.ndarray, right_image: np.ndarray):
         """Initialize from initial frame"""
@@ -59,6 +63,8 @@ class Frontend:
         if odometry is None:
             # TODO: compute IMU odometry
             odometry = data["imu"]
+
+        self.current_velocity = odometry[:3, 3] / DT
 
         # Add frontend outputs
         data["odometry"] = odometry

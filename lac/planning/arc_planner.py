@@ -130,7 +130,7 @@ class ArcPlanner:
                     valid = False
                     break
                 # Check if arc is inside any rocks
-                for rock, radius in zip(rock_data["centers"], rock_radii):
+                for rock, radius in zip(rock_data["centers"], rock_data["radii"]):
                     if radius > params.ROCK_MIN_RADIUS:
                         if 0.19 < radius < 0.2:
                             print(radius)

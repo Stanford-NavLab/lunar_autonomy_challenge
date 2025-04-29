@@ -10,6 +10,9 @@ import rerun as rr
 import rerun.blueprint as rrb
 import math as math
 
+from lac.perception.segmentation import SemanticClasses
+from lac.slam.backend import SemanticPointCloud
+
 
 class Rerun:
     # Static parameters
@@ -57,14 +60,16 @@ class Rerun:
             rrb.Horizontal(
                 rrb.Horizontal(
                     rrb.TimeSeriesView(origin="/trajectory_error"),
-                    rrb.TimeSeriesView(origin="/trajectory_stats"),
+                    rrb.TimeSeriesView(origin="/scores"),
                     column_shares=[1, 1],
                 ),
                 rrb.Spatial2DView(
                     name="Local frame",
                     origin="/local",
                     background=[50, 50, 50],
-                    visual_bounds=rrb.VisualBounds2D(x_range=np.array([0, 5]), y_range=np.array([-5, 5])),
+                    visual_bounds=rrb.VisualBounds2D(
+                        x_range=np.array([0, 5]), y_range=np.array([-5, 5])
+                    ),
                 ),
                 column_shares=[3, 2],
             ),
@@ -147,6 +152,19 @@ class Rerun:
             ),
         )
 
+    @staticmethod
+    def log_3d_semantic_points(semantic_points: SemanticPointCloud) -> None:
+        ground_points = semantic_points.points[
+            semantic_points.labels == SemanticClasses.GROUND.value
+        ]
+        rock_points = semantic_points.points[semantic_points.labels == SemanticClasses.ROCK.value]
+        lander_points = semantic_points.points[
+            semantic_points.labels == SemanticClasses.LANDER.value
+        ]
+        Rerun.log_3d_points(ground_points, topic="/world/ground_points", color=[120, 0, 255])
+        Rerun.log_3d_points(rock_points, topic="/world/rock_points", color=[255, 0, 0])
+        Rerun.log_3d_points(lander_points, topic="/world/lander_points", color=[0, 255, 0])
+
     # ===================================================================================
     # 2D logging
     # ===================================================================================
@@ -168,7 +186,9 @@ class Rerun:
 
     # TODO: test
     @staticmethod
-    def log_2d_obstacle_map(topic: str, frame_id: int, centers: np.ndarray, radii: np.ndarray) -> None:
+    def log_2d_obstacle_map(
+        topic: str, frame_id: int, centers: np.ndarray, radii: np.ndarray
+    ) -> None:
         rr.set_time_sequence("frame_id", frame_id)
         centers = np.column_stack((centers[:, 1], -centers[:, 0]))
         rr.log(
