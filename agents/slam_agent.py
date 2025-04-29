@@ -16,40 +16,26 @@ import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import (
-    pose_to_pos_rpy,
-    transform_to_numpy,
-    transform_to_pos_rpy,
-)
-from lac.perception.depth import (
-    stereo_depth_from_segmentation,
-    compute_rock_coords_rover_frame,
-    compute_rock_radii,
-)
+from lac.util import transform_to_numpy
 from lac.perception.segmentation import SemanticClasses
 from lac.planning.waypoint_planner import WaypointPlanner
-from lac.control.controller import ArcPlanner
-from lac.control.controller import waypoint_steering
+from lac.planning.arc_planner import ArcPlanner
+from lac.control.steering import waypoint_steering
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
 from lac.slam.frontend import Frontend
 from lac.slam.backend import Backend
 from lac.mapping.mapper import process_map
 from lac.utils.data_logger import DataLogger
 from lac.utils.rerun_interface import Rerun
-from lac.utils.visualization import (
-    overlay_mask,
-    draw_steering_arc,
-    overlay_stereo_rock_depths,
-)
 from lac.util import get_positions_from_poses
 import lac.params as params
 
 """ Agent parameters and settings """
 USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 100  # Number of frames to wait for the arms to raise
-GRAPH_OPTIMIZE_RATE = 500  # Optimize graph every N steps
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
+RERUN_PLOT_POINTS = False  # Whether to plot points in rerun
 TELEOP = False  # Whether to use teleop control or autonomous control
 
 
@@ -100,7 +86,7 @@ class SlamAgent(AutonomousAgent):
             self.get_initial_lander_position()
         )
         self.planner = WaypointPlanner(
-            self.initial_pose, spiral_min=3.5, spiral_max=4.0, spiral_step=0.25, repeat=0
+            self.initial_pose, spiral_min=3.0, spiral_max=7.0, spiral_step=0.25, repeat=0
         )
         self.arc_planner = ArcPlanner()
 
@@ -112,7 +98,6 @@ class SlamAgent(AutonomousAgent):
         """ Data logging """
         agent_name = get_entry_point()
         self.data_logger = DataLogger(self, agent_name, self.cameras)
-        self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
 
         Rerun.init_vo()
         self.gt_poses = [self.initial_pose]
@@ -189,24 +174,22 @@ class SlamAgent(AutonomousAgent):
             self.data_logger.log_images(self.step, input_data)
             Rerun.log_img(images_gray["FrontLeft"])
 
-            if len(self.backend.point_map) > 0:
+            if len(self.backend.point_map) > 0 and RERUN_PLOT_POINTS:
                 semantic_points = self.backend.project_point_map()
-                ground_points = semantic_points.points[
-                    semantic_points.labels == SemanticClasses.GROUND.value
-                ]
-                rock_points = semantic_points.points[
-                    semantic_points.labels == SemanticClasses.ROCK.value
-                ]
-                lander_points = semantic_points.points[
-                    semantic_points.labels == SemanticClasses.LANDER.value
-                ]
-                Rerun.log_3d_points(
-                    ground_points, topic="/world/ground_points", color=[120, 0, 255]
-                )
-                Rerun.log_3d_points(rock_points, topic="/world/rock_points", color=[255, 0, 0])
-                Rerun.log_3d_points(lander_points, topic="/world/lander_points", color=[0, 255, 0])
+                Rerun.log_3d_semantic_points(semantic_points)
 
-        # Rerun logging
+        """ Control """
+        if self.step < ARM_RAISE_WAIT_FRAMES:
+            control = carla.VehicleVelocityControl(0.0, 0.0)
+        elif TELEOP:
+            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        else:
+            control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
+
+        """ Data logging """
+        self.data_logger.log_data(self.step, control)
+
+        """ Rerun logging """
         gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
         slam_trajectory = get_positions_from_poses(self.backend.get_trajectory())
         position_error = slam_trajectory[-1] - ground_truth_pose[:3, 3]
@@ -220,17 +203,6 @@ class SlamAgent(AutonomousAgent):
         Rerun.log_2d_seq_scalar("trajectory_error/err_y", self.step, position_error[1])
         Rerun.log_2d_seq_scalar("trajectory_error/err_z", self.step, position_error[2])
 
-        """ Control """
-        if self.step < ARM_RAISE_WAIT_FRAMES:
-            control = carla.VehicleVelocityControl(0.0, 0.0)
-        elif TELEOP:
-            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
-        else:
-            control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
-            # control = carla.VehicleVelocityControl(self.current_v, self.current_w)
-
-        """ Data logging """
-        self.data_logger.log_data(self.step, control)
         print("\n-----------------------------------------------")
 
         return control

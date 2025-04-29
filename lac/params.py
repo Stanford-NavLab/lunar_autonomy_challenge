@@ -1,4 +1,8 @@
-"""Shared constants and parameters"""
+"""Shared constants and parameters
+
+TODO: keep only constants here, and move parameters to config json
+
+"""
 
 import numpy as np
 import json

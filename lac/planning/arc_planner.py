@@ -1,13 +1,13 @@
-"""Controller module for the LAC challenge."""
+"""Sampling-based Arc Path Planner
 
-from math import pi
+Similar to Direct-Window-Approach (DWA)
+
+"""
+
 import numpy as np
-import cv2 as cv
 
-from lac.perception.depth import project_pixel_to_rover
-from lac.control.dynamics import arc, dubins_traj
+from lac.control.dynamics import dubins_traj
 from lac.utils.frames import invert_transform_mat, apply_transform
-from lac.util import mask_centroid, wrap_angle, pose_to_pos_rpy
 import lac.params as params
 
 

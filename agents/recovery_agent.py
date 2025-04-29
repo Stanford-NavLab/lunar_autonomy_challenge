@@ -4,34 +4,28 @@
 # For a copy, see <https://opensource.org/licenses/MIT>.
 
 """
-Full agent
+Collision recovery agent
 
 """
 
 import carla
 import cv2 as cv
 import numpy as np
-import json
-from PIL import Image
 import signal
 import pickle
+
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import (
-    pose_to_pos_rpy,
-    transform_to_numpy,
-    transform_to_pos_rpy,
-)
+from lac.util import transform_to_numpy
 from lac.perception.segmentation import UnetSegmentation
 from lac.perception.depth import (
     stereo_depth_from_segmentation,
     compute_rock_coords_rover_frame,
     compute_rock_radii,
 )
-from lac.control.controller import waypoint_steering, ArcPlanner
+from lac.control.steering import waypoint_steering
+from lac.planning.arc_planner import ArcPlanner
 from lac.planning.waypoint_planner import WaypointPlanner
-from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
-from lac.localization.imu_dynamics import propagate_state
 from lac.utils.visualization import (
     overlay_mask,
     draw_steering_arc,
@@ -293,7 +287,6 @@ class RecoveryAgent(AutonomousAgent):
                     waypoint, nav_pose, rock_coords, rock_radii
                 )
                 if control is None:
-
                     control = self.run_backup_maneuver()
                     self.path_planner_statistics["planner_failure"].append(
                         (self.step, ground_truth_pose)

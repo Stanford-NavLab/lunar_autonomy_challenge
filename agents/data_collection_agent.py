@@ -17,7 +17,7 @@ import signal
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.planning.waypoint_planner import WaypointPlanner
-from lac.control.controller import waypoint_steering
+from lac.control.steering import waypoint_steering
 from lac.utils.data_logger import DataLogger
 from lac.util import transform_to_numpy
 import lac.params as params
