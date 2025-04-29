@@ -47,7 +47,9 @@ class Frontend:
         stereo_depth_results = stereo_depth_from_segmentation(
             left_seg_masks, right_seg_masks, STEREO_BASELINE, FL_X
         )
-        rock_coords = compute_rock_coords_rover_frame(stereo_depth_results, self.cameras)
+        rock_coords = compute_rock_coords_rover_frame(
+            stereo_depth_results, self.feature_tracker.cam_config
+        )
         rock_radii = compute_rock_radii(stereo_depth_results)
 
         # Feature tracking and VO

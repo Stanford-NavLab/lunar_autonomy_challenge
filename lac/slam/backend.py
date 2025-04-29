@@ -12,7 +12,7 @@ from lac.utils.frames import apply_transform
 from lac.util import rotation_matrix_error
 
 LOOP_CLOSURE_EXCLUDE = 10  # Exclude the last N keyframes
-LOOP_CLOSURE_DIST_THRESHOLD = 0.25  # meters
+LOOP_CLOSURE_DIST_THRESHOLD = 0.35  # meters
 LOOP_CLOSURE_ANGLE_THRESHOLD = 5.0  # degrees
 
 

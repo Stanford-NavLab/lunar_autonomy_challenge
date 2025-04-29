@@ -27,8 +27,9 @@ from lac.perception.depth import (
     compute_rock_coords_rover_frame,
     compute_rock_radii,
 )
-from lac.slam.visual_odometry import StereoVisualOdometry
-from lac.slam.feature_tracker import FeatureTracker
+from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
+from lac.slam.frontend import Frontend
+from lac.slam.backend import Backend
 from lac.control.controller import ArcPlanner
 from lac.planning.waypoint_planner import WaypointPlanner
 from lac.mapping.mapper import bin_points_to_grid, interpolate_heights
@@ -117,7 +118,7 @@ class NavAgent(AutonomousAgent):
             }
         self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
-        """ Planner """
+        """ Planning """
         self.initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = self.initial_pose @ transform_to_numpy(
             self.get_initial_lander_position()
@@ -125,21 +126,16 @@ class NavAgent(AutonomousAgent):
         self.planner = WaypointPlanner(
             self.initial_pose, spiral_min=2.5, spiral_max=2.5, spiral_step=1.0
         )
+        self.arc_planner = ArcPlanner()
 
         """ State variables """
         self.current_pose = self.initial_pose
         self.current_velocity = np.zeros(3)
 
         """ SLAM """
-        self.svo = StereoVisualOdometry(self.cameras)
-        self.svo_poses = [self.initial_pose]
-        self.feature_tracker = FeatureTracker(self.cameras)
-        self.ground_points = []
-        self.rock_detections = {}
-        self.rock_points = []
-
-        """ Path planner """
-        self.arc_planner = ArcPlanner()
+        feature_tracker = SemanticFeatureTracker(self.cameras)
+        self.frontend = Frontend(feature_tracker)
+        self.backend = Backend(self.initial_pose, feature_tracker)
 
         """ Data logging """
         if LOG_DATA:
@@ -174,7 +170,6 @@ class NavAgent(AutonomousAgent):
         return self.step % 2 == 0  # Image data is available every other step
 
     def use_fiducials(self):
-        """We want to use the fiducials, so we return True."""
         return USE_FIDUCIALS
 
     def sensors(self):
@@ -259,98 +254,19 @@ class NavAgent(AutonomousAgent):
 
         """ Image processing """
         if self.image_available():
-            FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-            FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
+            images_gray = {}
+            for cam in self.active_cameras:
+                images_gray[cam] = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
 
+            # Stereo VO
             if self.step >= ARM_RAISE_WAIT_FRAMES:
-                # VO
                 if self.step == ARM_RAISE_WAIT_FRAMES:
-                    self.svo.initialize(self.current_pose, FL_gray, FR_gray)
+                    self.frontend.initialize(images_gray["FrontLeft"], images_gray["FrontRight"])
                 else:
-                    self.svo.track(FL_gray, FR_gray)
-                self.svo_poses.append(self.svo.get_pose())
-                self.current_velocity = (
-                    self.svo.get_pose()[:3, 3] - self.current_pose[:3, 3]
-                ) / params.DT
-                self.current_pose = self.svo.get_pose()
-
-                # Run segmentation
-                left_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(
-                    FL_gray, output_pred=True
-                )
-                right_seg_masks, right_labels = self.segmentation.segment_rocks(FR_gray)
-                left_full_mask = np.clip(left_labels, 0, 1).astype(np.uint8)
-
-                # Stereo rock depth
-                stereo_depth_results = stereo_depth_from_segmentation(
-                    left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
-                )
-                rock_coords = compute_rock_coords_rover_frame(stereo_depth_results, self.cameras)
-                rock_radii = compute_rock_radii(stereo_depth_results)
-
-                # Add points for rock mapping
-                if self.step % 20 == 0:
-                    rock_points_world = apply_transform(self.current_pose, rock_coords)
-                    self.rock_points.append(rock_points_world)
-
-                # Feature matching depth
-                feats_left, feats_right, matches, depths = self.feature_tracker.process_stereo(
-                    FL_gray, FR_gray, return_matched_feats=True
-                )
-
-                # Extract ground points for height mapping
-                left_ground_mask = left_pred == SemanticClasses.GROUND.value
-                kps_left = feats_left["keypoints"][0].cpu().numpy()
-                ground_idxs = []
-                for i, kp in enumerate(kps_left):
-                    if left_ground_mask[int(kp[1]), int(kp[0])]:
-                        ground_idxs.append(i)
-                ground_kps = kps_left[ground_idxs]
-                ground_depths = depths[ground_idxs]
-                ground_points_world = self.feature_tracker.project_stereo(
-                    self.current_pose, ground_kps, ground_depths
-                )
-                self.ground_points.append(ground_points_world)
-
-                if BACK_CAMERAS:
-                    BL_gray = input_data["Grayscale"][carla.SensorPosition.BackLeft]
-                    BR_gray = input_data["Grayscale"][carla.SensorPosition.BackRight]
-
-                    left_seg_masks, _, left_pred = self.segmentation.segment_rocks(
-                        BL_gray, output_pred=True
-                    )
-                    right_seg_masks, _ = self.segmentation.segment_rocks(BR_gray)
-
-                    back_stereo_depth_results = stereo_depth_from_segmentation(
-                        left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
-                    )
-                    back_rock_coords = compute_rock_coords_rover_frame(
-                        back_stereo_depth_results, self.cameras, cam_name="BackLeft"
-                    )
-
-                    # Add points for rock mapping
-                    if self.step % 20 == 0:
-                        rock_points_world = apply_transform(self.current_pose, back_rock_coords)
-                        self.rock_points.append(rock_points_world)
-
-                    # Feature matching depth
-                    feats_left, feats_right, matches, depths = self.feature_tracker.process_stereo(
-                        BL_gray, BR_gray, return_matched_feats=True
-                    )
-
-                    # Extract ground points for height mapping
-                    left_ground_mask = left_pred == SemanticClasses.GROUND.value
-                    kps_left = feats_left["keypoints"][0].cpu().numpy()
-                    ground_idxs = []
-                    for i, kp in enumerate(kps_left):
-                        if left_ground_mask[int(kp[1]), int(kp[0])]:
-                            ground_idxs.append(i)
-                    ground_kps = kps_left[ground_idxs]
-                    ground_depths = depths[ground_idxs]
-                    ground_points_world = self.feature_tracker.project_stereo(
-                        self.current_pose, ground_kps, ground_depths, cam_name="BackLeft"
-                    )
-                    self.ground_points.append(ground_points_world)
+                    images_gray["step"] = self.step
+                    images_gray["imu"] = self.get_imu_data()
+                    data = self.frontend.process_frame(images_gray)
+                    self.backend.update(data)
 
                 # Path planning
                 control, path, waypoint_local = self.arc_planner.plan_arc(

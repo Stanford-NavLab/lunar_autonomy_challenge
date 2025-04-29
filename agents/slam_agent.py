@@ -16,16 +16,7 @@ import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import (
-    pose_to_pos_rpy,
-    transform_to_numpy,
-    transform_to_pos_rpy,
-)
-from lac.perception.depth import (
-    stereo_depth_from_segmentation,
-    compute_rock_coords_rover_frame,
-    compute_rock_radii,
-)
+from lac.util import transform_to_numpy
 from lac.perception.segmentation import SemanticClasses
 from lac.planning.waypoint_planner import WaypointPlanner
 from lac.control.controller import ArcPlanner
@@ -36,20 +27,15 @@ from lac.slam.backend import Backend
 from lac.mapping.mapper import process_map
 from lac.utils.data_logger import DataLogger
 from lac.utils.rerun_interface import Rerun
-from lac.utils.visualization import (
-    overlay_mask,
-    draw_steering_arc,
-    overlay_stereo_rock_depths,
-)
 from lac.util import get_positions_from_poses
 import lac.params as params
 
 """ Agent parameters and settings """
 USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 100  # Number of frames to wait for the arms to raise
-GRAPH_OPTIMIZE_RATE = 500  # Optimize graph every N steps
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
+RERUN_PLOT_POINTS = False  # Whether to plot points in rerun
 TELEOP = False  # Whether to use teleop control or autonomous control
 
 
@@ -100,7 +86,7 @@ class SlamAgent(AutonomousAgent):
             self.get_initial_lander_position()
         )
         self.planner = WaypointPlanner(
-            self.initial_pose, spiral_min=3.5, spiral_max=4.0, spiral_step=0.25, repeat=0
+            self.initial_pose, spiral_min=3.0, spiral_max=7.0, spiral_step=0.25, repeat=0
         )
         self.arc_planner = ArcPlanner()
 
@@ -112,7 +98,6 @@ class SlamAgent(AutonomousAgent):
         """ Data logging """
         agent_name = get_entry_point()
         self.data_logger = DataLogger(self, agent_name, self.cameras)
-        self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
 
         Rerun.init_vo()
         self.gt_poses = [self.initial_pose]
@@ -189,7 +174,7 @@ class SlamAgent(AutonomousAgent):
             self.data_logger.log_images(self.step, input_data)
             Rerun.log_img(images_gray["FrontLeft"])
 
-            if len(self.backend.point_map) > 0:
+            if len(self.backend.point_map) > 0 and RERUN_PLOT_POINTS:
                 semantic_points = self.backend.project_point_map()
                 ground_points = semantic_points.points[
                     semantic_points.labels == SemanticClasses.GROUND.value
