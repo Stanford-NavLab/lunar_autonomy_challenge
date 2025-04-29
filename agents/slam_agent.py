@@ -19,8 +19,8 @@ from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 from lac.util import transform_to_numpy
 from lac.perception.segmentation import SemanticClasses
 from lac.planning.waypoint_planner import WaypointPlanner
-from lac.control.controller import ArcPlanner
-from lac.control.controller import waypoint_steering
+from lac.planning.arc_planner import ArcPlanner
+from lac.control.steering import waypoint_steering
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
 from lac.slam.frontend import Frontend
 from lac.slam.backend import Backend

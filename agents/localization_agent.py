@@ -14,11 +14,11 @@ import carla
 import cv2 as cv
 import lac.params as params
 import numpy as np
-from lac.control.controller import waypoint_steering
+from lac.control.steering import waypoint_steering
 from lac.localization.ekf import EKF, create_Q, get_pose_measurement_tag
 from lac.localization.imu_dynamics import propagate_state
 from lac.perception.vision import FiducialLocalizer
-from lac.planning.waypoint_planner import Planner
+from lac.planning.waypoint_planner import WaypointPlanner
 from lac.util import (
     pos_rpy_to_pose,
     pose_to_pos_rpy,
@@ -80,7 +80,7 @@ class LocalizationAgent(AutonomousAgent):
         """ Planner """
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(initial_pose)
+        self.planner = WaypointPlanner(initial_pose)
 
         """ Localization """
         self.fid_localizer = FiducialLocalizer(self.cameras)

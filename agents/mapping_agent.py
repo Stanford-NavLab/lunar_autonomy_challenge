@@ -16,22 +16,17 @@ import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import (
-    pose_to_pos_rpy,
-    transform_to_numpy,
-    transform_to_pos_rpy,
-)
+from lac.util import transform_to_numpy
 from lac.perception.segmentation import UnetSegmentation, SemanticClasses
-from lac.planning.waypoint_planner import Planner
+from lac.planning.waypoint_planner import WaypointPlanner
 from lac.slam.visual_odometry import StereoVisualOdometry
 from lac.slam.feature_tracker import FeatureTracker
-from lac.control.controller import waypoint_steering
+from lac.control.steering import waypoint_steering
 from lac.mapping.mapper import Mapper
 from lac.utils.data_logger import DataLogger
 from lac.utils.visualization import (
     overlay_mask,
     draw_steering_arc,
-    overlay_stereo_rock_depths,
 )
 from lac.utils.rerun_interface import Rerun
 import lac.params as params
@@ -97,7 +92,7 @@ class MappingAgent(AutonomousAgent):
         self.lander_pose = self.initial_pose @ transform_to_numpy(
             self.get_initial_lander_position()
         )
-        self.planner = Planner(self.initial_pose)
+        self.planner = WaypointPlanner(self.initial_pose)
 
         """ State variables """
         self.current_pose = self.initial_pose

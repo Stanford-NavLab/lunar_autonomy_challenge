@@ -1,86 +1,14 @@
-"""Controller module for the LAC challenge."""
+"""Sampling-based Arc Path Planner
 
-from math import pi
+Similar to Direct-Window-Approach (DWA)
+
+"""
+
 import numpy as np
-import cv2 as cv
 
-from lac.perception.depth import project_pixel_to_rover
-from lac.control.dynamics import arc, dubins_traj
+from lac.control.dynamics import dubins_traj
 from lac.utils.frames import invert_transform_mat, apply_transform
-from lac.util import mask_centroid, wrap_angle, pose_to_pos_rpy
 import lac.params as params
-
-
-def waypoint_steering(waypoint: np.ndarray, current_pose: np.ndarray) -> float:
-    """Compute steering to point to a waypoint."""
-    pos, rpy = pose_to_pos_rpy(current_pose)
-    angle_to_waypoint = np.arctan2(waypoint[1] - pos[1], waypoint[0] - pos[0])
-    angle_diff = wrap_angle(angle_to_waypoint - rpy[2])  # [rad]
-    steering = np.clip(params.KP_STEER * angle_diff, -params.MAX_STEER, params.MAX_STEER)
-    return steering
-
-
-def segmentation_steering(masks: list[np.ndarray]) -> float:
-    """Compute a steering delta based on segmentation results to avoid rocks.
-
-    TODO: account for offset due to operating on left camera
-    """
-    max_area = 0
-    max_mask = None
-    for mask in masks:
-        mask_area = np.sum(mask)
-        if mask_area > max_area:
-            max_area = mask_area
-            max_mask = mask
-    steer_delta = 0
-    if max_mask is not None and max_area > params.ROCK_MASK_AVOID_MIN_AREA:
-        max_mask = max_mask.astype(np.uint8)
-        cx, _ = mask_centroid(max_mask)
-        x, _, w, _ = cv.boundingRect(max_mask)
-        offset = params.IMG_WIDTH / 2 - cx
-        if offset > 0:  # Turn right
-            steer_delta = -min(
-                params.MAX_STEER_DELTA * ((x + w) - cx) / 100, params.MAX_STEER_DELTA
-            )
-        else:  # Turn left
-            steer_delta = min(params.MAX_STEER_DELTA * (cx - x) / 100, params.MAX_STEER_DELTA)
-    return steer_delta
-
-
-def rock_avoidance_steering(depth_results: dict, cam_config: dict) -> float:
-    """Compute a steering delta based on segmentation results to avoid rocks."""
-    ROCK_AVOID_DIST = 4.0
-    K_AVOID = 0.6
-
-    rock_points_rover_frame = []
-    mask_areas = []
-    distances = []
-    for rock in depth_results:
-        rock_point_rover_frame = project_pixel_to_rover(
-            rock["left_centroid"], rock["depth"], "FrontLeft", cam_config
-        )
-        distance = np.linalg.norm(rock_point_rover_frame)
-        if distance < ROCK_AVOID_DIST:
-            rock_points_rover_frame.append(rock_point_rover_frame)
-            mask_areas.append(rock["left_mask"].sum())
-            distances.append(distance)
-
-    if len(mask_areas) == 0:
-        return 0.0
-
-    max_mask_area_idx = np.argmax(mask_areas)
-    if mask_areas[max_mask_area_idx] < params.ROCK_MASK_AVOID_MIN_AREA:
-        return 0.0
-
-    rock_point = rock_points_rover_frame[max_mask_area_idx]
-    distance = distances[max_mask_area_idx]
-    if distance > ROCK_AVOID_DIST:
-        return 0.0
-    else:
-        MAX_STEER_DELTA = 0.8
-        steer_mag = min(MAX_STEER_DELTA, K_AVOID * (ROCK_AVOID_DIST - distance) ** 2)
-        # steer_mag = K_AVOID * (ROCK_AVOID_DIST - distance) ** 2
-        return -np.sign(rock_point[1]) * steer_mag
 
 
 class ArcPlanner:
@@ -92,7 +20,21 @@ class ArcPlanner:
         arc_duration: float | tuple[float, float] = 4.0,
         max_omega: float | tuple[float, float] = 1,
     ):
+        """Initialize the arc planner
 
+        Parameters
+        ----------
+        arc_config : int | tuple[int, int]
+            Number of omega values to sample for the first and second arcs
+            (if is_branch is True)
+        arc_duration : float | tuple[float, float]
+            Duration of the arc in seconds
+            (if is_branch is True, this is the duration of the first arc)
+        max_omega : float | tuple[float, float]
+            Maximum angular velocity in rad/s
+            (if is_branch is True, this is the maximum angular velocity of the first arc)
+
+        """
         MAX_OMEGA = max_omega  # [rad/s]
         ARC_DURATION = arc_duration  # [s]
         NUM_ARC_POINTS = int(ARC_DURATION / params.DT)
@@ -102,7 +44,8 @@ class ArcPlanner:
         self.root_vw = []
         self.vw = []
         self.scale = 0.5
-        if type(arc_config) == int:
+
+        if isinstance(arc_config, int):
             self.is_branch = False
             NUM_OMEGAS_1 = arc_config
             self.omegas1 = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS_1)
@@ -138,12 +81,8 @@ class ArcPlanner:
         self.np_candidate_arcs = np.array(self.candidate_arcs)
 
     def plan_arc(
-        self,
-        waypoint_global: np.ndarray,
-        current_pose: np.ndarray,
-        rock_coords: np.ndarray,
-        rock_radii: list,
-    ):
+        self, waypoint_global: np.ndarray, current_pose: np.ndarray, rock_data: dict
+    ) -> tuple:
         """Plan an arc to a waypoint while avoiding rocks and lander
 
         Given rock coordinates and radii in rover local frame, select the path with lowest cost
@@ -191,7 +130,7 @@ class ArcPlanner:
                     valid = False
                     break
                 # Check if arc is inside any rocks
-                for rock, radius in zip(rock_coords, rock_radii):
+                for rock, radius in zip(rock_data["centers"], rock_radii):
                     if radius > params.ROCK_MIN_RADIUS:
                         if 0.19 < radius < 0.2:
                             print(radius)

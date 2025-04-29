@@ -15,31 +15,16 @@ import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import (
-    pose_to_pos_rpy,
-    transform_to_numpy,
-    transform_to_pos_rpy,
-)
-from lac.perception.segmentation import UnetSegmentation, SemanticClasses
-from lac.perception.depth import (
-    stereo_depth_from_segmentation,
-    project_pixel_to_world,
-    compute_rock_coords_rover_frame,
-    compute_rock_radii,
-)
+from lac.util import transform_to_numpy
+from lac.perception.segmentation import UnetSegmentation
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
 from lac.slam.frontend import Frontend
 from lac.slam.backend import Backend
-from lac.control.controller import ArcPlanner
+from lac.planning.arc_planner import ArcPlanner
 from lac.planning.waypoint_planner import WaypointPlanner
-from lac.mapping.mapper import bin_points_to_grid, interpolate_heights
-from lac.utils.visualization import (
-    overlay_mask,
-    draw_steering_arc,
-    overlay_stereo_rock_depths,
-)
-from lac.utils.frames import apply_transform
+from lac.mapping.mapper import process_map
 from lac.utils.data_logger import DataLogger
+from lac.utils.rerun_interface import Rerun
 import lac.params as params
 
 
@@ -153,19 +138,6 @@ class NavAgent(AutonomousAgent):
         self.set_front_arm_angle(params.ARM_ANGLE_STATIC_RAD)
         self.set_back_arm_angle(params.ARM_ANGLE_STATIC_RAD)
 
-        # Initialize the map
-        g_map = self.get_geometric_map()
-        map_array = g_map.get_map_array()
-        map_array[:, :, 2] = self.initial_pose[2, 3]  # Height
-        map_array[:, :, 3] = 1.0  # Rocks
-        # TODO: clear a patch of no rock around the initial pose and lander
-        i, j = g_map.get_cell_indexes(self.initial_pose[0, 3], self.initial_pose[1, 3])
-        r = int(params.ROVER_RADIUS / params.CELL_WIDTH)
-        map_array[i - r : i + r, j - r : j + r, 3] = 0.0
-        i, j = g_map.get_cell_indexes(0, 0)
-        r = int(params.LANDER_WIDTH / (2 * params.CELL_WIDTH))
-        map_array[i - r : i + r, j - r : j + r, 3] = 0.0
-
     def image_available(self):
         return self.step % 2 == 0  # Image data is available every other step
 
@@ -234,10 +206,6 @@ class NavAgent(AutonomousAgent):
         if self.stuck_timer > 0:
             self.stuck_timer += 1
 
-        if EARLY_STOP_STEP != 0 and self.step >= EARLY_STOP_STEP:
-            self.mission_complete()
-            return carla.VehicleVelocityControl(0.0, 0.0)
-
         if not EVAL:
             ground_truth_pose = transform_to_numpy(self.get_transform())
 
@@ -270,19 +238,12 @@ class NavAgent(AutonomousAgent):
 
                 # Path planning
                 control, path, waypoint_local = self.arc_planner.plan_arc(
-                    waypoint, nav_pose, rock_coords, rock_radii
+                    waypoint, nav_pose, data["rock_data"]
                 )
                 if control is not None:
                     self.current_v, self.current_w = control
                 else:
                     print("No safe paths found!")
-
-                if DISPLAY_IMAGES:
-                    overlay = overlay_mask(FL_gray, left_full_mask, color=(0, 0, 1))
-                    overlay = draw_steering_arc(overlay, self.current_w, color=(255, 0, 0))
-                    overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
-                    cv.imshow("Rock segmentation", overlay)
-                    cv.waitKey(1)
 
             if LOG_DATA:
                 self.data_logger.log_images(self.step, input_data)
@@ -296,7 +257,6 @@ class NavAgent(AutonomousAgent):
             control = self.run_backup_maneuver()
         else:
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
-            # control = carla.VehicleVelocityControl(params.TARGET_SPEED, 0.0)  # drive straight
 
         """ Data logging """
         if LOG_DATA:
@@ -306,46 +266,17 @@ class NavAgent(AutonomousAgent):
 
         return control
 
-    def finalize(self):
-        print("Running finalize")
-
-        # Set the map
+    def update_map(self):
+        """Update the map with current backend state"""
+        print("Updating map")
         g_map = self.get_geometric_map()
         map_array = g_map.get_map_array()
+        semantic_points = self.backend.project_point_map()
+        map_array = process_map(semantic_points, map_array)
 
-        # Heights
-        if len(self.ground_points) > 0:
-            all_ground_points = np.concatenate(self.ground_points, axis=0)
-            ground_grid = bin_points_to_grid(all_ground_points)
-            map_array[:, :, 2] = ground_grid
-            map_array[:] = interpolate_heights(map_array)
-
-            # map_array[:, :, 3] = ground_grid == -np.inf
-            map_array[:, :, 3] = 0.0
-            rock_points = np.concatenate(self.rock_points, axis=0)
-            xmin, xmax = np.min(map_array[:, :, 0]), np.max(map_array[:, :, 0])
-            ymin, ymax = np.min(map_array[:, :, 1]), np.max(map_array[:, :, 1])
-            nx, ny = map_array.shape[:2]
-            for p in rock_points:
-                i = int((p[0] - xmin) / (xmax - xmin) * nx)
-                j = int((p[1] - ymin) / (ymax - ymin) * ny)
-                if 0 <= i < nx and 0 <= j < ny:
-                    map_array[i, j, 3] = 1.0
-
-            # if LOG_DATA:
-            #     np.save(
-            #         f"output/{get_entry_point()}/{params.DEFAULT_RUN_NAME}/ground_points.npy",
-            #         all_ground_points,
-            #     )
-
-        # Rocks
-        # map_array[:, :, 3] = 0.0
-        # for id, detections in self.rock_detections.items():
-        #     points = np.array(detections["points"])
-        #     avg_point = np.median(points, axis=0)
-        #     radii = np.array(detections["radii"])
-        #     avg_radius = np.median(radii)
-        #     g_map.set_rock(avg_point[0], avg_point[1], True)
+    def finalize(self):
+        print("Running finalize")
+        self.update_map()
 
         if LOG_DATA:
             self.data_logger.save_log()

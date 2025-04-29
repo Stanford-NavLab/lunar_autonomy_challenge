@@ -20,11 +20,7 @@ from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 import random
 from norfair import Detection, Tracker
 
-from lac.util import (
-    pose_to_pos_rpy,
-    transform_to_numpy,
-    transform_to_pos_rpy,
-)
+from lac.util import transform_to_numpy
 from lac.slam.rock_tracker import RockTracker
 from lac.perception.segmentation import UnetSegmentation
 from lac.perception.depth import (
@@ -33,12 +29,11 @@ from lac.perception.depth import (
     compute_rock_radii,
     project_pixel_to_rover,
 )
-from lac.control.controller import ArcPlanner
-from lac.planning.waypoint_planner import Planner
+from lac.planning.arc_planner import ArcPlanner
+from lac.planning.waypoint_planner import WaypointPlanner
 from lac.utils.visualization import (
     overlay_mask,
     draw_steering_arc,
-    overlay_stereo_rock_depths,
     overlay_points,
 )
 from lac.utils.data_logger import DataLogger
@@ -95,10 +90,9 @@ class RockMapAgent(AutonomousAgent):
         """ Planner """
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(initial_pose)
+        self.planner = WaypointPlanner(initial_pose)
 
         """ Path planner """
-        # TODO: initialize ArcPlanner
         self.arc_planner = ArcPlanner()
 
         """ Rock stuff """
@@ -115,7 +109,9 @@ class RockMapAgent(AutonomousAgent):
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.cameras)
             self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
-            self.rock_detections_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/rock_detections.json"
+            self.rock_detections_file = (
+                f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/rock_detections.json"
+            )
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
 
@@ -188,7 +184,9 @@ class RockMapAgent(AutonomousAgent):
                     self.rock_detections[i] = [rock_world_point]
                 self.rock_tracking_initialized = True
 
-            rock_coords = compute_rock_coords_rover_frame(stereo_depth_results, "FrontLeft", self.cameras)
+            rock_coords = compute_rock_coords_rover_frame(
+                stereo_depth_results, "FrontLeft", self.cameras
+            )
             rock_radii = compute_rock_radii(stereo_depth_results)
 
             # Track 2D detections
@@ -196,10 +194,14 @@ class RockMapAgent(AutonomousAgent):
                 detections = [Detection(p) for p in left_centroids]
                 tracked_objects = self.tracker.update(detections)
 
-            rock_points, left_rock_matched_pts = self.rock_tracker.detect_rocks(ground_truth_pose, FL_gray, FR_gray)
+            rock_points, left_rock_matched_pts = self.rock_tracker.detect_rocks(
+                ground_truth_pose, FL_gray, FR_gray
+            )
 
             # Path planning
-            control, path, waypoint_local = self.arc_planner.plan_arc(waypoint, nav_pose, rock_coords, rock_radii)
+            control, path, waypoint_local = self.arc_planner.plan_arc(
+                waypoint, nav_pose, rock_coords, rock_radii
+            )
             self.current_v, self.current_w = control
             print(f"Control: linear = {self.current_v}, angular = {self.current_w}")
             print(f"Waypoint_local: {waypoint_local}")
