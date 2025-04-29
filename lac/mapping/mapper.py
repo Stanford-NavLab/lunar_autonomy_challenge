@@ -4,10 +4,12 @@ import numpy as np
 from scipy.interpolate import griddata
 from scipy.stats import binned_statistic_2d
 
+from lac.slam.backend import SemanticPointCloud
+from lac.perception.segmentation import SemanticClasses
 from lac.perception.depth import project_rock_depths_to_world
 from lac.utils.frames import apply_transform
 from lac.util import pos_rpy_to_pose
-from lac.params import WHEEL_RIG_POINTS
+from lac.params import WHEEL_RIG_POINTS, MAP_EXTENT, MAP_SIZE
 
 
 def grid_to_points(grid: np.ndarray, remove_missing=True) -> np.ndarray:
@@ -24,12 +26,11 @@ def grid_to_points(grid: np.ndarray, remove_missing=True) -> np.ndarray:
 
 def bin_points_to_grid(points: np.ndarray) -> np.ndarray:
     x, y, z = points[:, 0], points[:, 1], points[:, 2]
-    x_min, x_max = -13.5, 13.5
-    y_min, y_max = -13.5, 13.5
-    N = 180
+    x_min, x_max = -MAP_EXTENT, MAP_EXTENT
+    y_min, y_max = -MAP_EXTENT, MAP_EXTENT
 
     grid_medians, x_edges, y_edges, _ = binned_statistic_2d(
-        x, y, z, statistic="median", bins=N, range=[[x_min, x_max], [y_min, y_max]]
+        x, y, z, statistic="median", bins=MAP_SIZE, range=[[x_min, x_max], [y_min, y_max]]
     )
     # Set Nans to -np.inf
     grid_medians[np.isnan(grid_medians)] = -np.inf
@@ -65,6 +66,26 @@ def interpolate_heights(height_array: np.ndarray) -> np.ndarray:
     height_array_interpolated[..., 1] = y_all.reshape(N, N)
     height_array_interpolated[..., 2] = z_interp.reshape(N, N)
     return height_array_interpolated
+
+
+def process_map(semantic_points: SemanticPointCloud, agent_map: np.ndarray) -> np.ndarray:
+    # Height map
+    ground_points = semantic_points.points[semantic_points.labels == SemanticClasses.GROUND.value]
+    ground_grid = bin_points_to_grid(ground_points)
+    agent_map[:, :, 2] = ground_grid
+    agent_map[:] = interpolate_heights(agent_map)
+
+    # Rock map
+    rock_points = semantic_points.points[semantic_points.labels == SemanticClasses.ROCK.value]
+    x_edges = np.linspace(-MAP_EXTENT, MAP_EXTENT, MAP_SIZE + 1)
+    y_edges = np.linspace(-MAP_EXTENT, MAP_EXTENT, MAP_SIZE + 1)
+    rock_counts, _, _ = np.histogram2d(
+        rock_points[:, 0], rock_points[:, 1], bins=[x_edges, y_edges]
+    )
+    ROCK_COUNT_THRESH = 5
+    agent_map[:, :, 3] = np.where(rock_counts > ROCK_COUNT_THRESH, 1, 0)
+
+    return agent_map
 
 
 class Mapper:

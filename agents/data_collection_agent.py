@@ -27,6 +27,8 @@ MAX_SPEED = 0.2
 SPEED_INCREMENT = 0.05
 TURN_RATE = 0.3
 
+ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
+
 MODE = "waypoint"  # {"teleop", "waypoint", "dynamics"}
 DISPLAY_IMAGES = False  # Set to False to disable image display
 
@@ -51,7 +53,9 @@ class DataCollectionAgent(AutonomousAgent):
         """ Planner """
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = WaypointPlanner(initial_pose, repeat=2)
+        self.planner = WaypointPlanner(
+            initial_pose, spiral_min=3.0, spiral_max=3.5, spiral_step=0.25, repeat=0
+        )
 
         # Camera config
         self.cameras = params.CAMERA_CONFIG_INIT
@@ -177,12 +181,12 @@ class DataCollectionAgent(AutonomousAgent):
                 return carla.VehicleVelocityControl(0.0, 0.0)
             nominal_steering = waypoint_steering(waypoint, ground_truth_pose)
 
-            if self.step < 100:  # Wait for arms to raise before moving
+            if self.step < ARM_RAISE_WAIT_FRAMES:  # Wait for arms to raise before moving
                 control = carla.VehicleVelocityControl(0.0, 0.0)
             else:
                 control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
         elif MODE == "dynamics":
-            if self.step >= 100:
+            if self.step >= ARM_RAISE_WAIT_FRAMES:
                 control = carla.VehicleVelocityControl(self.v, 2 * self.w)
             else:
                 control = carla.VehicleVelocityControl(0.0, 0.0)

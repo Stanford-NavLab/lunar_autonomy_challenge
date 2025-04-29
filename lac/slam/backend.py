@@ -161,10 +161,6 @@ class Backend:
         return SemanticPointCloud(all_points, all_labels)
 
     def get_local_map(self):
-        """Get the local map as a list of poses and points"""
-        local_map = []
-        for idx, data in self.point_map.items():
-            pose = self.values.atPose3(X(idx)).matrix()
-            world_points = apply_transform(pose, data["points"])
-            local_map.append((pose, world_points, data["labels"]))
-        return local_map
+        """Output local semantic point cloud for path planning"""
+        # TODO
+        pass

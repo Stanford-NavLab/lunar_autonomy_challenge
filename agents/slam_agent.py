@@ -33,6 +33,7 @@ from lac.control.controller import waypoint_steering
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
 from lac.slam.frontend import Frontend
 from lac.slam.backend import Backend
+from lac.mapping.mapper import process_map
 from lac.utils.data_logger import DataLogger
 from lac.utils.rerun_interface import Rerun
 from lac.utils.visualization import (
@@ -189,10 +190,16 @@ class SlamAgent(AutonomousAgent):
             Rerun.log_img(images_gray["FrontLeft"])
 
             if len(self.backend.point_map) > 0:
-                points, labels = self.backend.project_point_map()
-                ground_points = points[labels == SemanticClasses.GROUND.value]
-                rock_points = points[labels == SemanticClasses.ROCK.value]
-                lander_points = points[labels == SemanticClasses.LANDER.value]
+                semantic_points = self.backend.project_point_map()
+                ground_points = semantic_points.points[
+                    semantic_points.labels == SemanticClasses.GROUND.value
+                ]
+                rock_points = semantic_points.points[
+                    semantic_points.labels == SemanticClasses.ROCK.value
+                ]
+                lander_points = semantic_points.points[
+                    semantic_points.labels == SemanticClasses.LANDER.value
+                ]
                 Rerun.log_3d_points(
                     ground_points, topic="/world/ground_points", color=[120, 0, 255]
                 )
@@ -232,6 +239,12 @@ class SlamAgent(AutonomousAgent):
         print("Running finalize")
 
         self.data_logger.save_log()
+
+        # Set map
+        g_map = self.get_geometric_map()
+        map_array = g_map.get_map_array()
+        semantic_points = self.backend.project_point_map()
+        map_array = process_map(semantic_points, map_array)
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""
