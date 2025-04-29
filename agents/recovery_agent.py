@@ -29,7 +29,7 @@ from lac.perception.depth import (
     compute_rock_radii,
 )
 from lac.control.controller import waypoint_steering, ArcPlanner
-from lac.planning.waypoint_planner import Planner
+from lac.planning.waypoint_planner import WaypointPlanner
 from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
 from lac.localization.imu_dynamics import propagate_state
 from lac.utils.visualization import (
@@ -115,7 +115,9 @@ class RecoveryAgent(AutonomousAgent):
         """ Planner """
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(initial_pose, spiral_min=3.5, spiral_max=13.5, spiral_step=2.0)
+        self.planner = WaypointPlanner(
+            initial_pose, spiral_min=3.5, spiral_max=13.5, spiral_step=2.0
+        )
 
         """ Path planner """
         arc_config_val = 21
