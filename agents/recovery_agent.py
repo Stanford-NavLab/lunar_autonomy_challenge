@@ -281,6 +281,7 @@ class RecoveryAgent(AutonomousAgent):
             rock_radii = compute_rock_radii(stereo_depth_results)
 
             # Path planning
+
             if self.step % 20 == 0:
                 control, path, waypoint_local = self.arc_planner.plan_arc(
                     waypoint, nav_pose, rock_coords, rock_radii
