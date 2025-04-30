@@ -17,18 +17,29 @@ KEYFRAME_INTERVAL = 40  # Interval for keyframe selection (steps)
 class Frontend:
     """Frontend for SLAM"""
 
-    def __init__(self, feature_tracker: SemanticFeatureTracker):
+    def __init__(
+        self,
+        feature_tracker: SemanticFeatureTracker,
+        back_feature_tracker: SemanticFeatureTracker = None,
+    ):
         # Modules
         self.feature_tracker = feature_tracker
         self.segmentation = UnetSegmentation()
+        self.back_feature_tracker = back_feature_tracker
 
         # State variables
         self.current_velocity = np.zeros(3)
 
-    def initialize(self, left_image: np.ndarray, right_image: np.ndarray):
+    def initialize(self, data: dict):
         """Initialize from initial frame"""
-        left_pred = self.segmentation.predict(left_image)
-        self.feature_tracker.initialize(left_image, right_image, left_pred)
+        left_pred = self.segmentation.predict(data["FrontLeft"])
+        self.feature_tracker.initialize(data["FrontLeft"], data["FrontRight"], left_pred)
+
+        if self.back_feature_tracker is not None:
+            back_left_pred = self.segmentation.predict(data["BackLeft"])
+            self.back_feature_tracker.initialize(
+                data["BackLeft"], data["BackRight"], back_left_pred
+            )
 
     def process_frame(self, data: dict):
         """Process the data
@@ -68,6 +79,12 @@ class Frontend:
             data["odometry_source"] = "IMU"
 
         self.current_velocity = odometry[:3, 3] / DT
+
+        # Back camera feature tracking
+        if self.back_feature_tracker is not None:
+            back_left_pred = self.segmentation.predict(data["BackLeft"])
+            self.back_feature_tracker.track_pnp(data["BackLeft"], data["BackRight"], back_left_pred)
+            data["back_tracked_points"] = self.back_feature_tracker.tracked_points
 
         # Add frontend outputs
         data["odometry"] = odometry

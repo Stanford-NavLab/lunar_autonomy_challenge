@@ -42,7 +42,7 @@ LOG_DATA = True  # Whether to log data
 RERUN = False  # Whether to use rerun for visualization
 
 SPIRAL_MIN = 3.5
-SPIRAL_MAX = 10.0
+SPIRAL_MAX = 5.0
 SPIRAL_STEP = 0.35
 SPIRAL_REPEAT = 0
 
@@ -124,8 +124,8 @@ class NavAgent(AutonomousAgent):
 
         """ SLAM """
         feature_tracker = SemanticFeatureTracker(self.cameras)
-        self.back_feature_tracker = SemanticFeatureTracker(self.cameras)
-        self.frontend = Frontend(feature_tracker)
+        back_feature_tracker = SemanticFeatureTracker(self.cameras, cam="BackLeft")
+        self.frontend = Frontend(feature_tracker, back_feature_tracker)
         self.backend = Backend(self.initial_pose, feature_tracker)
 
         """ Data logging """
@@ -258,7 +258,7 @@ class NavAgent(AutonomousAgent):
             # Stereo VO
             if self.step >= ARM_RAISE_WAIT_FRAMES:
                 if self.step == ARM_RAISE_WAIT_FRAMES:
-                    self.frontend.initialize(images_gray["FrontLeft"], images_gray["FrontRight"])
+                    self.frontend.initialize(images_gray)
                 else:
                     images_gray["step"] = self.step
                     images_gray["imu"] = self.get_imu_data()

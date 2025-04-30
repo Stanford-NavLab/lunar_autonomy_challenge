@@ -76,10 +76,29 @@ class Backend:
 
         # Add tracked points to map
         tracks: TrackedPoints = data["tracked_points"]
-        self.point_map[self.pose_idx] = {
-            "points": tracks.points_local[tracks.lengths == 0],
-            "labels": tracks.labels[tracks.lengths == 0],
-        }
+        if "back_tracked_points" in data:
+            back_tracks: TrackedPoints = data["back_tracked_points"]
+            # Stack front and back points
+            self.point_map[self.pose_idx] = {
+                "points": np.vstack(
+                    [
+                        tracks.points_local[tracks.lengths == 0],
+                        back_tracks.points_local[back_tracks.lengths == 0],
+                    ]
+                ),
+                "labels": np.hstack(
+                    [
+                        tracks.labels[tracks.lengths == 0],
+                        back_tracks.labels[back_tracks.lengths == 0],
+                    ]
+                ),
+            }
+
+        else:
+            self.point_map[self.pose_idx] = {
+                "points": tracks.points_local[tracks.lengths == 0],
+                "labels": tracks.labels[tracks.lengths == 0],
+            }
 
         # Handle keyframe
         if data["keyframe"]:
