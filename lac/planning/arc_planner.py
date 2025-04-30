@@ -18,9 +18,9 @@ import numpy as np
 class ArcPlanner:
     def __init__(
         self,
-        arc_config: int | tuple[int, int] = 21,
-        arc_duration: float | tuple[float, float] = 4.0,
-        max_omega: float | tuple[float, float] = 1,
+        arc_config: int | tuple[int, int] = 31,
+        arc_duration: float | tuple[float, float] = 8.0,
+        max_omega: float | tuple[float, float] = 0.8,
         max_queue_size: int = 5,
         step_interval: int = 10,
     ):
@@ -81,7 +81,6 @@ class ArcPlanner:
 
         path_costs = np.linalg.norm(self.np_candidate_arcs[:, -1, :2] - waypoint_local[:2], axis=1)
         sorted_indices = np.argsort(path_costs)
-
         for i in sorted_indices:
             arc = self.np_candidate_arcs[i]
             valid = True
@@ -90,13 +89,13 @@ class ArcPlanner:
                     lander_bbox[0] <= arc[j][0] <= lander_bbox[1]
                     and lander_bbox[2] <= arc[j][1] <= lander_bbox[3]
                 ):
-                    path_costs[i] += 1000
+                    # path_costs[i] += 1000
                     valid = False
                     break
                 for rock, radius in zip(rock_coords, rock_radii):
                     if radius > params.ROCK_MIN_RADIUS:
                         if np.linalg.norm(arc[j][:2] - rock[:2]) - params.ROVER_RADIUS <= radius:
-                            path_costs[i] += 1000
+                            # path_costs[i] += 1000
                             valid = False
                             break
             if valid:

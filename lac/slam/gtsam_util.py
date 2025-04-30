@@ -16,9 +16,10 @@ from lac.params import FL_X, FL_Y, IMG_HEIGHT, IMG_WIDTH
 
 # Constants and parameters
 K = gtsam.Cal3_S2(FL_X, FL_Y, 0.0, IMG_WIDTH / 2, IMG_HEIGHT / 2)
-ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
+VO_ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
     np.array([0.00087, 0.00087, 0.00087, 0.005, 0.005, 0.005])  # rotation, translation
 )
+IMU_ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(0.1 * np.ones(6))
 LOOP_CLOSURE_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
     np.array([0.00087, 0.00087, 0.00087, 0.005, 0.005, 0.005])  # rotation, translation
 )
