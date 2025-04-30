@@ -36,7 +36,7 @@ ARM_RAISE_WAIT_FRAMES = 100  # Number of frames to wait for the arms to raise
 
 DISPLAY_IMAGES = True  # Whether to display the camera views
 RERUN_PLOT_POINTS = False  # Whether to plot points in rerun
-TELEOP = False  # Whether to use teleop control or autonomous control
+TELEOP = True  # Whether to use teleop control or autonomous control
 
 
 def get_entry_point():

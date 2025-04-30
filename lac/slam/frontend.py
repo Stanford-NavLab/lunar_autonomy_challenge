@@ -11,7 +11,7 @@ from lac.perception.depth import (
 )
 from lac.params import STEREO_BASELINE, FL_X, DT
 
-KEYFRAME_INTERVAL = 20  # Interval for keyframe selection (steps)
+KEYFRAME_INTERVAL = 40  # Interval for keyframe selection (steps)
 
 
 class Frontend:
@@ -45,7 +45,7 @@ class Frontend:
         left_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(
             data["FrontLeft"], output_pred=True
         )
-        right_seg_masks, right_labels = self.segmentation.segment_rocks(data["FrontLeft"])
+        right_seg_masks, right_labels = self.segmentation.segment_rocks(data["FrontRight"])
 
         # Rock detection
         stereo_depth_results = stereo_depth_from_segmentation(
@@ -58,11 +58,14 @@ class Frontend:
 
         # Feature tracking and VO
         odometry = self.feature_tracker.track_pnp(data["FrontLeft"], data["FrontRight"], left_pred)
+        data["odometry_source"] = "VO"
 
         # If VO failed, use IMU odometry instead
         if odometry is None:
             # TODO: compute IMU odometry
-            odometry = data["imu"]
+            # odometry = data["imu"]
+            odometry = np.eye(4)
+            data["odometry_source"] = "IMU"
 
         self.current_velocity = odometry[:3, 3] / DT
 

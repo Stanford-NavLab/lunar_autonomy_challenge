@@ -16,9 +16,9 @@ class ArcPlanner:
 
     def __init__(
         self,
-        arc_config: int | tuple[int, int] = 21,
-        arc_duration: float | tuple[float, float] = 4.0,
-        max_omega: float | tuple[float, float] = 1,
+        arc_config: int | tuple[int, int] = 31,
+        arc_duration: float | tuple[float, float] = 8.0,
+        max_omega: float | tuple[float, float] = 0.8,
     ):
         """Initialize the arc planner
 
@@ -111,8 +111,8 @@ class ArcPlanner:
         )
 
         sorted_indices = np.argsort(path_costs)
-        print(f"len sorted indices {len(sorted_indices)}")
-        print(f"len self.vw {len(self.vw)}")
+        # print(f"len sorted indices {len(sorted_indices)}")
+        # print(f"len self.vw {len(self.vw)}")
         for i in sorted_indices:
             arc = self.np_candidate_arcs[i]
             valid = True
@@ -126,18 +126,18 @@ class ArcPlanner:
                     and arc[j][1] >= lander_bbox[2]
                     and arc[j][1] <= lander_bbox[3]
                 ):
-                    path_costs[i] += 1000
+                    # path_costs[i] += 1000
                     valid = False
                     break
                 # Check if arc is inside any rocks
                 for rock, radius in zip(rock_data["centers"], rock_data["radii"]):
                     if radius > params.ROCK_MIN_RADIUS:
-                        if 0.19 < radius < 0.2:
-                            print(radius)
+                        # if 0.19 < radius < 0.2:
+                        #     print(radius)
 
-                            print(" checking rock")
+                        #     print(" checking rock")
                         if np.linalg.norm(arc[j][:2] - rock[:2]) - params.ROVER_RADIUS <= radius:
-                            path_costs[i] += 1000
+                            # path_costs[i] += 1000
                             valid = False
                             break
             if valid:

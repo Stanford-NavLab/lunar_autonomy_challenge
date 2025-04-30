@@ -53,7 +53,10 @@ def stereo_depth_from_segmentation(left_seg_masks, right_seg_masks, baseline, fo
     matches = centroid_matching(left_rock_centroids, right_rock_centroids)
 
     # Since we compute disparity as x_left - x_right, the computed depth is with respect to the left camera
-    disparities = [left_rock_centroids[match[0]][0] - right_rock_centroids[match[1]][0] + 1e-8 for match in matches]
+    disparities = [
+        left_rock_centroids[match[0]][0] - right_rock_centroids[match[1]][0] + 1e-8
+        for match in matches
+    ]
     depths = (focal_length_x * baseline) / disparities
 
     results = []
@@ -88,7 +91,10 @@ def stereo_mask_depth_from_segmentation(left_seg_masks, right_seg_masks, baselin
     matches = centroid_matching(left_rock_centroids, right_rock_centroids)
 
     # Since we compute disparity as x_left - x_right, the computed depth is with respect to the left camera
-    disparities = [left_rock_centroids[match[0]][0] - right_rock_centroids[match[1]][0] + 1e-8 for match in matches]
+    disparities = [
+        left_rock_centroids[match[0]][0] - right_rock_centroids[match[1]][0] + 1e-8
+        for match in matches
+    ]
     depths = (focal_length_x * baseline) / disparities
 
     results = []
@@ -118,9 +124,11 @@ def compute_rock_coords_rover_frame(stereo_depth_results, cam_config, cam_name="
     """
     rock_coords_rover_frame = []
     for result in stereo_depth_results:
-        rock_point_rover_frame = project_pixel_to_rover(result["left_centroid"], result["depth"], cam_name, cam_config)
+        rock_point_rover_frame = project_pixel_to_rover(
+            result["left_centroid"], result["depth"], cam_name, cam_config
+        )
         rock_coords_rover_frame.append(rock_point_rover_frame)
-    return rock_coords_rover_frame
+    return np.array(rock_coords_rover_frame)
 
 
 def compute_rock_radii(stereo_depth_results):
@@ -149,7 +157,9 @@ def compute_rock_radii(stereo_depth_results):
     return rock_radii
 
 
-def project_rock_depths_to_world(depth_results: list, rover_pose: np.ndarray, cam_name: str, cam_config: dict) -> list:
+def project_rock_depths_to_world(
+    depth_results: list, rover_pose: np.ndarray, cam_name: str, cam_config: dict
+) -> list:
     """
     depth_results : list - List of dictionaries containing depth results
     K : np.ndarray (3, 3) - Camera intrinsics matrix
@@ -175,7 +185,9 @@ def project_rock_depths_to_world(depth_results: list, rover_pose: np.ndarray, ca
     return rock_world_points
 
 
-def project_pixel_to_rover(pixel: tuple | np.ndarray, depth: float, cam_name: str, cam_config: dict):
+def project_pixel_to_rover(
+    pixel: tuple | np.ndarray, depth: float, cam_name: str, cam_config: dict
+):
     CAM_TO_ROVER = get_cam_pose_rover(cam_name)
     K = get_camera_intrinsics(cam_name, cam_config)
     point_opencv = project_pixel_to_3D(pixel, depth, K)
@@ -184,7 +196,9 @@ def project_pixel_to_rover(pixel: tuple | np.ndarray, depth: float, cam_name: st
     return point_rover
 
 
-def project_pixels_to_rover(pixels: np.ndarray, depths: np.ndarray, cam_name: str, cam_config: dict):
+def project_pixels_to_rover(
+    pixels: np.ndarray, depths: np.ndarray, cam_name: str, cam_config: dict
+):
     CAM_TO_ROVER = get_cam_pose_rover(cam_name)
     K = get_camera_intrinsics(cam_name, cam_config)
     points_opencv = project_pixels_to_3D(pixels, depths, K)
@@ -254,7 +268,9 @@ def compute_stereo_depth(
     disparity = stereo.compute(img_left, img_right)
 
     # Normalize the disparity for visualization
-    disparity_normalized = cv2.normalize(disparity, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+    disparity_normalized = cv2.normalize(
+        disparity, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX
+    )
     disparity_normalized = np.uint8(disparity_normalized)
 
     # Convert disparity to depth (requires camera calibration parameters)
@@ -272,7 +288,6 @@ from lac.params import IMG_WIDTH, IMG_HEIGHT, FL_X, FL_Y
 
 
 def get_renderer():
-
     H, W = IMG_HEIGHT, IMG_WIDTH
     if RENDERERS.get((H, W)) is not None:
         renderer = RENDERERS[(H, W)]
@@ -314,7 +329,9 @@ def render_o3d(meshes, renderer, material, pose, d_light):
     return img, depth
 
 
-def get_plotly_mesh(mesh: o3d.geometry.TriangleMesh, lighting=None, light_position=None, colorscale=None) -> go.Mesh3d:
+def get_plotly_mesh(
+    mesh: o3d.geometry.TriangleMesh, lighting=None, light_position=None, colorscale=None
+) -> go.Mesh3d:
     if colorscale is None:
         colorscale = [0, "rgb(153, 153, 153)"], [1.0, "rgb(160,160,160)"]
     if light_position is None:
@@ -395,7 +412,9 @@ class DepthEstimator:
         **kwargs,
     ):
         config_dict = {
-            "restore_ckpt": os.path.join(LAC_BASE_PATH, "lunar_autonomy_challenge/models/raftstereo-eth3d.pth"),
+            "restore_ckpt": os.path.join(
+                LAC_BASE_PATH, "lunar_autonomy_challenge/models/raftstereo-eth3d.pth"
+            ),
             "save_numpy": False,
             "mixed_precision": False,
             "valid_iters": 32,
@@ -420,8 +439,9 @@ class DepthEstimator:
         self.model.to(self.config.device)
         self.model.eval()
 
-    def compute_disparity(self, image1: Union[np.ndarray, torch.Tensor], image2: Union[np.ndarray, torch.Tensor]):
-
+    def compute_disparity(
+        self, image1: Union[np.ndarray, torch.Tensor], image2: Union[np.ndarray, torch.Tensor]
+    ):
         # Convert to torch tensor [C, H, W]
         if isinstance(image1, np.ndarray):
             if image1.ndim == 2:
