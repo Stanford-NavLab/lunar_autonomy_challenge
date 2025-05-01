@@ -339,8 +339,9 @@ def rotations_rmse_from_poses(poses_a, poses_b):
 
 
 def grayscale_to_3ch_tensor(np_image):
+    """Convert 0-255 grayscale image to 3-channel tensor."""
     # Ensure the input is float32 (or float64 if needed)
-    np_image = np_image.astype(np.float32) / 255.0 if np_image.max() > 1 else np_image
+    np_image = np_image.astype(np.float32) / 255.0
     # Add channel dimension and repeat across 3 channels
     torch_tensor = torch.from_numpy(np_image).unsqueeze(0).repeat(3, 1, 1)
     return torch_tensor

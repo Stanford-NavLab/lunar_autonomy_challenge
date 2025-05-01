@@ -6,13 +6,13 @@ from gtsam.symbol_shorthand import X
 from dataclasses import dataclass
 
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker, TrackedPoints
-from lac.slam.loop_closure import estimate_loop_closure_pose
-from lac.slam.gtsam_util import ODOMETRY_NOISE, LOOP_CLOSURE_NOISE
+from lac.slam.loop_closure import keyframe_estimate_loop_closure_pose
+from lac.slam.gtsam_util import VO_ODOMETRY_NOISE, IMU_ODOMETRY_NOISE, LOOP_CLOSURE_NOISE
 from lac.utils.frames import apply_transform
 from lac.util import rotation_matrix_error
 
 LOOP_CLOSURE_EXCLUDE = 10  # Exclude the last N keyframes
-LOOP_CLOSURE_DIST_THRESHOLD = 0.35  # meters
+LOOP_CLOSURE_DIST_THRESHOLD = 0.5  # meters
 LOOP_CLOSURE_ANGLE_THRESHOLD = 5.0  # degrees
 
 
@@ -61,25 +61,52 @@ class Backend:
         self.values.insert(X(self.pose_idx), gtsam.Pose3(new_pose))
 
         # Add odometry factor
+        if data["odometry_source"] == "VO":
+            odometry_noise = VO_ODOMETRY_NOISE
+        elif data["odometry_source"] == "IMU":
+            odometry_noise = IMU_ODOMETRY_NOISE
         self.graph.add(
             gtsam.BetweenFactorPose3(
                 X(self.pose_idx - 1),
                 X(self.pose_idx),
                 gtsam.Pose3(data["odometry"]),
-                ODOMETRY_NOISE,
+                odometry_noise,
             )
         )
 
         # Add tracked points to map
         tracks: TrackedPoints = data["tracked_points"]
-        self.point_map[self.pose_idx] = {
-            "points": tracks.points_local[tracks.lengths == 0],
-            "labels": tracks.labels[tracks.lengths == 0],
-        }
+        if "back_tracked_points" in data:
+            back_tracks: TrackedPoints = data["back_tracked_points"]
+            # Stack front and back points
+            self.point_map[self.pose_idx] = {
+                "points": np.vstack(
+                    [
+                        tracks.points_local[tracks.lengths == 0],
+                        back_tracks.points_local[back_tracks.lengths == 0],
+                    ]
+                ),
+                "labels": np.hstack(
+                    [
+                        tracks.labels[tracks.lengths == 0],
+                        back_tracks.labels[back_tracks.lengths == 0],
+                    ]
+                ),
+            }
+
+        else:
+            self.point_map[self.pose_idx] = {
+                "points": tracks.points_local[tracks.lengths == 0],
+                "labels": tracks.labels[tracks.lengths == 0],
+            }
 
         # Handle keyframe
         if data["keyframe"]:
-            self.keyframe_data[self.pose_idx] = data
+            feats_left, feats_right, stereo_matches, depths = self.feature_tracker.process_stereo(
+                data["FrontLeft"], data["FrontRight"]
+            )
+            keyframe_data = (feats_left, feats_right, stereo_matches, depths)
+            self.keyframe_data[self.pose_idx] = keyframe_data
             self.keyframe_traj_list.append(new_pose)
             self.keyframe_traj = np.array(self.keyframe_traj_list)
 
@@ -113,10 +140,9 @@ class Backend:
         for idx in idxs:
             pose_idx = list(self.keyframe_data.keys())[idx]
             keyframe_data = self.keyframe_data[pose_idx]
-            relative_pose = estimate_loop_closure_pose(
+            relative_pose = keyframe_estimate_loop_closure_pose(
                 self.feature_tracker,
-                keyframe_data["FrontLeft"],
-                keyframe_data["FrontRight"],
+                keyframe_data,
                 data["FrontLeft"],
                 data["FrontRight"],
             )
@@ -147,7 +173,7 @@ class Backend:
         """Get the trajectory as a list of poses"""
         return [self.values.atPose3(X(i)).matrix() for i in range(self.pose_idx)]
 
-    def project_point_map(self):
+    def project_point_map(self) -> SemanticPointCloud:
         """Project the point map into world coordinates"""
         all_points = []
         all_labels = []

@@ -38,11 +38,14 @@ class TrackedPoints:
 
 
 class SemanticFeatureTracker(FeatureTracker):
-    def __init__(self, cam_config: dict, max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS):
+    def __init__(
+        self, cam_config: dict, max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS, cam: str = "FrontLeft"
+    ):
         """Initialize the semantic feature tracker"""
         super().__init__(cam_config=cam_config, max_keypoints=max_keypoints)
         self.tracked_points = None
         self.max_id = 0
+        self.cam = cam
 
     def initialize(
         self,
@@ -62,7 +65,7 @@ class SemanticFeatureTracker(FeatureTracker):
         pixels = np.round(left_pts).astype(int)
         labels = left_semantic_pred[pixels[:, 1], pixels[:, 0]]
         num_pts = len(left_pts)
-        points_local = self.project_stereo(np.eye(4), left_pts, depths)
+        points_local = self.project_stereo(np.eye(4), left_pts, depths, cam_name=self.cam)
 
         self.tracked_points = TrackedPoints(
             ids=np.arange(num_pts),  # 0, 1, 2, ..., num_pts - 1
@@ -87,7 +90,7 @@ class SemanticFeatureTracker(FeatureTracker):
         num_new_pts = len(left_pts)
 
         # Project points
-        points_local = self.project_stereo(np.eye(4), left_pts, depths)
+        points_local = self.project_stereo(np.eye(4), left_pts, depths, cam_name=self.cam)
 
         # Matched features get old track IDs, and unmatched features get new IDs
         new_track_ids = np.zeros(num_new_pts, dtype=int) - 1

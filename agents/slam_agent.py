@@ -32,10 +32,9 @@ import lac.params as params
 
 """ Agent parameters and settings """
 USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
-ARM_RAISE_WAIT_FRAMES = 100  # Number of frames to wait for the arms to raise
+ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 
-DISPLAY_IMAGES = True  # Whether to display the camera views
-RERUN_PLOT_POINTS = False  # Whether to plot points in rerun
+RERUN_PLOT_POINTS = True  # Whether to plot points in rerun
 TELEOP = False  # Whether to use teleop control or autonomous control
 
 
@@ -78,6 +77,20 @@ class SlamAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
+        self.cameras["BackLeft"] = {
+            "active": True,
+            "light": 1.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
+        self.cameras["BackRight"] = {
+            "active": True,
+            "light": 1.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
         self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
         """ Planner """
@@ -92,7 +105,8 @@ class SlamAgent(AutonomousAgent):
 
         """ SLAM """
         feature_tracker = SemanticFeatureTracker(self.cameras)
-        self.frontend = Frontend(feature_tracker)
+        back_feature_tracker = SemanticFeatureTracker(self.cameras, cam="BackLeft")
+        self.frontend = Frontend(feature_tracker, back_feature_tracker)
         self.backend = Backend(self.initial_pose, feature_tracker)
 
         """ Data logging """
@@ -164,7 +178,7 @@ class SlamAgent(AutonomousAgent):
             # Stereo VO
             if self.step >= ARM_RAISE_WAIT_FRAMES:
                 if self.step == ARM_RAISE_WAIT_FRAMES:
-                    self.frontend.initialize(images_gray["FrontLeft"], images_gray["FrontRight"])
+                    self.frontend.initialize(images_gray)
                 else:
                     images_gray["step"] = self.step
                     images_gray["imu"] = self.get_imu_data()
