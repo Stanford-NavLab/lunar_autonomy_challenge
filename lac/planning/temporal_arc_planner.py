@@ -13,6 +13,11 @@ import lac.params as params
 
 from collections import deque
 import numpy as np
+from lac.utils.plotting import (
+    plot_points_rover_frame,
+    plot_path_rover_frame,
+    plot_rocks_rover_frame,
+)
 
 
 class TemporalArcPlanner:
@@ -28,6 +33,49 @@ class TemporalArcPlanner:
         self.step_interval = step_interval
         self.max_queue_size = max_queue_size
         self.rock_history_queue = deque(maxlen=max_queue_size)
+        MAX_OMEGA = max_omega  # [rad/s]
+        ARC_DURATION = arc_duration  # [s]
+        NUM_ARC_POINTS = int(ARC_DURATION / params.DT)
+        self.speeds = [params.TARGET_SPEED]  # [0.05, 0.1, 0.15, 0.2]  # [m/s]
+        self.root_arcs = []
+        self.candidate_arcs = []
+        self.root_vw = []
+        self.vw = []
+        self.scale = 0.5
+
+        if isinstance(arc_config, int):
+            self.is_branch = False
+            NUM_OMEGAS_1 = arc_config
+            self.omegas1 = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS_1)
+        else:
+            self.is_branch = True
+            NUM_OMEGAS_1 = arc_config[0]
+            NUM_OMEGAS_2 = arc_config[1]
+            self.omegas1 = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS_1)
+            self.omegas2 = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS_2)
+
+        for v in self.speeds:
+            for w in self.omegas1:
+                new_arc = dubins_traj(np.zeros(3), [v, w], NUM_ARC_POINTS, params.DT)
+                self.root_arcs.append(new_arc)
+                self.candidate_arcs.append(new_arc)
+                self.root_vw.append((v, w * 1 / (self.scale)))
+
+        if self.is_branch:
+            concatenated_arcs = []
+            for count, root_arc in enumerate(self.root_arcs):
+                last_state = root_arc[-1]  # Extract last state [x, y, theta]
+
+                for v in self.speeds:
+                    for w in self.omegas2:
+                        new_arc = dubins_traj(last_state, [v, w], NUM_ARC_POINTS, params.DT)
+                        concatenated_arcs.append(np.concatenate((root_arc, new_arc)))
+                        self.vw.append(self.root_vw[count])
+
+            self.candidate_arcs = concatenated_arcs
+        else:
+            self.vw = self.root_vw
+        self.np_candidate_arcs = np.array(self.candidate_arcs)
 
     def update_rock_history(self, rock_coords: np.ndarray, rock_radii: list, pose):
         """Store rocks and their associated pose every `step_interval` frames."""
@@ -62,11 +110,10 @@ class TemporalArcPlanner:
         current_pose: np.ndarray,
         rock_coords: np.ndarray,
         rock_radii: list,
-        poses: list[np.ndarray],
     ):
         """Plan path using rolling rock memory projected into the current frame."""
         # Update memory queue with new data and pose
-        self.update_rock_history(step, rock_coords, rock_radii, poses)
+        self.update_rock_history(step, rock_coords, rock_radii, current_pose)
 
         # Combine + transform rocks to current frame
         rock_coords, rock_radii = self.get_combined_rock_map(current_pose)
@@ -102,3 +149,12 @@ class TemporalArcPlanner:
                 return self.vw[i], arc, waypoint_local
 
         return None, None, None
+
+    def plot_rocks(combined_map, arcs, best_arc):
+        fig = plot_rocks_rover_frame(combined_map[0], combined_map[1], color="red")
+        # fig = go.Figure()
+        for arc in arcs:
+            fig = plot_path_rover_frame(arc, fig=fig)
+        fig = plot_path_rover_frame(best_arc, color="green", fig=fig)
+
+        fig.show()

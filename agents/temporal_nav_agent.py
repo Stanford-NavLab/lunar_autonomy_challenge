@@ -20,6 +20,7 @@ from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
 from lac.slam.frontend import Frontend
 from lac.slam.backend import Backend
 from lac.planning.arc_planner import ArcPlanner
+from lac.planning.temporal_arc_planner import TemporalArcPlanner
 from lac.planning.waypoint_planner import WaypointPlanner
 from lac.mapping.mapper import process_map
 from lac.mapping.map_utils import get_geometric_score, get_rocks_score
@@ -116,7 +117,8 @@ class NavAgent(AutonomousAgent):
         self.planner = WaypointPlanner(
             self.initial_pose, SPIRAL_MIN, SPIRAL_MAX, SPIRAL_STEP, SPIRAL_REPEAT
         )
-        self.arc_planner = ArcPlanner()
+        self.arc_planner = TemporalArcPlanner()
+        self.arcs = self.arc_planner.np_candidate_arcs
 
         """ State variables """
         self.current_pose = self.initial_pose
@@ -266,9 +268,16 @@ class NavAgent(AutonomousAgent):
                     self.backend.update(data)
 
                     # Path planning
+                    self.arcs = self.arc_planner.np_candidate_arcs
+
                     control, path, waypoint_local = self.arc_planner.plan_arc(
-                        waypoint, nav_pose, data["rock_data"]
+                        self.step,
+                        waypoint,
+                        nav_pose,
+                        data["rock_data"]["centers"],
+                        data["rock_data"]["radii"],
                     )
+
                     if control is not None:
                         self.current_v, self.current_w = control
                         if RERUN:
@@ -280,6 +289,9 @@ class NavAgent(AutonomousAgent):
                                     centers=data["rock_data"]["centers"][:, :2],
                                     radii=data["rock_data"]["radii"],
                                 )
+                        if self.step % 100 == 0:
+                            combined_map = self.arc_planner.get_combined_rock_map()
+                            self.arc_planner.plot_rocks(combined_map, self.arcs, path)
                     else:
                         print("No safe paths found!")
 
