@@ -113,7 +113,7 @@ class TemporalArcPlanner:
     ):
         """Plan path using rolling rock memory projected into the current frame."""
         # Update memory queue with new data and pose
-        self.update_rock_history(step, rock_coords, rock_radii, current_pose)
+        self.update_rock_history(rock_coords, rock_radii, current_pose)
 
         # Combine + transform rocks to current frame
         rock_coords, rock_radii = self.get_combined_rock_map(current_pose)
@@ -150,7 +150,7 @@ class TemporalArcPlanner:
 
         return None, None, None
 
-    def plot_rocks(combined_map, arcs, best_arc):
+    def plot_rocks(self, combined_map, arcs, best_arc):
         fig = plot_rocks_rover_frame(combined_map[0], combined_map[1], color="red")
         # fig = go.Figure()
         for arc in arcs:

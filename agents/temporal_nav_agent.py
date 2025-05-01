@@ -290,7 +290,7 @@ class NavAgent(AutonomousAgent):
                                     radii=data["rock_data"]["radii"],
                                 )
                         if self.step % 100 == 0:
-                            combined_map = self.arc_planner.get_combined_rock_map()
+                            combined_map = self.arc_planner.get_combined_rock_map(nav_pose)
                             self.arc_planner.plot_rocks(combined_map, self.arcs, path)
                     else:
                         print("No safe paths found!")
