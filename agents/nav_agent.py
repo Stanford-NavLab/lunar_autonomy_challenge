@@ -256,7 +256,7 @@ class NavAgent(AutonomousAgent):
 
                     # Path planning
                     control, path, waypoint_local = self.arc_planner.plan_arc(
-                        waypoint, nav_pose, data["rock_data"]
+                        waypoint, nav_pose, data["rock_data"], self.step
                     )
                     if control is not None:
                         self.current_v, self.current_w = control
