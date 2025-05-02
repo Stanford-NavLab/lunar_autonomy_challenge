@@ -150,11 +150,24 @@ class TemporalArcPlanner:
 
         return None, None, None
 
-    def plot_rocks(self, combined_map, arcs, best_arc):
-        fig = plot_rocks_rover_frame(combined_map[0], combined_map[1], color="red")
-        # fig = go.Figure()
-        for arc in arcs:
-            fig = plot_path_rover_frame(arc, fig=fig)
+
+def plot_rocks(self, combined_map, arcs, best_arc, step, show=False):
+    # Create folder if it doesn't exist
+
+    # Plot rocks
+    fig = plot_rocks_rover_frame(combined_map[0], combined_map[1], color="red")
+
+    # Plot all arcs
+    for arc in arcs:
+        fig = plot_path_rover_frame(arc, fig=fig)
+
+    # Plot best arc in green
+    if best_arc is not None:
         fig = plot_path_rover_frame(best_arc, color="green", fig=fig)
 
+    # Save the figure to HTML
+    save_path = f"results/planner_graphs/rock_plot_{step}.html"
+    fig.write_html(save_path)
+
+    if show:
         fig.show()

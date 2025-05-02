@@ -39,7 +39,7 @@ USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 
 LOG_DATA = True  # Whether to log data
-RERUN = False  # Whether to use rerun for visualization
+RERUN = True  # Whether to use rerun for visualization
 
 SPIRAL_MIN = 3.5
 SPIRAL_MAX = 5.0

@@ -36,15 +36,15 @@ USE_FIDUCIALS = False
 BACK_CAMERAS = True
 
 EARLY_STOP_STEP = 0  # Number of steps before stopping the mission (0 for no early stop)
-USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
+USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 
 LOG_DATA = True  # Whether to log data
-RERUN = False  # Whether to use rerun for visualization
+RERUN = True  # Whether to use rerun for visualization
 
 SPIRAL_MIN = 3.5
-SPIRAL_MAX = 5.0
-SPIRAL_STEP = 0.35
+SPIRAL_MAX = 13.5
+SPIRAL_STEP = 2  # 0.3
 SPIRAL_REPEAT = 0
 
 if EVAL:
@@ -117,7 +117,12 @@ class NavAgent(AutonomousAgent):
         self.planner = WaypointPlanner(
             self.initial_pose, SPIRAL_MIN, SPIRAL_MAX, SPIRAL_STEP, SPIRAL_REPEAT
         )
-        self.arc_planner = TemporalArcPlanner()
+        arc_config_val = 21
+        arc_duration_val = 12.0
+        max_omega = 0.6
+        self.arc_planner = TemporalArcPlanner(
+            arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
+        )
         self.arcs = self.arc_planner.np_candidate_arcs
 
         """ State variables """
@@ -144,6 +149,10 @@ class NavAgent(AutonomousAgent):
                 "/home/shared/data_raw/LAC/heightmaps/competition/Moon_Map_01_preset_1.dat",
                 allow_pickle=True,
             )
+        if LOG_DATA:
+            agent_name = get_entry_point()
+            self.data_logger = DataLogger(self, agent_name, self.cameras)
+            self.path_planner_file = f"results/planner_stats/temporal_path_planner_stats_arc{arc_config_val}_{arc_duration_val}s_scale2_rad0.6_replan20_rockradius0.08_backup5.pkl"
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
 
@@ -291,7 +300,7 @@ class NavAgent(AutonomousAgent):
                                 )
                         if self.step % 100 == 0:
                             combined_map = self.arc_planner.get_combined_rock_map(nav_pose)
-                            self.arc_planner.plot_rocks(combined_map, self.arcs, path)
+                            self.arc_planner.plot_rocks(combined_map, self.arcs, path, self.step)
                     else:
                         print("No safe paths found!")
 
