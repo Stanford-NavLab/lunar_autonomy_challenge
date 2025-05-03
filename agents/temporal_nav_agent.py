@@ -12,6 +12,7 @@ import carla
 import cv2 as cv
 import numpy as np
 import signal
+import pickle
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
@@ -114,9 +115,8 @@ class NavAgent(AutonomousAgent):
         self.lander_pose = self.initial_pose @ transform_to_numpy(
             self.get_initial_lander_position()
         )
-        self.planner = WaypointPlanner(
-            self.initial_pose, SPIRAL_MIN, SPIRAL_MAX, SPIRAL_STEP, SPIRAL_REPEAT
-        )
+        self.planner = WaypointPlanner(self.initial_pose, SPIRAL_MIN, SPIRAL_MAX, SPIRAL_STEP)
+
         arc_config_val = 21
         arc_duration_val = 12.0
         max_omega = 0.6
@@ -361,7 +361,10 @@ class NavAgent(AutonomousAgent):
     def finalize(self):
         print("Running finalize")
         self.update_map()
+        with open(self.path_planner_file, "wb") as file:
+            pickle.dump(self.path_planner_statistics, file)
 
+            print("Dictionary saved ")
         if LOG_DATA:
             self.data_logger.save_log()
             slam_poses = np.array(self.backend.get_trajectory())
