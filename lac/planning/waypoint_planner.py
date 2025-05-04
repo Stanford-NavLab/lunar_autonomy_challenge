@@ -149,3 +149,28 @@ def gen_square_spiral_inside_out(min_val, max_val, step):
         points.append([-r, -r])  # bottom-left
         r += step
     return np.array(points)
+
+
+def gen_flower(
+    initial_pose: np.ndarray,
+    min_val: float = SPIRAL_MIN,
+    max_val: float = SPIRAL_MAX,
+    step: float = SPIRAL_STEP,
+):
+    """
+    Generate an Nx2 numpy array of 2D coordinates following a flower pattern.
+
+    Parameters:
+      initial_pose (np.array): The initial pose of the rover.
+      max_val (float): The half-side length of the outermost square.
+      min_val (float): The half-side length of the innermost square.
+      step (float): The decrement between successive squares.
+
+    Returns:
+      np.array: An (N x 2) numpy array containing the 2D coordinates.
+    """
+    W = 7.0  # width of a square "petal"
+
+    points = []
+
+    # Add central spiral around lander with order based on initial pose
