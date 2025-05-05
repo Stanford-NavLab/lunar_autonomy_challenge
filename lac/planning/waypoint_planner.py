@@ -26,8 +26,8 @@ class WaypointPlanner:
         spiral_step: float = SPIRAL_STEP,
         repeat: int = 1,
     ):
-        self.waypoints = gen_spiral(initial_pose, spiral_min, spiral_max, spiral_step, repeat)
-        # self.waypoints = self.waypoints[:3]  # get the first two waypoints only
+        # self.waypoints = gen_spiral(initial_pose, spiral_min, spiral_max, spiral_step, repeat)
+        self.waypoints = gen_loops(initial_pose, extra_closure=True)
         self.waypoint_idx = 0
 
     def get_waypoint(self, pose: np.ndarray, print_progress: bool = False) -> np.ndarray | None:
@@ -54,7 +54,7 @@ class WaypointPlanner:
 def get_starting_direction_order(initial_pose):
     signs = np.sign(initial_pose[:2, 3])
     start_index = np.argwhere((DEFAULT_ORDER == signs).all(axis=1)).flatten()[0]
-    return np.roll(DEFAULT_ORDER, -start_index, axis=0)
+    return np.roll(DEFAULT_ORDER, -start_index, axis=0), start_index
 
 
 def gen_spiral(
@@ -80,7 +80,7 @@ def gen_spiral(
     """
     points = []
     r = min_val
-    direction_order = get_starting_direction_order(initial_pose)
+    direction_order, _ = get_starting_direction_order(initial_pose)
 
     while r <= max_val + 1e-8:
         # Compute the four corners of the current square ring
@@ -151,12 +151,7 @@ def gen_square_spiral_inside_out(min_val, max_val, step):
     return np.array(points)
 
 
-def gen_flower(
-    initial_pose: np.ndarray,
-    min_val: float = SPIRAL_MIN,
-    max_val: float = SPIRAL_MAX,
-    step: float = SPIRAL_STEP,
-):
+def gen_loops(initial_pose: np.ndarray, loop_width: float = 7.0, extra_closure: bool = False):
     """
     Generate an Nx2 numpy array of 2D coordinates following a flower pattern.
 
@@ -169,8 +164,46 @@ def gen_flower(
     Returns:
       np.array: An (N x 2) numpy array containing the 2D coordinates.
     """
-    W = 7.0  # width of a square "petal"
+    W = loop_width / 2  # half-width of a square loop
 
     points = []
 
-    # Add central spiral around lander with order based on initial pose
+    # Add center loop around lander with order based on initial pose
+    direction_order, start_index = get_starting_direction_order(initial_pose)
+    center_loop = W * direction_order
+    points.append(center_loop)
+
+    if extra_closure:
+        points.append(center_loop[:2])
+
+    # Corner loops
+    # Top-left
+    petal_1 = np.array([[-W, W], [-W, 3 * W], [-3 * W, 3 * W], [-3 * W, W], [-W, W]])
+    # Top-right
+    petal_2 = np.array([[W, W], [3 * W, W], [3 * W, 3 * W], [W, 3 * W], [W, W]])
+    # Bottom-right
+    petal_3 = np.array([[W, -W], [W, -3 * W], [3 * W, -3 * W], [3 * W, -W], [W, -W]])
+    # Bottom-left
+    petal_4 = np.array([[-W, -W], [-3 * W, -W], [-3 * W, -3 * W], [-W, -3 * W], [-W, -W]])
+    # Concatenate petals
+
+    petals = np.array([petal_1, petal_2, petal_3, petal_4])
+    shift = -start_index
+    if extra_closure:
+        shift -= 2
+    petals = np.roll(petals, shift, axis=0)
+    petals = np.concatenate(petals, axis=0)
+    points.append(petals)
+
+    if extra_closure:
+        points.append(center_loop[2])
+
+    points = np.vstack(points)
+    return points
+
+
+def gen_loops_lander_lc(initial_pose):
+    """
+    Same as 5 loops above, but with stop and turn to loop at the lander at each corner.
+    """
+    pass

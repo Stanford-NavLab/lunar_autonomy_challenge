@@ -12,14 +12,17 @@ from lac.utils.frames import apply_transform
 from lac.util import rotation_matrix_error
 
 LOOP_CLOSURE_EXCLUDE = 10  # Exclude the last N keyframes
-LOOP_CLOSURE_DIST_THRESHOLD = 0.5  # meters
-LOOP_CLOSURE_ANGLE_THRESHOLD = 5.0  # degrees
+LOOP_CLOSURE_DIST_THRESHOLD = 1.0  # meters
+LOOP_CLOSURE_ANGLE_THRESHOLD = 10.0  # degrees
 
 
 @dataclass
 class SemanticPointCloud:
     points: np.ndarray  # shape (N, 3)
     labels: np.ndarray  # shape (N,)
+
+    def save(self, filename: str):
+        np.savez_compressed(filename, points=self.points, labels=self.labels)
 
 
 class Backend:
@@ -102,11 +105,9 @@ class Backend:
 
         # Handle keyframe
         if data["keyframe"]:
-            feats_left, feats_right, stereo_matches, depths = self.feature_tracker.process_stereo(
+            self.keyframe_data[self.pose_idx] = self.feature_tracker.process_stereo(
                 data["FrontLeft"], data["FrontRight"]
             )
-            keyframe_data = (feats_left, feats_right, stereo_matches, depths)
-            self.keyframe_data[self.pose_idx] = keyframe_data
             self.keyframe_traj_list.append(new_pose)
             self.keyframe_traj = np.array(self.keyframe_traj_list)
 
@@ -141,10 +142,7 @@ class Backend:
             pose_idx = list(self.keyframe_data.keys())[idx]
             keyframe_data = self.keyframe_data[pose_idx]
             relative_pose = keyframe_estimate_loop_closure_pose(
-                self.feature_tracker,
-                keyframe_data,
-                data["FrontLeft"],
-                data["FrontRight"],
+                self.feature_tracker, keyframe_data, data["FrontLeft"]
             )
             if relative_pose is None:
                 continue

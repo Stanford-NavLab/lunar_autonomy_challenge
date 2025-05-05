@@ -39,7 +39,7 @@ USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 
 LOG_DATA = True  # Whether to log data
-RERUN = True  # Whether to use rerun for visualization
+RERUN = False  # Whether to use rerun for visualization
 
 SPIRAL_MIN = 3.5
 SPIRAL_MAX = 5.0
@@ -139,7 +139,7 @@ class NavAgent(AutonomousAgent):
         """ Load the ground truth map for real-time score updates """
         if not EVAL:
             self.ground_truth_map = np.load(
-                "/home/shared/data_raw/LAC/heightmaps/competition/Moon_Map_01_preset_1.dat",
+                "/home/shared/data_raw/LAC/heightmaps/competition/Moon_Map_01_preset_4.dat",
                 allow_pickle=True,
             )
 
@@ -175,8 +175,8 @@ class NavAgent(AutonomousAgent):
     def run_backup_maneuver(self):
         print("Running backup maneuver")
         self.backup_counter += 1
-        BACKUP_TIME = 5.0
-        ROTATE_TIME = 2.0
+        BACKUP_TIME = 5.0  # [s]
+        ROTATE_TIME = 2.0  # [s]
         if self.backup_counter <= params.FRAME_RATE * BACKUP_TIME:
             # Go backwards for 3 seconds
             print("   Backing up")
@@ -334,6 +334,8 @@ class NavAgent(AutonomousAgent):
         map_array = g_map.get_map_array()
         semantic_points = self.backend.project_point_map()
         print("Number of semantic points: ", len(semantic_points.points))
+        if LOG_DATA:
+            semantic_points.save(f"output/{get_entry_point()}/default_run/semantic_points.npz")
         map_array = process_map(semantic_points, map_array)
         return map_array.copy()
 

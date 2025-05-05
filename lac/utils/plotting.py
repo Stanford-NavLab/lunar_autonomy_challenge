@@ -56,10 +56,9 @@ def plot_height_error(ground_map: np.ndarray, agent_map: np.ndarray):
     fig.add_trace(
         go.Heatmap(
             z=(error < HEIGHT_ERROR_TOLERANCE).astype(np.uint8),
+            x=ground_map[:, :, 0][:, 0],
+            y=ground_map[:, :, 1][0, :],
             colorscale=["red", "green"],
-            # zmin=0,
-            # zmax=1,
-            # colorscale=[[0.0, "green"], [0.5, "green"], [0.5, "red"], [1.0, "red"]],
             showscale=False,
         ),
     )
@@ -67,6 +66,8 @@ def plot_height_error(ground_map: np.ndarray, agent_map: np.ndarray):
         width=900,  # Adjust the figure width
         height=900,  # Adjust the figure height
         xaxis=dict(scaleanchor="y"),
+        xaxis_title="X",
+        yaxis_title="Y",
     )
     return fig
 
@@ -83,6 +84,8 @@ def plot_rock_results(ground_map: np.ndarray, agent_map: np.ndarray):
     fig.add_trace(
         go.Heatmap(
             z=result,
+            x=ground_map[:, :, 0][:, 0],
+            y=ground_map[:, :, 1][0, :],
             colorscale=colors,
             showscale=False,
         )
@@ -98,6 +101,8 @@ def plot_rock_results(ground_map: np.ndarray, agent_map: np.ndarray):
         width=800,  # Adjust the figure width
         height=800,  # Adjust the figure height
         xaxis=dict(scaleanchor="y"),
+        xaxis_title="X",
+        yaxis_title="Y",
     )
     return fig
 
@@ -111,13 +116,31 @@ def plot_rock_maps(ground_map: np.ndarray, agent_map: np.ndarray):
         rows=1,
         cols=3,
         subplot_titles=["Ground truth map", "Agent Map", "Result"],
-        horizontal_spacing=0.1,
+        horizontal_spacing=0.05,
     )
     fig.add_trace(
-        go.Heatmap(z=ground_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1
+        go.Heatmap(
+            z=ground_map[:, :, 3],
+            x=ground_map[:, :, 0][:, 0],
+            y=ground_map[:, :, 1][0, :],
+            colorscale="Viridis",
+            colorbar=dict(x=0.27),
+            showscale=False,
+        ),
+        row=1,
+        col=1,
     )
     fig.add_trace(
-        go.Heatmap(z=agent_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2
+        go.Heatmap(
+            z=agent_map[:, :, 3],
+            x=ground_map[:, :, 0][:, 0],
+            y=ground_map[:, :, 1][0, :],
+            colorscale="Viridis",
+            colorbar=dict(x=0.63),
+            showscale=False,
+        ),
+        row=1,
+        col=2,
     )
     result = np.zeros_like(ground_map[:, :, 3])
     result[(ground_map[:, :, 3] == 0) & (agent_map[:, :, 3] == 0)] = 0  # TN
@@ -129,6 +152,8 @@ def plot_rock_maps(ground_map: np.ndarray, agent_map: np.ndarray):
     fig.add_trace(
         go.Heatmap(
             z=result,
+            x=ground_map[:, :, 0][:, 0],
+            y=ground_map[:, :, 1][0, :],
             colorscale=colors,
             showscale=False,
         ),
@@ -144,10 +169,12 @@ def plot_rock_maps(ground_map: np.ndarray, agent_map: np.ndarray):
         )
     fig.update_layout(
         width=1400,  # Adjust the figure width
-        height=505,  # Adjust the figure height
+        height=555,  # Adjust the figure height
         xaxis=dict(scaleanchor="y"),
         xaxis2=dict(scaleanchor="y2"),
         xaxis3=dict(scaleanchor="y3"),
+        xaxis_title="X",
+        yaxis_title="Y",
     )
     fig.show()
 

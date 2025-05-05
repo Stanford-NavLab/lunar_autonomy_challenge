@@ -46,7 +46,7 @@ def estimate_loop_closure_pose(
 
 
 def keyframe_estimate_loop_closure_pose(
-    tracker: FeatureTracker, keyframe_data, left_img2, right_img2
+    tracker: FeatureTracker, keyframe_data: tuple, left_img2: np.ndarray
 ) -> np.ndarray | None:
     """Estimate the loop closure pose using stereo images.
 
@@ -54,9 +54,7 @@ def keyframe_estimate_loop_closure_pose(
 
     """
     feats_left1, feats_right1, stereo_matches1, depths1 = keyframe_data
-    feats_left2, feats_right2, stereo_matches2, depths2 = tracker.process_stereo(
-        left_img2, right_img2
-    )
+    feats_left2 = tracker.extract_feats(left_img2)
 
     matched_feats1 = prune_features(feats_left1, stereo_matches1[:, 0])
     matched_pts_left1 = matched_feats1["keypoints"][0]

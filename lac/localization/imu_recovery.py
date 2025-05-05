@@ -96,6 +96,13 @@ class ImuEstimator:
         self.t_prev_prev = initial_pose[:3, 3]
         self.t_prev = initial_pose[:3, 3]
 
+    def update_pose(self, pose: np.ndarray) -> None:
+        self.R_prev = self.R_curr
+        self.t_prev = self.t_curr
+        self.t_prev_prev = self.t_prev
+        self.R_curr = pose[:3, :3]
+        self.t_curr = pose[:3, 3]
+
     def update(self, imu_data: np.ndarray, exact: bool = True) -> None:
         a = imu_data[:3]
         omega = imu_data[3:]
