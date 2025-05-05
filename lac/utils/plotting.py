@@ -19,9 +19,9 @@ def plot_heatmap(data: np.ndarray, fig=None, colorscale="Viridis", no_axes=False
     if fig is None:
         fig = go.Figure()
     fig.add_trace(go.Heatmap(z=data, colorscale=colorscale))
-    fig.update_layout(width=1200, height=900)
     if no_axes:
         fig.update_layout(xaxis=dict(visible=False), yaxis=dict(visible=False))
+    fig.update_layout(width=800, height=800, xaxis=dict(scaleanchor="y"))
     return fig
 
 

@@ -125,7 +125,7 @@ class NavAgent(AutonomousAgent):
         """ SLAM """
         feature_tracker = SemanticFeatureTracker(self.cameras)
         back_feature_tracker = SemanticFeatureTracker(self.cameras, cam="BackLeft")
-        self.frontend = Frontend(feature_tracker, back_feature_tracker)
+        self.frontend = Frontend(feature_tracker, back_feature_tracker, self.initial_pose)
         self.backend = Backend(self.initial_pose, feature_tracker)
 
         """ Data logging """

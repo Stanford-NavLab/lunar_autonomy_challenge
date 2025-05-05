@@ -24,6 +24,11 @@ class SemanticPointCloud:
     def save(self, filename: str):
         np.savez_compressed(filename, points=self.points, labels=self.labels)
 
+    @classmethod
+    def from_file(cls, filename: str) -> "SemanticPointCloud":
+        data = np.load(filename)
+        return cls(points=data["points"], labels=data["labels"])
+
 
 class Backend:
     """Backend for SLAM"""

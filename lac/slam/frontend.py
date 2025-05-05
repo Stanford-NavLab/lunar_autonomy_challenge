@@ -9,6 +9,7 @@ from lac.perception.depth import (
     compute_rock_coords_rover_frame,
     compute_rock_radii,
 )
+from lac.localization.imu_recovery import ImuEstimator
 from lac.params import STEREO_BASELINE, FL_X, DT
 
 KEYFRAME_INTERVAL = 40  # Interval for keyframe selection (steps)
@@ -21,11 +22,13 @@ class Frontend:
         self,
         feature_tracker: SemanticFeatureTracker,
         back_feature_tracker: SemanticFeatureTracker = None,
+        initial_pose: np.ndarray = None,
     ):
         # Modules
         self.feature_tracker = feature_tracker
         self.segmentation = UnetSegmentation()
         self.back_feature_tracker = back_feature_tracker
+        self.imu_estimator = ImuEstimator(initial_pose)
 
         # State variables
         self.current_velocity = np.zeros(3)

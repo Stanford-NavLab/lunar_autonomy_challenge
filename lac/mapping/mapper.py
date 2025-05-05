@@ -3,12 +3,12 @@
 import numpy as np
 from scipy.interpolate import griddata
 from scipy.stats import binned_statistic_2d
+from scipy.ndimage import median_filter
 
 from lac.slam.backend import SemanticPointCloud
 from lac.perception.segmentation import SemanticClasses
 from lac.perception.depth import project_rock_depths_to_world
 from lac.utils.frames import apply_transform
-from lac.util import pos_rpy_to_pose
 from lac.params import WHEEL_RIG_POINTS, MAP_EXTENT, MAP_SIZE
 
 
@@ -24,13 +24,33 @@ def grid_to_points(grid: np.ndarray, remove_missing=True) -> np.ndarray:
     return np.array(points)
 
 
-def bin_points_to_grid(points: np.ndarray) -> np.ndarray:
+def robust_mean(values):
+    if len(values) == 0:
+        return np.nan
+    lower = np.percentile(values, 10)
+    upper = np.percentile(values, 90)
+    clipped = values[(values >= lower) & (values <= upper)]
+    return np.mean(clipped) if len(clipped) > 0 else np.nan
+
+
+def nanmedian_filter(grid, size=3):
+    mask = ~np.isnan(grid)
+    filled = np.where(mask, grid, 0)
+    counts = median_filter(mask.astype(int), size=size)
+    smoothed = median_filter(filled, size=size)
+    return np.where(counts > 0, smoothed, np.nan)
+
+
+def bin_points_to_grid(points: np.ndarray, statistic="median") -> np.ndarray:
     x, y, z = points[:, 0], points[:, 1], points[:, 2]
     x_min, x_max = -MAP_EXTENT, MAP_EXTENT
     y_min, y_max = -MAP_EXTENT, MAP_EXTENT
 
+    if statistic == "robust_mean":
+        statistic = robust_mean
+
     grid_medians, x_edges, y_edges, _ = binned_statistic_2d(
-        x, y, z, statistic="median", bins=MAP_SIZE, range=[[x_min, x_max], [y_min, y_max]]
+        x, y, z, statistic=statistic, bins=MAP_SIZE, range=[[x_min, x_max], [y_min, y_max]]
     )
     # Set Nans to -np.inf
     grid_medians[np.isnan(grid_medians)] = -np.inf
@@ -84,12 +104,6 @@ def process_map(semantic_points: SemanticPointCloud, agent_map: np.ndarray) -> n
         rock_points[:, 0], rock_points[:, 1], bins=[x_edges, y_edges]
     )
     agent_map[:, :, 3] = np.where(rock_counts > ROCK_COUNT_THRESH, 1, 0)
-
-    # GROUND_COUNT_THRESH = 50
-    # ground_counts, _, _ = np.histogram2d(
-    #     ground_points[:, 0], ground_points[:, 1], bins=[x_edges, y_edges]
-    # )
-    # agent_map[:, :, 3] = np.where(ground_counts > GROUND_COUNT_THRESH, 0, 1)
 
     return agent_map
 
