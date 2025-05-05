@@ -6,10 +6,8 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
-from lac.params import LANDER_GLOBAL, LANDER_HEIGHT
+from lac.params import LANDER_GLOBAL, LANDER_HEIGHT, HEIGHT_ERROR_TOLERANCE
 
 # ==================================================================================================
 #                                    2D Plotting Functions
@@ -52,6 +50,58 @@ def plot_heightmaps(ground_map: np.ndarray, agent_map: np.ndarray):
     fig.show()
 
 
+def plot_height_error(ground_map: np.ndarray, agent_map: np.ndarray):
+    fig = go.Figure()
+    error = np.abs(ground_map[:, :, 2] - agent_map[:, :, 2])
+    fig.add_trace(
+        go.Heatmap(
+            z=(error < HEIGHT_ERROR_TOLERANCE).astype(np.uint8),
+            colorscale=["red", "green"],
+            # zmin=0,
+            # zmax=1,
+            # colorscale=[[0.0, "green"], [0.5, "green"], [0.5, "red"], [1.0, "red"]],
+            showscale=False,
+        ),
+    )
+    fig.update_layout(
+        width=900,  # Adjust the figure width
+        height=900,  # Adjust the figure height
+        xaxis=dict(scaleanchor="y"),
+    )
+    return fig
+
+
+def plot_rock_results(ground_map: np.ndarray, agent_map: np.ndarray):
+    fig = go.Figure()
+    result = np.zeros_like(ground_map[:, :, 3])
+    result[(ground_map[:, :, 3] == 0) & (agent_map[:, :, 3] == 0)] = 0  # TN
+    result[(ground_map[:, :, 3] == 0) & (agent_map[:, :, 3] == 1)] = 1  # FP
+    result[(ground_map[:, :, 3] == 1) & (agent_map[:, :, 3] == 0)] = 2  # FN
+    result[(ground_map[:, :, 3] == 1) & (agent_map[:, :, 3] == 1)] = 3  # TP
+    label_names = ["TN", "FP", "FN", "TP"]
+    colors = ["gray", "red", "yellow", "green"]  # gray, red, yellow, green
+    fig.add_trace(
+        go.Heatmap(
+            z=result,
+            colorscale=colors,
+            showscale=False,
+        )
+    )
+    # Add fake scatter traces for legend
+    for i, name in enumerate(label_names):
+        fig.add_trace(
+            go.Scatter(
+                x=[None], y=[None], mode="markers", marker=dict(size=10, color=colors[i]), name=name
+            )
+        )
+    fig.update_layout(
+        width=800,  # Adjust the figure width
+        height=800,  # Adjust the figure height
+        xaxis=dict(scaleanchor="y"),
+    )
+    return fig
+
+
 def plot_rock_maps(ground_map: np.ndarray, agent_map: np.ndarray):
     """
     rock_map is NxNx4 array where 4th channel is rock presence (0 or 1)
@@ -60,17 +110,38 @@ def plot_rock_maps(ground_map: np.ndarray, agent_map: np.ndarray):
     fig = make_subplots(
         rows=1,
         cols=3,
-        subplot_titles=["Ground truth map", "Agent Map", "Error"],
+        subplot_titles=["Ground truth map", "Agent Map", "Result"],
         horizontal_spacing=0.1,
     )
-    error = ground_map[:, :, 3] - agent_map[:, :, 3]
     fig.add_trace(
         go.Heatmap(z=ground_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.27)), row=1, col=1
     )
     fig.add_trace(
         go.Heatmap(z=agent_map[:, :, 3], colorscale="Viridis", colorbar=dict(x=0.63)), row=1, col=2
     )
-    fig.add_trace(go.Heatmap(z=error, colorscale="Viridis", colorbar=dict(x=1.0)), row=1, col=3)
+    result = np.zeros_like(ground_map[:, :, 3])
+    result[(ground_map[:, :, 3] == 0) & (agent_map[:, :, 3] == 0)] = 0  # TN
+    result[(ground_map[:, :, 3] == 0) & (agent_map[:, :, 3] == 1)] = 1  # FP
+    result[(ground_map[:, :, 3] == 1) & (agent_map[:, :, 3] == 0)] = 2  # FN
+    result[(ground_map[:, :, 3] == 1) & (agent_map[:, :, 3] == 1)] = 3  # TP
+    label_names = ["TN", "FP", "FN", "TP"]
+    colors = ["gray", "red", "yellow", "green"]  # gray, red, yellow, green
+    fig.add_trace(
+        go.Heatmap(
+            z=result,
+            colorscale=colors,
+            showscale=False,
+        ),
+        row=1,
+        col=3,
+    )
+    # Add fake scatter traces for legend
+    for i, name in enumerate(label_names):
+        fig.add_trace(
+            go.Scatter(
+                x=[None], y=[None], mode="markers", marker=dict(size=10, color=colors[i]), name=name
+            )
+        )
     fig.update_layout(
         width=1400,  # Adjust the figure width
         height=505,  # Adjust the figure height

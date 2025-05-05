@@ -79,11 +79,17 @@ def process_map(semantic_points: SemanticPointCloud, agent_map: np.ndarray) -> n
     rock_points = semantic_points.points[semantic_points.labels == SemanticClasses.ROCK.value]
     x_edges = np.linspace(-MAP_EXTENT, MAP_EXTENT, MAP_SIZE + 1)
     y_edges = np.linspace(-MAP_EXTENT, MAP_EXTENT, MAP_SIZE + 1)
+    ROCK_COUNT_THRESH = 10
     rock_counts, _, _ = np.histogram2d(
         rock_points[:, 0], rock_points[:, 1], bins=[x_edges, y_edges]
     )
-    ROCK_COUNT_THRESH = 5
     agent_map[:, :, 3] = np.where(rock_counts > ROCK_COUNT_THRESH, 1, 0)
+
+    # GROUND_COUNT_THRESH = 50
+    # ground_counts, _, _ = np.histogram2d(
+    #     ground_points[:, 0], ground_points[:, 1], bins=[x_edges, y_edges]
+    # )
+    # agent_map[:, :, 3] = np.where(ground_counts > GROUND_COUNT_THRESH, 0, 1)
 
     return agent_map
 
