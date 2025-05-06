@@ -13,7 +13,7 @@ from lac.util import rotation_matrix_error
 
 LOOP_CLOSURE_EXCLUDE = 10  # Exclude the last N keyframes
 LOOP_CLOSURE_DIST_THRESHOLD = 1.0  # meters
-LOOP_CLOSURE_ANGLE_THRESHOLD = 10.0  # degrees
+LOOP_CLOSURE_ANGLE_THRESHOLD = 5.0  # degrees
 
 
 @dataclass
