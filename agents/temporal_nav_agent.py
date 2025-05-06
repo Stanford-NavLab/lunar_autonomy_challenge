@@ -37,7 +37,7 @@ USE_FIDUCIALS = False
 BACK_CAMERAS = True
 
 EARLY_STOP_STEP = 0  # Number of steps before stopping the mission (0 for no early stop)
-USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
+USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 
 LOG_DATA = True  # Whether to log data
@@ -56,10 +56,10 @@ if EVAL:
 
 
 def get_entry_point():
-    return "NavAgent"
+    return "TemporalNavAgent"
 
 
-class NavAgent(AutonomousAgent):
+class TemporalNavAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
         """Control variables"""
         self.current_v = 0
@@ -132,7 +132,7 @@ class NavAgent(AutonomousAgent):
         """ SLAM """
         feature_tracker = SemanticFeatureTracker(self.cameras)
         back_feature_tracker = SemanticFeatureTracker(self.cameras, cam="BackLeft")
-        self.frontend = Frontend(feature_tracker, back_feature_tracker)
+        self.frontend = Frontend(feature_tracker, back_feature_tracker, self.initial_pose)
         self.backend = Backend(self.initial_pose, feature_tracker)
 
         """ Data logging """
@@ -361,10 +361,10 @@ class NavAgent(AutonomousAgent):
     def finalize(self):
         print("Running finalize")
         self.update_map()
-        with open(self.path_planner_file, "wb") as file:
-            pickle.dump(self.path_planner_statistics, file)
+        # with open(self.path_planner_file, "wb") as file:
+        #     pickle.dump(self.path_planner_statistics, file)
 
-            print("Dictionary saved ")
+        #     print("Dictionary saved ")
         if LOG_DATA:
             self.data_logger.save_log()
             slam_poses = np.array(self.backend.get_trajectory())
