@@ -172,6 +172,7 @@ KP_LINEAR = 0.1
 TARGET_SPEED = 0.2  # [m/s]
 MAX_STEER = 1.2  # [rad/s]
 MAX_STEER_DELTA = 1.0  # [rad/s]
+MAX_LINEAR_DELTA = 0.1  # [m/s]
 WAYPOINT_REACHED_DIST_THRESHOLD = 1.5  # distance threshold for moving to next waypoint [m]
 
 # Maximum area of a rock segmentation mask in pixels, anything larger is ignored

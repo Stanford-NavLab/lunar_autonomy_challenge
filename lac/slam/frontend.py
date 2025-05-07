@@ -81,7 +81,7 @@ class Frontend:
             odometry = np.eye(4)
             data["odometry_source"] = "IMU"
 
-        self.current_velocity = odometry[:3, 3] / DT
+        self.current_velocity = odometry[:3, 3] / (2 * DT)
 
         # Back camera feature tracking
         if self.back_feature_tracker is not None:

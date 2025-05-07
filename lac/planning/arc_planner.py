@@ -16,7 +16,7 @@ class ArcPlanner:
 
     def __init__(
         self,
-        arc_config: int | tuple[int, int] = 31,
+        arc_config: int | tuple[int, int] = 41,
         arc_duration: float | tuple[float, float] = 8.0,
         max_omega: float | tuple[float, float] = 0.8,
     ):
@@ -84,7 +84,6 @@ class ArcPlanner:
         waypoint_global: np.ndarray,
         current_pose: np.ndarray,
         rock_data: dict,
-        current_velocity: float,
     ) -> tuple:
         """Plan an arc to a waypoint while avoiding rocks and lander
 

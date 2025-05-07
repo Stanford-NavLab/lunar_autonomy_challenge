@@ -16,6 +16,8 @@ SPIRAL_STEP = 2.0  # [m]
 # Clockwise order: top-left, top-right, bottom-right, bottom-left
 DEFAULT_ORDER = np.array([[-1, 1], [1, 1], [1, -1], [-1, -1]])
 
+WAYPOINT_TIMEOUT = 2000  # [steps] timeout to give up on a waypoint
+
 
 class WaypointPlanner:
     def __init__(

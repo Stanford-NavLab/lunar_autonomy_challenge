@@ -36,6 +36,7 @@ BACK_CAMERAS = True
 
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
+MISSION_TIMEOUT = 200000  # Number of frames to end mission after
 
 LOG_DATA = True  # Whether to log data
 RERUN = False  # Whether to use rerun for visualization
@@ -223,6 +224,11 @@ class NavAgent(AutonomousAgent):
         self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
         print("\nStep: ", self.step)
 
+        if self.step > MISSION_TIMEOUT:
+            print("Mission timed out!")
+            self.mission_complete()
+            return carla.VehicleVelocityControl(0.0, 0.0)
+
         if self.stuck_timer > 0:
             self.stuck_timer += 1
 
@@ -270,6 +276,13 @@ class NavAgent(AutonomousAgent):
                     )
                     if control is not None:
                         self.current_v, self.current_w = control
+                        # Proportional feedback on v
+                        v_norm = np.linalg.norm(self.current_velocity)
+                        v_delta = params.KP_LINEAR * (params.TARGET_SPEED - v_norm)
+                        self.current_v += np.clip(
+                            v_delta, -params.MAX_LINEAR_DELTA, params.MAX_LINEAR_DELTA
+                        )
+
                         if RERUN:
                             Rerun.log_2d_trajectory(frame_id=self.step, trajectory=path)
                             if len(data["rock_data"]["centers"]) > 0:
