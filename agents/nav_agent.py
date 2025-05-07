@@ -30,7 +30,7 @@ import lac.params as params
 
 
 """ Agent parameters and settings """
-EVAL = True  # Whether running in evaluation mode (disable ground truth)
+EVAL = False  # Whether running in evaluation mode (disable ground truth)
 USE_FIDUCIALS = False
 BACK_CAMERAS = True
 
@@ -241,7 +241,7 @@ class NavAgent(AutonomousAgent):
             nav_pose = self.current_pose
 
         """ Waypoint navigation """
-        waypoint, advanced = self.planner.get_waypoint(nav_pose, print_progress=True)
+        waypoint, advanced = self.planner.get_waypoint(self.step, nav_pose, print_progress=True)
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)

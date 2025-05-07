@@ -62,6 +62,8 @@ def keyframe_estimate_loop_closure_pose(
 
     matches12_left = tracker.match_feats(feats_left1, feats_left2, min_score=0.6)
 
+    print(f"Loop closure matches: {len(matches12_left)}")
+
     stereo_indices = stereo_matches1[:, 0]
     frame_indices = matches12_left[:, 0]
 

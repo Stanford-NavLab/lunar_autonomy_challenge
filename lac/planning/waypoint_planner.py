@@ -31,8 +31,11 @@ class WaypointPlanner:
         # self.waypoints = gen_spiral(initial_pose, spiral_min, spiral_max, spiral_step, repeat)
         self.waypoints = gen_loops(initial_pose, extra_closure=True)
         self.waypoint_idx = 0
+        self.last_waypoint_step = 0
 
-    def get_waypoint(self, pose: np.ndarray, print_progress: bool = False) -> np.ndarray | None:
+    def get_waypoint(
+        self, step: int, pose: np.ndarray, print_progress: bool = False
+    ) -> np.ndarray | None:
         """Get the next waypoint for the agent to follow.
 
         Returns None if all waypoints have been reached. TODO: handle this better
@@ -41,15 +44,27 @@ class WaypointPlanner:
         advanced = False
         waypoint = self.waypoints[self.waypoint_idx]
         xy_position = pose[:2, 3]
+
+        # Check waypoint timeout
+        if step - self.last_waypoint_step > WAYPOINT_TIMEOUT:
+            print(f"WAYPOINT TIMEOUT ON {self.waypoint_idx + 1}/{len(self.waypoints)}")
+            advanced = True
+
+        # Check if the waypoint has been reached
         if np.linalg.norm(xy_position - waypoint) < WAYPOINT_REACHED_DIST_THRESHOLD:
+            advanced = True
+
+        if advanced:
             self.waypoint_idx += 1
             if self.waypoint_idx >= len(self.waypoints):  # Finished the waypoints
                 self.waypoint_idx = 0
                 return None, True
             waypoint = self.waypoints[self.waypoint_idx]
-            advanced = True
+            self.last_waypoint_step = step
+
         if print_progress:
             print(f"Waypoint {self.waypoint_idx + 1}/{len(self.waypoints)}: {waypoint}")
+
         return waypoint, advanced
 
 

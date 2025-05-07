@@ -53,6 +53,7 @@ class Backend:
 
         # TODO: log these for debugging
         self.odometry = []
+        self.odometry_sources = []
         self.loop_closures_poses = []
 
     def update(self, data: dict):
@@ -85,6 +86,10 @@ class Backend:
                 odometry_noise,
             )
         )
+
+        # NOTE: logging
+        self.odometry.append(data["odometry"])
+        self.odometry_sources.append(data["odometry_source"])
 
         # Add tracked points to map
         tracks: TrackedPoints = data["tracked_points"]
@@ -165,6 +170,7 @@ class Backend:
                 )
             )
             self.loop_closures.append((pose_idx, self.pose_idx))
+            self.loop_closures_poses.append(relative_pose)
 
     def optimize(self):
         """Optimize the graph"""
