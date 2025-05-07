@@ -47,6 +47,7 @@ SPIRAL_MIN = 3.5
 SPIRAL_MAX = 13.5
 SPIRAL_STEP = 2  # 0.3
 SPIRAL_REPEAT = 0
+USE_TEMPORAL = True
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
@@ -120,9 +121,14 @@ class TemporalNavAgent(AutonomousAgent):
         arc_config_val = 31
         arc_duration_val = 8
         max_omega = 0.8
-        self.arc_planner = TemporalArcPlanner(
-            arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
-        )
+        if USE_TEMPORAL == True:
+            self.arc_planner = TemporalArcPlanner(
+                arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
+            )
+        else:
+            self.arc_planner = ArcPlanner(
+                arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
+            )
         self.arcs = self.arc_planner.np_candidate_arcs
 
         """ State variables """
@@ -247,7 +253,7 @@ class TemporalNavAgent(AutonomousAgent):
             nav_pose = self.current_pose
 
         """ Waypoint navigation """
-        waypoint, advanced = self.planner.get_waypoint(nav_pose, print_progress=True)
+        waypoint, advanced = self.planner.get_waypoint(self.step, nav_pose, print_progress=True)
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
@@ -289,7 +295,14 @@ class TemporalNavAgent(AutonomousAgent):
                     )
 
                     if control is not None:
+
                         self.current_v, self.current_w = control
+                        # Proportional feedback on v
+                        v_norm = np.linalg.norm(self.current_velocity)
+                        v_delta = params.KP_LINEAR * (params.TARGET_SPEED - v_norm)
+                        self.current_v += np.clip(
+                            v_delta, -params.MAX_LINEAR_DELTA, params.MAX_LINEAR_DELTA
+                        )
                         if RERUN:
                             Rerun.log_2d_trajectory(frame_id=self.step, trajectory=path)
                             if len(data["rock_data"]["centers"]) > 0:
@@ -300,8 +313,18 @@ class TemporalNavAgent(AutonomousAgent):
                                     radii=data["rock_data"]["radii"],
                                 )
                         if self.step % 100 == 0:
-                            combined_map = self.arc_planner.get_combined_rock_map(nav_pose)
-                            self.arc_planner.plot_rocks(combined_map, self.arcs, path, self.step)
+                            if USE_TEMPORAL:
+                                combined_map = self.arc_planner.get_combined_rock_map(nav_pose)
+                                self.arc_planner.plot_rocks(
+                                    combined_map, self.arcs, path, self.step
+                                )
+                            else:
+                                rock_data = (
+                                    data["rock_data"]["centers"],
+                                    data["rock_data"]["radii"],
+                                )
+                                self.arc_planner.plot_rocks(rock_data, self.arcs, path, self.step)
+
                     else:
                         print("No safe paths found!")
 
