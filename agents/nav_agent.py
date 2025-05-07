@@ -322,6 +322,9 @@ class NavAgent(AutonomousAgent):
             Rerun.log_2d_seq_scalar("/trajectory_error/err_x", self.step, position_error[0])
             Rerun.log_2d_seq_scalar("/trajectory_error/err_y", self.step, position_error[1])
             Rerun.log_2d_seq_scalar("/trajectory_error/err_z", self.step, position_error[2])
+            Rerun.log_2d_seq_scalar(
+                "/trajectory_error/velocity", self.step, np.linalg.norm(self.current_velocity)
+            )
 
         print("\n-----------------------------------------------")
 

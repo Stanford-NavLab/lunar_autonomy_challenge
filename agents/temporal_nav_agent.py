@@ -117,9 +117,9 @@ class TemporalNavAgent(AutonomousAgent):
         )
         self.planner = WaypointPlanner(self.initial_pose, SPIRAL_MIN, SPIRAL_MAX, SPIRAL_STEP)
 
-        arc_config_val = 21
-        arc_duration_val = 12.0
-        max_omega = 0.6
+        arc_config_val = 31
+        arc_duration_val = 8
+        max_omega = 0.8
         self.arc_planner = TemporalArcPlanner(
             arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
         )
@@ -285,6 +285,7 @@ class TemporalNavAgent(AutonomousAgent):
                         nav_pose,
                         data["rock_data"]["centers"],
                         data["rock_data"]["radii"],
+                        self.current_velocity,
                     )
 
                     if control is not None:
@@ -343,6 +344,9 @@ class TemporalNavAgent(AutonomousAgent):
             Rerun.log_2d_seq_scalar("/trajectory_error/err_x", self.step, position_error[0])
             Rerun.log_2d_seq_scalar("/trajectory_error/err_y", self.step, position_error[1])
             Rerun.log_2d_seq_scalar("/trajectory_error/err_z", self.step, position_error[2])
+            Rerun.log_2d_seq_scalar(
+                "/trajectory_error/velocity", self.step, np.linalg.norm(self.current_velocity)
+            )
 
         print("\n-----------------------------------------------")
 

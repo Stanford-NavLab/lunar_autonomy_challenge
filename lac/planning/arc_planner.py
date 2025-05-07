@@ -80,7 +80,11 @@ class ArcPlanner:
         self.np_candidate_arcs = np.array(self.candidate_arcs)
 
     def plan_arc(
-        self, waypoint_global: np.ndarray, current_pose: np.ndarray, rock_data: dict
+        self,
+        waypoint_global: np.ndarray,
+        current_pose: np.ndarray,
+        rock_data: dict,
+        current_velocity: float,
     ) -> tuple:
         """Plan an arc to a waypoint while avoiding rocks and lander
 

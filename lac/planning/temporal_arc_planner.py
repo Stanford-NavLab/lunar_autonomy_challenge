@@ -110,6 +110,7 @@ class TemporalArcPlanner:
         current_pose: np.ndarray,
         rock_coords: np.ndarray,
         rock_radii: list,
+        current_velocity: float,
     ):
         """Plan path using rolling rock memory projected into the current frame."""
         # Update memory queue with new data and pose
