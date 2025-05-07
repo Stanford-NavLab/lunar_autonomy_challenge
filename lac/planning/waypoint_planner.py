@@ -27,7 +27,7 @@ class WaypointPlanner:
         repeat: int = 1,
     ):
         # self.waypoints = gen_spiral(initial_pose, spiral_min, spiral_max, spiral_step, repeat)
-        self.waypoints = gen_loops(initial_pose, extra_closure=False)
+        self.waypoints = gen_loops(initial_pose, extra_closure=True)
         self.waypoint_idx = 0
 
     def get_waypoint(self, pose: np.ndarray, print_progress: bool = False) -> np.ndarray | None:

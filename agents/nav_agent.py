@@ -30,11 +30,10 @@ import lac.params as params
 
 
 """ Agent parameters and settings """
-EVAL = False  # Whether running in evaluation mode (disable ground truth)
+EVAL = True  # Whether running in evaluation mode (disable ground truth)
 USE_FIDUCIALS = False
 BACK_CAMERAS = True
 
-EARLY_STOP_STEP = 0  # Number of steps before stopping the mission (0 for no early stop)
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 

@@ -51,6 +51,10 @@ class Backend:
         self.keyframe_traj = None
         self.loop_closures = []
 
+        # TODO: log these for debugging
+        self.odometry = []
+        self.loop_closures_poses = []
+
     def update(self, data: dict):
         """Update the backend with new data
 
