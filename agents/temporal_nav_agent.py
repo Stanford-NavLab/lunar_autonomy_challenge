@@ -284,15 +284,19 @@ class TemporalNavAgent(AutonomousAgent):
 
                     # Path planning
                     self.arcs = self.arc_planner.np_candidate_arcs
-
-                    control, path, waypoint_local = self.arc_planner.plan_arc(
-                        self.step,
-                        waypoint,
-                        nav_pose,
-                        data["rock_data"]["centers"],
-                        data["rock_data"]["radii"],
-                        self.current_velocity,
-                    )
+                    if USE_TEMPORAL:
+                        control, path, waypoint_local = self.arc_planner.plan_arc(
+                            self.step,
+                            waypoint,
+                            nav_pose,
+                            data["rock_data"]["centers"],
+                            data["rock_data"]["radii"],
+                            self.current_velocity,
+                        )
+                    else:
+                        control, path, waypoint_local = self.arc_planner.plan_arc(
+                            waypoint, nav_pose, data["rock_data"]
+                        )
 
                     if control is not None:
 

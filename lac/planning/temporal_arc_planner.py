@@ -26,7 +26,7 @@ class TemporalArcPlanner:
         arc_config: int | tuple[int, int] = 31,
         arc_duration: float | tuple[float, float] = 8.0,
         max_omega: float | tuple[float, float] = 0.8,
-        max_queue_size: int = 5,
+        max_queue_size: int = 4,
         step_interval: int = 10,
     ):
         # Arc generation (unchanged, omitted for brevity)...
