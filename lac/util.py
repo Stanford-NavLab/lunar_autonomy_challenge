@@ -345,3 +345,36 @@ def grayscale_to_3ch_tensor(np_image):
     # Add channel dimension and repeat across 3 channels
     torch_tensor = torch.from_numpy(np_image).unsqueeze(0).repeat(3, 1, 1)
     return torch_tensor
+
+
+def log_rotation(R_mat):
+    """Convert rotation matrix to rotation vector (Lie algebra so3)"""
+    return Rotation.from_matrix(R_mat).as_rotvec()
+
+
+def compute_odometry_sigmas(imu_odoms, eval_odoms):
+    assert len(imu_odoms) == len(eval_odoms), "Input lists must be same length"
+
+    translation_errors = []
+    rotation_errors = []
+
+    for imu_rel, eval_rel in zip(imu_odoms, eval_odoms):
+        # Error between relative poses
+        err_rel = np.linalg.inv(eval_rel) @ imu_rel
+
+        # Extract translation error
+        trans_error = err_rel[:3, 3]
+
+        # Extract rotation error as Lie algebra vector
+        rot_error = log_rotation(err_rel[:3, :3])
+
+        translation_errors.append(trans_error)
+        rotation_errors.append(rot_error)
+
+    translation_errors = np.array(translation_errors)
+    rotation_errors = np.array(rotation_errors)
+
+    sigma_translation = np.std(translation_errors, axis=0)
+    sigma_rotation = np.std(rotation_errors, axis=0)
+
+    return sigma_rotation, sigma_translation
