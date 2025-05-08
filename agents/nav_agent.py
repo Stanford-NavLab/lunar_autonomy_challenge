@@ -30,8 +30,7 @@ import lac.params as params
 
 
 """ Agent parameters and settings """
-EVAL = True  # Whether running in evaluation mode (disable ground truth)
-USE_FIDUCIALS = False
+EVAL = False  # Whether running in evaluation mode (disable ground truth)
 BACK_CAMERAS = True
 
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
@@ -151,7 +150,7 @@ class NavAgent(AutonomousAgent):
         return self.step % 2 == 0  # Image data is available every other step
 
     def use_fiducials(self):
-        return USE_FIDUCIALS
+        return False
 
     def sensors(self):
         sensors = {}
@@ -355,3 +354,6 @@ class NavAgent(AutonomousAgent):
             self.data_logger.save_log()
             slam_poses = np.array(self.backend.get_trajectory())
             np.save(f"output/{get_entry_point()}/default_run/slam_poses.npy", slam_poses)
+
+            backend_state = self.backend.get_state()
+            np.save(f"output/{get_entry_point()}/default_run/backend_state.npz", backend_state)
