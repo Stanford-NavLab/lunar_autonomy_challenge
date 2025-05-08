@@ -16,6 +16,7 @@ from collections import deque
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
+from lac.planning.temporal_arc_planner import TemporalArcPlanner
 from lac.util import transform_to_numpy
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
 from lac.slam.frontend import Frontend
@@ -40,6 +41,7 @@ MISSION_TIMEOUT = 100000  # Number of frames to end mission after
 
 LOG_DATA = True  # Whether to log data
 RERUN = True  # Whether to use rerun for visualization
+USE_TEMPORAL = True
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
@@ -112,6 +114,18 @@ class NavAgent(AutonomousAgent):
         )
         self.planner = WaypointPlanner(self.initial_pose, triangle_loops=True)
         self.arc_planner = ArcPlanner()
+        arc_config_val = 31
+        arc_duration_val = 8
+        max_omega = 0.8
+        if USE_TEMPORAL == True:
+            self.arc_planner = TemporalArcPlanner(
+                arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
+            )
+        else:
+            self.arc_planner = ArcPlanner(
+                arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
+            )
+        self.arcs = self.arc_planner.np_candidate_arcs
 
         """ State variables """
         self.current_pose = self.initial_pose
@@ -270,11 +284,24 @@ class NavAgent(AutonomousAgent):
 
                     data = self.frontend.process_frame(images_gray)
                     self.backend.update(data)
+                    depth = data["depth"]
 
                     # Path planning
-                    control, path, waypoint_local = self.arc_planner.plan_arc(
-                        waypoint, nav_pose, data["rock_data"]
-                    )
+                    self.arcs = self.arc_planner.np_candidate_arcs
+                    if USE_TEMPORAL:
+                        control, path, waypoint_local = self.arc_planner.plan_arc(
+                            self.step,
+                            waypoint,
+                            nav_pose,
+                            data["rock_data"]["centers"],
+                            data["rock_data"]["radii"],
+                            self.current_velocity,
+                            depth,
+                        )
+                    else:
+                        control, path, waypoint_local = self.arc_planner.plan_arc(
+                            waypoint, nav_pose, data["rock_data"]
+                        )
                     if control is not None:
                         self.current_v, self.current_w = control
                         # Proportional feedback on v
@@ -293,6 +320,18 @@ class NavAgent(AutonomousAgent):
                                     centers=data["rock_data"]["centers"][:, :2],
                                     radii=data["rock_data"]["radii"],
                                 )
+                        if self.step % 100 == 0:
+                            if USE_TEMPORAL:
+                                combined_map = self.arc_planner.get_combined_rock_map(nav_pose)
+                                self.arc_planner.plot_rocks(
+                                    combined_map, self.arcs, path, self.step
+                                )
+                            else:
+                                rock_data = (
+                                    data["rock_data"]["centers"],
+                                    data["rock_data"]["radii"],
+                                )
+                                self.arc_planner.plot_rocks(rock_data, self.arcs, path, self.step)
 
             if LOG_DATA:
                 self.data_logger.log_images(self.step, input_data)

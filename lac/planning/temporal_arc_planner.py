@@ -177,7 +177,7 @@ class TemporalArcPlanner:
             fig = plot_path_rover_frame(best_arc, color="green", fig=fig)
 
         # Save the figure to HTML
-        save_path = f"results/planner_graphs/rock_plot_{step}.html"
+        save_path = f"results/planner_graphs_temporal/rock_plot_{step}.html"
         fig.write_html(save_path)
 
         if show:
