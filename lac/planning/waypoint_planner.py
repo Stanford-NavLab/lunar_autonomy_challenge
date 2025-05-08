@@ -16,20 +16,14 @@ SPIRAL_STEP = 2.0  # [m]
 # Clockwise order: top-left, top-right, bottom-right, bottom-left
 DEFAULT_ORDER = np.array([[-1, 1], [1, 1], [1, -1], [-1, -1]])
 
-WAYPOINT_TIMEOUT = 2000  # [steps] timeout to give up on a waypoint
+WAYPOINT_TIMEOUT = 5000  # [steps] timeout to give up on a waypoint
 
 
 class WaypointPlanner:
-    def __init__(
-        self,
-        initial_pose: np.ndarray,
-        spiral_min: float = SPIRAL_MIN,
-        spiral_max: float = SPIRAL_MAX,
-        spiral_step: float = SPIRAL_STEP,
-        repeat: int = 1,
-    ):
+    def __init__(self, initial_pose: np.ndarray):
         # self.waypoints = gen_spiral(initial_pose, spiral_min, spiral_max, spiral_step, repeat)
         self.waypoints = gen_loops(initial_pose, extra_closure=True)
+        # self.waypoints = gen_triangle_loops(initial_pose)
         self.waypoint_idx = 0
         self.last_waypoint_step = 0
 
@@ -214,6 +208,41 @@ def gen_loops(initial_pose: np.ndarray, loop_width: float = 7.0, extra_closure: 
 
     if extra_closure:
         points.append(center_loop[2])
+
+    points = np.vstack(points)
+    return points
+
+
+def gen_triangle_loops(initial_pose: np.ndarray, loop_width: float = 7.0):
+    """ """
+    W = loop_width
+
+    points = []
+
+    # Add center loop around lander with order based on initial pose
+    direction_order, start_index = get_starting_direction_order(initial_pose)
+    center_loop = (W / 2) * direction_order
+    points.append(center_loop)  # [0, 1, 2, 3]
+    points.append(center_loop[:2])  # [0, 1]
+
+    # Side points for (+,+) quadrant (top-right), which is the first side to be added if start index is 0
+    side_points = W * np.array([[0, -1], [1, -1], [1, 0], [0, -1]])
+    R = np.array([[0, 1], [-1, 0]])  # 90-deg clockwise rotation
+    # Rotate the side points based on start index
+    for j in range(start_index):
+        side_points = side_points @ R.T
+
+    for i in range(4):
+        # Get the corner point in the current quadrant (offset by 1)
+        corner = center_loop[(i + 1) % 4]
+        x, y = np.sign(corner)
+        # Corner
+        corner_points = W * np.array([[x, 0], [x, y], [0, 0], [0, y], [x, y], [0, 0]])
+        points.append(corner + corner_points)
+
+        # Side
+        points.append(corner + side_points)
+        side_points = side_points @ R.T
 
     points = np.vstack(points)
     return points

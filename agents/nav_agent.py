@@ -30,21 +30,16 @@ import lac.params as params
 
 
 """ Agent parameters and settings """
-EVAL = False  # Whether running in evaluation mode (disable ground truth)
+EVAL = True  # Whether running in evaluation mode (disable ground truth)
 USE_FIDUCIALS = False
 BACK_CAMERAS = True
 
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
-MISSION_TIMEOUT = 200000  # Number of frames to end mission after
+MISSION_TIMEOUT = 100000  # Number of frames to end mission after
 
 LOG_DATA = True  # Whether to log data
 RERUN = False  # Whether to use rerun for visualization
-
-SPIRAL_MIN = 3.5
-SPIRAL_MAX = 5.0
-SPIRAL_STEP = 0.35
-SPIRAL_REPEAT = 0
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
@@ -113,9 +108,7 @@ class NavAgent(AutonomousAgent):
         self.lander_pose = self.initial_pose @ transform_to_numpy(
             self.get_initial_lander_position()
         )
-        self.planner = WaypointPlanner(
-            self.initial_pose, SPIRAL_MIN, SPIRAL_MAX, SPIRAL_STEP, SPIRAL_REPEAT
-        )
+        self.planner = WaypointPlanner(self.initial_pose)
         self.arc_planner = ArcPlanner()
 
         """ State variables """
