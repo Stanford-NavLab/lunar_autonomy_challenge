@@ -281,6 +281,7 @@ class TemporalNavAgent(AutonomousAgent):
                     images_gray["imu"] = self.get_imu_data()
                     data = self.frontend.process_frame(images_gray)
                     self.backend.update(data)
+                    depth = data["depth"]
 
                     # Path planning
                     self.arcs = self.arc_planner.np_candidate_arcs
@@ -292,6 +293,7 @@ class TemporalNavAgent(AutonomousAgent):
                             data["rock_data"]["centers"],
                             data["rock_data"]["radii"],
                             self.current_velocity,
+                            depth,
                         )
                     else:
                         control, path, waypoint_local = self.arc_planner.plan_arc(

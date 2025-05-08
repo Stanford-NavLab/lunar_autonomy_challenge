@@ -95,5 +95,6 @@ class Frontend:
         data["keyframe"] = data["step"] % KEYFRAME_INTERVAL == 0
         data["tracked_points"] = self.feature_tracker.tracked_points
         data["rock_data"] = {"centers": rock_coords, "radii": rock_radii}
+        data["depth"] = stereo_depth_results
 
         return data

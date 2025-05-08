@@ -26,7 +26,7 @@ class TemporalArcPlanner:
         arc_config: int | tuple[int, int] = 31,
         arc_duration: float | tuple[float, float] = 8.0,
         max_omega: float | tuple[float, float] = 0.8,
-        max_queue_size: int = 4,
+        max_queue_size: int = 3,
         step_interval: int = 10,
     ):
         # Arc generation (unchanged, omitted for brevity)...
@@ -42,6 +42,7 @@ class TemporalArcPlanner:
         self.root_vw = []
         self.vw = []
         self.scale = 0.5
+        self.min_depth = 0.5
 
         if isinstance(arc_config, int):
             self.is_branch = False
@@ -77,10 +78,19 @@ class TemporalArcPlanner:
             self.vw = self.root_vw
         self.np_candidate_arcs = np.array(self.candidate_arcs)
 
-    def update_rock_history(self, rock_coords: np.ndarray, rock_radii: list, pose):
+    def update_rock_history(self, rock_coords: np.ndarray, rock_radii: list, pose, depth):
         """Store rocks and their associated pose every `step_interval` frames."""
         # Save both rock data and the associated pose
-        self.rock_history_queue.append((rock_coords.copy(), rock_radii.copy(), pose))
+        close_rock_coords = []
+        close_rock_radii = []
+
+        for i, rock in enumerate(depth):
+            if rock["depth"] < self.min_depth:
+                close_rock_coords.append(rock_coords[i])
+                close_rock_radii.append(rock_radii[i])
+
+        if close_rock_coords:
+            self.rock_history_queue.append((np.array(close_rock_coords), close_rock_radii, pose))
 
     def get_combined_rock_map(self, current_pose: np.ndarray):
         """Transform all historical rocks into the current frame."""
@@ -111,10 +121,11 @@ class TemporalArcPlanner:
         rock_coords: np.ndarray,
         rock_radii: list,
         current_velocity: float,
+        depth,
     ):
         """Plan path using rolling rock memory projected into the current frame."""
         # Update memory queue with new data and pose
-        self.update_rock_history(rock_coords, rock_radii, current_pose)
+        self.update_rock_history(rock_coords, rock_radii, current_pose, depth)
 
         # Combine + transform rocks to current frame
         rock_coords, rock_radii = self.get_combined_rock_map(current_pose)
