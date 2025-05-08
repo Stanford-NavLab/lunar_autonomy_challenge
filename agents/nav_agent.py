@@ -251,6 +251,7 @@ class NavAgent(AutonomousAgent):
                 Rerun.log_scalar("/metrics/rocks_score", rocks_score)
 
         self.imu_measurements.append(self.get_imu_data())
+        control = (0.0, 0.0)
 
         """ Image processing """
         if self.image_available():
