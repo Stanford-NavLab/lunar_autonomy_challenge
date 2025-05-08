@@ -33,7 +33,7 @@ import lac.params as params
 EVAL = False  # Whether running in evaluation mode (disable ground truth)
 BACK_CAMERAS = True
 
-USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
+USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 MISSION_TIMEOUT = 100000  # Number of frames to end mission after
 
@@ -115,6 +115,7 @@ class NavAgent(AutonomousAgent):
         """ State variables """
         self.current_pose = self.initial_pose
         self.current_velocity = np.zeros(3)
+        self.imu_measurements = []  # IMU measurements since last image
 
         """ SLAM """
         feature_tracker = SemanticFeatureTracker(self.cameras)
@@ -248,6 +249,8 @@ class NavAgent(AutonomousAgent):
                 Rerun.log_2d_seq_scalar("/scores/rocks", self.step, rocks_score)
                 Rerun.log_scalar("/metrics/rocks_score", rocks_score)
 
+        self.imu_measurements.append(self.get_imu_data())
+
         """ Image processing """
         if self.image_available():
             images_gray = {}
@@ -260,7 +263,10 @@ class NavAgent(AutonomousAgent):
                     self.frontend.initialize(images_gray)
                 else:
                     images_gray["step"] = self.step
-                    images_gray["imu"] = self.get_imu_data()
+                    images_gray["imu"] = self.imu_measurements
+                    images_gray["pose"] = self.current_pose
+                    self.imu_measurements.clear()
+
                     data = self.frontend.process_frame(images_gray)
                     self.backend.update(data)
 

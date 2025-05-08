@@ -1,6 +1,7 @@
 """Utilities for 2D/3D geometry"""
 
 import numpy as np
+from scipy.spatial.transform import Rotation, Slerp
 
 
 def in_bbox(point, bbox):
@@ -49,3 +50,33 @@ def crop_points(points, bbox, buffer=0):
         & (points[:, 2] <= bbox[1][2] + buffer)
     )
     return points[keep_idxs], keep_idxs
+
+
+def interpolate_rotation_matrix(R1, R2, alpha):
+    """Interpolate between two rotation matrices.
+
+    Parameters
+    ----------
+    R1 : np.array (3, 3)
+        First rotation matrix
+    R2 : np.array (3, 3)
+        Second rotation matrix
+    alpha : float
+        Interpolation factor
+
+    Returns
+    -------
+    np.array (3, 3)
+        Interpolated rotation matrix
+
+    """
+    rot1 = Rotation.from_matrix(R1)
+    rot2 = Rotation.from_matrix(R2)
+
+    # Create SLERP interpolator
+    slerp = Slerp([0, 1], Rotation.concatenate([rot1, rot2]))
+
+    # Evaluate at desired alpha
+    rot_interp = slerp([alpha])[0]
+
+    return rot_interp.as_matrix()
