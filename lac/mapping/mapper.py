@@ -99,7 +99,7 @@ def process_map(semantic_points: SemanticPointCloud, agent_map: np.ndarray) -> n
     rock_points = semantic_points.points[semantic_points.labels == SemanticClasses.ROCK.value]
     x_edges = np.linspace(-MAP_EXTENT, MAP_EXTENT, MAP_SIZE + 1)
     y_edges = np.linspace(-MAP_EXTENT, MAP_EXTENT, MAP_SIZE + 1)
-    ROCK_COUNT_THRESH = 10
+    ROCK_COUNT_THRESH = 40  # 40 for triangles, 10 for 5 loops
     rock_counts, _, _ = np.histogram2d(
         rock_points[:, 0], rock_points[:, 1], bins=[x_edges, y_edges]
     )

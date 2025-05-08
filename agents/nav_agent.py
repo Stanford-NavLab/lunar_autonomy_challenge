@@ -191,7 +191,7 @@ class NavAgent(AutonomousAgent):
         # Agent is stuck if the velocity is less than 0.1 m/s
         if self.step < ARM_RAISE_WAIT_FRAMES + 10:
             return False
-        is_stuck = np.linalg.norm(self.current_velocity) < 0.5 * params.TARGET_SPEED
+        is_stuck = np.linalg.norm(self.current_velocity) < 0.25 * params.TARGET_SPEED
         if is_stuck and self.stuck_timer == 0:
             self.stuck_counter += 1
             self.stuck_timer += 1

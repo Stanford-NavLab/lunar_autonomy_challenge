@@ -12,7 +12,7 @@ from lac.utils.frames import apply_transform
 from lac.util import rotation_matrix_error
 
 LOOP_CLOSURE_EXCLUDE = 10  # Exclude the last N keyframes
-LOOP_CLOSURE_DIST_THRESHOLD = 1.0  # meters
+LOOP_CLOSURE_DIST_THRESHOLD = 0.75  # meters
 LOOP_CLOSURE_ANGLE_THRESHOLD = 5.0  # degrees
 
 
@@ -206,6 +206,7 @@ class Backend:
 
     def get_state(self):
         """Get the current state of the backend"""
+        # TODO: can we save the point map too?
         return {
             "odometry": np.array(self.odometry),
             "loop_closures": np.array(self.loop_closures),
