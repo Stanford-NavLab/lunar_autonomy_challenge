@@ -313,7 +313,7 @@ class NavAgent(AutonomousAgent):
 
         """ Data logging """
         if LOG_DATA:
-            self.data_logger.log_data(self.step, control, self.current_pose)
+            self.data_logger.log_data(self.step, carla_control, self.current_pose)
 
         """ Update state """
         slam_poses = self.backend.get_trajectory()
