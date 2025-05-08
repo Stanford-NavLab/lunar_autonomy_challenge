@@ -203,3 +203,11 @@ class Backend:
         """Output local semantic point cloud for path planning"""
         # TODO
         pass
+
+    def get_state(self):
+        """Get the current state of the backend"""
+        return {
+            "odometry": np.array(self.odometry),
+            "loop_closures": np.array(self.loop_closures),
+            "loop_closures_poses": np.array(self.loop_closures_poses),
+        }
