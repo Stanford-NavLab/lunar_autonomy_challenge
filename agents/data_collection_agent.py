@@ -29,8 +29,8 @@ TURN_RATE = 0.3
 
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 
-MODE = "waypoint"  # {"teleop", "waypoint", "dynamics"}
-DISPLAY_IMAGES = False  # Set to False to disable image display
+MODE = "teleop"  # {"teleop", "waypoint", "dynamics"}
+DISPLAY_IMAGES = True  # Set to False to disable image display
 
 
 def get_entry_point():
@@ -53,22 +53,20 @@ class DataCollectionAgent(AutonomousAgent):
         """ Planner """
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = WaypointPlanner(
-            initial_pose, spiral_min=3.0, spiral_max=3.5, spiral_step=0.25, repeat=0
-        )
+        self.planner = WaypointPlanner(initial_pose)
 
         # Camera config
         self.cameras = params.CAMERA_CONFIG_INIT
         self.cameras["FrontLeft"] = {
             "active": True,
-            "light": 0.75,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
         }
         self.cameras["FrontRight"] = {
             "active": True,
-            "light": 0.75,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
@@ -82,14 +80,14 @@ class DataCollectionAgent(AutonomousAgent):
         }
         self.cameras["BackLeft"] = {
             "active": True,
-            "light": 0.75,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
         }
         self.cameras["BackRight"] = {
             "active": True,
-            "light": 0.75,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
@@ -103,14 +101,14 @@ class DataCollectionAgent(AutonomousAgent):
         }
         self.cameras["Left"] = {
             "active": True,
-            "light": 1.0,
+            "light": 0.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
         }
         self.cameras["Right"] = {
             "active": True,
-            "light": 1.0,
+            "light": 0.0,
             "width": 1280,
             "height": 720,
             "semantic": False,
@@ -155,7 +153,7 @@ class DataCollectionAgent(AutonomousAgent):
 
     def initialize(self):
         # Move the arms out of the way
-        self.set_front_arm_angle(params.ARM_ANGLE_STATIC_RAD)
+        self.set_front_arm_angle(params.FRONT_ARM_ANGLE_STATIC_RAD)
         self.set_back_arm_angle(params.ARM_ANGLE_STATIC_RAD)
 
     def run_step(self, input_data):
@@ -175,7 +173,9 @@ class DataCollectionAgent(AutonomousAgent):
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         elif MODE == "waypoint":
             ground_truth_pose = transform_to_numpy(self.get_transform())
-            waypoint, _ = self.planner.get_waypoint(ground_truth_pose, print_progress=True)
+            waypoint, _ = self.planner.get_waypoint(
+                self.step, ground_truth_pose, print_progress=True
+            )
             if waypoint is None:
                 self.mission_complete()
                 return carla.VehicleVelocityControl(0.0, 0.0)

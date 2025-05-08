@@ -12,6 +12,7 @@ import carla
 import cv2 as cv
 import numpy as np
 import signal
+from collections import deque
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
@@ -115,7 +116,7 @@ class NavAgent(AutonomousAgent):
         """ State variables """
         self.current_pose = self.initial_pose
         self.current_velocity = np.zeros(3)
-        self.imu_measurements = []  # IMU measurements since last image
+        self.imu_measurements = deque(maxlen=2)  # IMU measurements since last image
 
         """ SLAM """
         feature_tracker = SemanticFeatureTracker(self.cameras)
@@ -263,9 +264,8 @@ class NavAgent(AutonomousAgent):
                     self.frontend.initialize(images_gray)
                 else:
                     images_gray["step"] = self.step
-                    images_gray["imu"] = self.imu_measurements
-                    images_gray["pose"] = self.current_pose
-                    self.imu_measurements.clear()
+                    images_gray["imu_measurements"] = self.imu_measurements
+                    images_gray["prev_pose"] = self.current_pose
 
                     data = self.frontend.process_frame(images_gray)
                     self.backend.update(data)
@@ -292,8 +292,6 @@ class NavAgent(AutonomousAgent):
                                     centers=data["rock_data"]["centers"][:, :2],
                                     radii=data["rock_data"]["radii"],
                                 )
-                    else:
-                        print("No safe paths found!")
 
             if LOG_DATA:
                 self.data_logger.log_images(self.step, input_data)
@@ -302,13 +300,16 @@ class NavAgent(AutonomousAgent):
 
         """ Control """
         if self.step < ARM_RAISE_WAIT_FRAMES:  # Wait for arms to raise before moving
-            control = carla.VehicleVelocityControl(0.0, 0.0)
+            carla_control = carla.VehicleVelocityControl(0.0, 0.0)
         # If agent is stuck, perform backup maneuver
         elif self.backup_counter > 0 or self.check_stuck():
             print("Agent is stuck.")
-            control = self.run_backup_maneuver()
+            carla_control = self.run_backup_maneuver()
+        elif control is None:
+            print("No safe paths found by planner!")
+            carla_control = self.run_backup_maneuver()
         else:
-            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+            carla_control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         """ Data logging """
         if LOG_DATA:
@@ -340,7 +341,7 @@ class NavAgent(AutonomousAgent):
 
         print("\n-----------------------------------------------")
 
-        return control
+        return carla_control
 
     def update_map(self):
         """Update the map with current backend state"""
