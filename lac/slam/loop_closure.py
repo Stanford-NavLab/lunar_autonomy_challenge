@@ -6,6 +6,8 @@ import numpy as np
 from lac.slam.feature_tracker import FeatureTracker, prune_features
 from lac.perception.vision import solve_vision_pnp
 
+MIN_MATCHES = 100
+
 
 def estimate_loop_closure_pose(
     tracker: FeatureTracker, left_img1, right_img1, left_img2, right_img2
@@ -62,7 +64,9 @@ def keyframe_estimate_loop_closure_pose(
 
     matches12_left = tracker.match_feats(feats_left1, feats_left2, min_score=0.6)
 
-    print(f"Loop closure matches: {len(matches12_left)}")
+    if len(matches12_left) < MIN_MATCHES:
+        print("Not enough matches for loop closure")
+        return None
 
     stereo_indices = stereo_matches1[:, 0]
     frame_indices = matches12_left[:, 0]

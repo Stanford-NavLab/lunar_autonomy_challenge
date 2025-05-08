@@ -179,9 +179,16 @@ def plot_rock_maps(ground_map: np.ndarray, agent_map: np.ndarray):
     fig.show()
 
 
-def plot_waypoints(waypoints: np.ndarray, fig=None):
+def plot_waypoints(
+    waypoints: np.ndarray,
+    fig: go.Figure | None = None,
+    arrow_scale: float = 0.2,
+    arrow_size: int = 12,
+):
     if fig is None:
         fig = go.Figure()
+
+    # Path segments
     fig.add_trace(
         go.Scatter(
             x=waypoints[:, 0],
@@ -191,6 +198,35 @@ def plot_waypoints(waypoints: np.ndarray, fig=None):
             hovertext=np.arange(len(waypoints)),
         )
     )
+
+    # Arrows
+    # Compute segment directions
+    dx, dy = np.diff(waypoints[:, 0]), np.diff(waypoints[:, 1])
+    seg_len = np.hypot(dx, dy)
+    seg_len[seg_len == 0] = 1e-9  # avoid division by zero
+
+    # Compute arrowhead positions and orientations
+    arrow_x = waypoints[:-1, 0] + dx * arrow_scale
+    arrow_y = waypoints[:-1, 1] + dy * arrow_scale
+    angles = 90 - np.degrees(np.arctan2(dy, dx))  # Rotate from +Y
+
+    fig.add_trace(
+        go.Scatter(
+            x=arrow_x,
+            y=arrow_y,
+            mode="markers",
+            showlegend=False,
+            hoverinfo="skip",
+            marker=dict(
+                symbol="triangle-up",
+                size=arrow_size,
+                angle=angles,
+                color="blue",
+                line=dict(width=0),
+            ),
+        )
+    )
+
     fig.update_layout(width=600, height=600, xaxis=dict(scaleanchor="y"))
     return fig
 
