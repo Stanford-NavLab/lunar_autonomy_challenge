@@ -23,7 +23,7 @@ class WaypointPlanner:
     def __init__(self, initial_pose: np.ndarray):
         # self.waypoints = gen_spiral(initial_pose, spiral_min, spiral_max, spiral_step, repeat)
         # self.waypoints = gen_loops(initial_pose, extra_closure=True)
-        self.waypoints = gen_triangle_loops(initial_pose)
+        self.waypoints = gen_triangle_loops(initial_pose, loop_width=7.0)
         self.waypoint_idx = 0
         self.last_waypoint_step = 0
 

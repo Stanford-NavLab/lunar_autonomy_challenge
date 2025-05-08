@@ -356,4 +356,11 @@ class NavAgent(AutonomousAgent):
             np.save(f"output/{get_entry_point()}/default_run/slam_poses.npy", slam_poses)
 
             backend_state = self.backend.get_state()
-            np.save(f"output/{get_entry_point()}/default_run/backend_state.npz", backend_state)
+            # with open(f"output/{get_entry_point()}/default_run/backend_state.", 'w') as file:
+            #     json.dump(data, file, indent=4) # indent for readability
+            np.savez_compressed(
+                f"output/{get_entry_point()}/default_run/backend_state.npz",
+                odometry=backend_state["odometry"],
+                loop_closures=backend_state["loop_closures"],
+                loop_closure_poses=backend_state["loop_closures_poses"],
+            )
