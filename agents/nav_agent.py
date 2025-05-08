@@ -34,7 +34,7 @@ import lac.params as params
 EVAL = False  # Whether running in evaluation mode (disable ground truth)
 BACK_CAMERAS = True
 
-USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
+USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 MISSION_TIMEOUT = 100000  # Number of frames to end mission after
 
@@ -110,7 +110,7 @@ class NavAgent(AutonomousAgent):
         self.lander_pose = self.initial_pose @ transform_to_numpy(
             self.get_initial_lander_position()
         )
-        self.planner = WaypointPlanner(self.initial_pose)
+        self.planner = WaypointPlanner(self.initial_pose, triangle_loops=True)
         self.arc_planner = ArcPlanner()
 
         """ State variables """
