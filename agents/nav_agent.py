@@ -38,7 +38,7 @@ ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 MISSION_TIMEOUT = 100000  # Number of frames to end mission after
 
 LOG_DATA = True  # Whether to log data
-RERUN = False  # Whether to use rerun for visualization
+RERUN = True  # Whether to use rerun for visualization
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
@@ -85,6 +85,8 @@ class NavAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
+        # Turn on front camera light
+        self.cameras["Front"]["light"] = 1.0
         if BACK_CAMERAS:
             self.cameras["BackLeft"] = {
                 "active": True,
@@ -143,7 +145,7 @@ class NavAgent(AutonomousAgent):
 
     def initialize(self):
         # Move the arms out of the way
-        self.set_front_arm_angle(params.ARM_ANGLE_STATIC_RAD)
+        self.set_front_arm_angle(params.FRONT_ARM_ANGLE_STATIC_RAD)
         self.set_back_arm_angle(params.ARM_ANGLE_STATIC_RAD)
 
     def image_available(self):

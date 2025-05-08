@@ -12,7 +12,7 @@ from lac.utils.frames import apply_transform
 from lac.util import rotation_matrix_error
 
 LOOP_CLOSURE_EXCLUDE = 10  # Exclude the last N keyframes
-LOOP_CLOSURE_DIST_THRESHOLD = 0.75  # meters
+LOOP_CLOSURE_DIST_THRESHOLD = 1.0  # meters
 LOOP_CLOSURE_ANGLE_THRESHOLD = 5.0  # degrees
 
 
@@ -52,9 +52,11 @@ class Backend:
         self.loop_closures = []
 
         # TODO: log these for debugging
+        self.pose_idx_map = {}
         self.odometry = []
         self.odometry_sources = []
         self.loop_closures_poses = []
+        self.loop_closures_matches = []
 
     def update(self, data: dict):
         """Update the backend with new data
@@ -90,6 +92,7 @@ class Backend:
         # NOTE: logging
         self.odometry.append(data["odometry"])
         self.odometry_sources.append(data["odometry_source"])
+        self.pose_idx_map[self.pose_idx] = data["step"]
 
         # Add tracked points to map
         tracks: TrackedPoints = data["tracked_points"]
@@ -138,8 +141,9 @@ class Backend:
         loop_closure_idxs = []
         if self.keyframe_traj is not None and len(self.keyframe_traj) > LOOP_CLOSURE_EXCLUDE:
             # Exclude the most recent N keyframes
+            # Only check 2D (xy) distance
             dists = np.linalg.norm(
-                self.keyframe_traj[:-LOOP_CLOSURE_EXCLUDE, :3, 3] - new_pose[:3, 3], axis=1
+                self.keyframe_traj[:-LOOP_CLOSURE_EXCLUDE, :2, 3] - new_pose[:2, 3], axis=1
             )
             dist_check_idxs = np.where(dists < LOOP_CLOSURE_DIST_THRESHOLD)[0]
             for idx in dist_check_idxs:
@@ -155,7 +159,7 @@ class Backend:
         for idx in idxs:
             pose_idx = list(self.keyframe_data.keys())[idx]
             keyframe_data = self.keyframe_data[pose_idx]
-            relative_pose = keyframe_estimate_loop_closure_pose(
+            relative_pose, num_matches = keyframe_estimate_loop_closure_pose(
                 self.feature_tracker, keyframe_data, data["FrontLeft"]
             )
             if relative_pose is None:
@@ -171,6 +175,7 @@ class Backend:
             )
             self.loop_closures.append((pose_idx, self.pose_idx))
             self.loop_closures_poses.append(relative_pose)
+            self.loop_closures_matches.append(num_matches)
 
     def optimize(self):
         """Optimize the graph"""

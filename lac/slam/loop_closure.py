@@ -64,10 +64,12 @@ def keyframe_estimate_loop_closure_pose(
     points_local1 = tracker.project_stereo(np.eye(4), matched_pts_left1, depths1)
 
     matches12_left = tracker.match_feats(feats_left1, feats_left2, min_score=MIN_SCORE)
+    num_matches = len(matches12_left)
+    print(f"loop closure matches: {len(matches12_left)}")
 
-    if len(matches12_left) < MIN_MATCHES:
+    if num_matches < MIN_MATCHES:
         print("Not enough matches for loop closure")
-        return None
+        return None, num_matches
 
     stereo_indices = stereo_matches1[:, 0]
     frame_indices = matches12_left[:, 0]
@@ -83,4 +85,4 @@ def keyframe_estimate_loop_closure_pose(
     # relative pose from frame 1 to frame 2, i.e. pose2 = pose1 @ rel_pose
     rel_pose = solve_vision_pnp(points3D, points2D)
 
-    return rel_pose
+    return rel_pose, num_matches
