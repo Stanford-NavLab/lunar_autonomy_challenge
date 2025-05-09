@@ -43,6 +43,7 @@ class Backend:
         self.values = gtsam.Values()
         self.opt_params = gtsam.LevenbergMarquardtParams()
 
+        # NOTE: should we run IMU odometry during arm raise and initialize with that pose instead?
         self.values.insert(X(0), gtsam.Pose3(initial_pose))
         self.graph.add(gtsam.NonlinearEqualityPose3(X(0), gtsam.Pose3(initial_pose)))
         self.pose_idx = 1  # Index for the next pose

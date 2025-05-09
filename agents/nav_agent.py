@@ -144,7 +144,7 @@ class NavAgent(AutonomousAgent):
             self.data_logger = DataLogger(self, agent_name, self.run_name, self.cameras)
             with open(f"output/{agent_name}/{self.run_name}/config.json", "w") as f:
                 json.dump(self.config, f, indent=4)
-            self.slam_eval_poses = []
+            self.slam_eval_poses = [self.initial_pose]
         if RERUN:
             Rerun.init_vo()
             self.gt_poses = [self.initial_pose]
@@ -383,7 +383,9 @@ class NavAgent(AutonomousAgent):
             self.data_logger.save_log()
             slam_poses = np.array(self.backend.get_trajectory())
             np.save(f"output/{get_entry_point()}/{self.run_name}/slam_poses.npy", slam_poses)
-            print(f"Final RMSE: {positions_rmse_from_poses(slam_poses, self.slam_eval_poses)} m")
+            print(
+                f"Final RMSE: {positions_rmse_from_poses(slam_poses, self.slam_eval_poses):.4f} m"
+            )
 
             backend_state = self.backend.get_state()
             np.savez_compressed(

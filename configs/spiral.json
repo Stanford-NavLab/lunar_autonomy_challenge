@@ -1,6 +1,6 @@
 {
     "planning": {
-        "trajectory": "five_loops",
+        "trajectory": "spiral",
         "waypoint_reached_threshold_m": 1.5
     },
     "loop_closure": {
