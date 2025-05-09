@@ -12,6 +12,7 @@ import carla
 import cv2 as cv
 import numpy as np
 import signal
+import json
 from collections import deque
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
@@ -56,6 +57,10 @@ def get_entry_point():
 
 class NavAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
+        """Load config params"""
+        config = json.load(open(path_to_conf_file))
+        print(f"config lc dist thresh: {config['loop_closure']['distance_threshold_m']}")
+
         """Control variables"""
         self.current_v = 0
         self.current_w = 0
@@ -112,7 +117,7 @@ class NavAgent(AutonomousAgent):
         self.lander_pose = self.initial_pose @ transform_to_numpy(
             self.get_initial_lander_position()
         )
-        self.planner = WaypointPlanner(self.initial_pose, triangle_loops=True)
+        self.planner = WaypointPlanner(self.initial_pose, triangle_loops=False)
         if USE_TEMPORAL:
             self.arc_planner = TemporalArcPlanner()
         else:
@@ -309,18 +314,18 @@ class NavAgent(AutonomousAgent):
                                     centers=data["rock_data"]["centers"][:, :2],
                                     radii=data["rock_data"]["radii"],
                                 )
-                        if self.step % 100 == 0:
-                            if USE_TEMPORAL:
-                                combined_map = self.arc_planner.get_combined_rock_map(nav_pose)
-                                self.arc_planner.plot_rocks(
-                                    combined_map, self.arcs, path, self.step
-                                )
-                            else:
-                                rock_data = (
-                                    data["rock_data"]["centers"],
-                                    data["rock_data"]["radii"],
-                                )
-                                self.arc_planner.plot_rocks(rock_data, self.arcs, path, self.step)
+                        # if self.step % 100 == 0:
+                        #     if USE_TEMPORAL:
+                        #         combined_map = self.arc_planner.get_combined_rock_map(nav_pose)
+                        #         self.arc_planner.plot_rocks(
+                        #             combined_map, self.arcs, path, self.step
+                        #         )
+                        #     else:
+                        #         rock_data = (
+                        #             data["rock_data"]["centers"],
+                        #             data["rock_data"]["radii"],
+                        #         )
+                        #         self.arc_planner.plot_rocks(rock_data, self.arcs, path, self.step)
 
             if LOG_DATA:
                 self.data_logger.log_images(self.step, input_data)
@@ -399,6 +404,7 @@ class NavAgent(AutonomousAgent):
             np.savez_compressed(
                 f"output/{get_entry_point()}/default_run/backend_state.npz",
                 odometry=backend_state["odometry"],
+                odometry_sources=backend_state["odometry_sources"],
                 loop_closures=backend_state["loop_closures"],
                 loop_closure_poses=backend_state["loop_closures_poses"],
             )

@@ -91,7 +91,7 @@ class Backend:
 
         # NOTE: logging
         self.odometry.append(data["odometry"])
-        self.odometry_sources.append(data["odometry_source"])
+        self.odometry_sources.append(0 if data["odometry_source"] == "VO" else 1)
         self.pose_idx_map[self.pose_idx] = data["step"]
 
         # Add tracked points to map
@@ -214,6 +214,7 @@ class Backend:
         # TODO: can we save the point map too?
         return {
             "odometry": np.array(self.odometry),
+            "odometry_sources": np.array(self.odometry_sources),
             "loop_closures": np.array(self.loop_closures),
             "loop_closures_poses": np.array(self.loop_closures_poses),
         }
