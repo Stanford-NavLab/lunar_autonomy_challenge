@@ -83,7 +83,6 @@ class ArcPlanner:
         else:
             self.vw = self.root_vw
         self.np_candidate_arcs = np.array(self.candidate_arcs)
-        print(self.np_candidate_arcs)
 
     def plan_arc(
         self,

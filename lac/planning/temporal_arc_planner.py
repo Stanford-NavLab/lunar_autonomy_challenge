@@ -26,13 +26,14 @@ class TemporalArcPlanner:
         arc_config: int | tuple[int, int] = 31,
         arc_duration: float | tuple[float, float] = 8.0,
         max_omega: float | tuple[float, float] = 0.8,
-        max_queue_size: int = 3,
+        max_queue_size: int = 5,
         step_interval: int = 10,
     ):
         # Arc generation (unchanged, omitted for brevity)...
         self.step_interval = step_interval
         self.max_queue_size = max_queue_size
         self.rock_history_queue = deque(maxlen=max_queue_size)
+        self.close_rock_queue = deque(maxlen=max_queue_size)
         MAX_OMEGA = max_omega  # [rad/s]
         ARC_DURATION = arc_duration  # [s]
         NUM_ARC_POINTS = int(ARC_DURATION / params.DT)
@@ -42,7 +43,7 @@ class TemporalArcPlanner:
         self.root_vw = []
         self.vw = []
         self.scale = 0.5
-        self.min_depth = 0.5
+        self.min_depth = 1
 
         if isinstance(arc_config, int):
             self.is_branch = False
@@ -79,18 +80,29 @@ class TemporalArcPlanner:
         self.np_candidate_arcs = np.array(self.candidate_arcs)
 
     def update_rock_history(self, rock_coords: np.ndarray, rock_radii: list, pose, depth):
-        """Store rocks and their associated pose every `step_interval` frames."""
-        # Save both rock data and the associated pose
-        close_rock_coords = []
-        close_rock_radii = []
+        """Track all rocks for current frame, but only close rocks for past frames."""
+        # Step 1: Start with an empty new queue
+        new_queue = deque(maxlen=self.max_queue_size)
 
-        for i, rock in enumerate(depth):
-            if rock["depth"] < self.min_depth:
-                close_rock_coords.append(rock_coords[i])
-                close_rock_radii.append(rock_radii[i])
+        # Step 2: Add filtered versions of existing entries (only close rocks)
+        for coords, radii, stored_pose in self.rock_history_queue:
+            close_coords = []
+            close_radii = []
 
-        if close_rock_coords:
-            self.rock_history_queue.append((np.array(close_rock_coords), close_rock_radii, pose))
+            for coord, radius in zip(coords, radii):
+                distance = np.linalg.norm(coord[:2])  # xy-distance
+                if distance < self.min_depth:
+                    close_coords.append(coord)
+                    close_radii.append(radius)
+
+            if close_coords:
+                new_queue.append((np.array(close_coords), close_radii, stored_pose))
+
+        # Step 3: Append current frame with **all** rocks
+        new_queue.append((rock_coords.copy(), rock_radii.copy(), pose))
+
+        # Step 4: Update internal queue
+        self.rock_history_queue = new_queue
 
     def get_combined_rock_map(self, current_pose: np.ndarray):
         """Transform all historical rocks into the current frame."""
@@ -98,14 +110,11 @@ class TemporalArcPlanner:
         combined_radii = []
 
         for coords, radii, stored_pose in self.rock_history_queue:
-            # Compute transform from stored_pose → current_pose
             T_relative = np.linalg.inv(stored_pose) @ current_pose
-
             for rock in coords:
-                rock_homog = np.append(rock, 1)  # [x, y, z, 1]
-                transformed_rock = (T_relative @ rock_homog)[:3]  # back to [x, y, z]
+                rock_homog = np.append(rock, 1)
+                transformed_rock = (T_relative @ rock_homog)[:3]
                 combined_coords.append(transformed_rock)
-
             combined_radii.extend(radii)
 
         if combined_coords:
