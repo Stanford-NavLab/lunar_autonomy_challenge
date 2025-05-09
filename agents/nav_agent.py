@@ -9,7 +9,7 @@ Full agent
 """
 
 import carla
-import cv2 as cv
+import os
 import numpy as np
 import signal
 import json
@@ -19,7 +19,6 @@ from rich import print
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.planning.temporal_arc_planner import TemporalArcPlanner
 from lac.util import transform_to_numpy
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
 from lac.slam.frontend import Frontend
@@ -32,7 +31,6 @@ from lac.utils.data_logger import DataLogger
 from lac.utils.rerun_interface import Rerun
 from lac.util import get_positions_from_poses, positions_rmse_from_poses
 import lac.params as params
-
 
 """ Agent parameters and settings """
 EVAL = False  # Whether running in evaluation mode (disable ground truth)
@@ -47,9 +45,12 @@ RERUN = False  # Whether to use rerun for visualization
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
-    DISPLAY_IMAGES = False
     LOG_DATA = False
     RERUN = False
+
+if LOG_DATA:
+    PRESET = os.environ.get("MISSIONS_SUBSET")
+    SEED = os.environ.get("SEED")
 
 
 def get_entry_point():
@@ -144,7 +145,9 @@ class NavAgent(AutonomousAgent):
             self.run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             # self.run_name = "default_run"
             agent_name = get_entry_point()
-            self.data_logger = DataLogger(self, agent_name, self.run_name, self.cameras)
+            self.data_logger = DataLogger(
+                self, agent_name, self.run_name, PRESET, SEED, self.cameras
+            )
             with open(f"output/{agent_name}/{self.run_name}/config.json", "w") as f:
                 json.dump(self.config, f, indent=4)
             self.slam_eval_poses = [self.initial_pose]
@@ -155,8 +158,7 @@ class NavAgent(AutonomousAgent):
         """ Load the ground truth map for real-time score updates """
         if not EVAL:
             self.ground_truth_map = np.load(
-                "/home/shared/data_raw/LAC/heightmaps/competition/Moon_Map_01_preset_4.dat",
-                allow_pickle=True,
+                f"results/Moon_Map_01_{PRESET}_rep0.dat", allow_pickle=True
             )
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
@@ -189,16 +191,16 @@ class NavAgent(AutonomousAgent):
         return sensors
 
     def run_backup_maneuver(self):
-        print("[bold orange]Running backup maneuver")
+        print("[bold orange1]Running backup maneuver")
         self.backup_counter += 1
         BACKUP_TIME = 5.0  # [s]
         ROTATE_TIME = 2.0  # [s]
         DRIVE_TIME = 2.0  # [s]
         if self.backup_counter <= params.FRAME_RATE * BACKUP_TIME:
-            print("   Backing up")
+            print("   [orange1]Backing up")
             control = carla.VehicleVelocityControl(-0.2, 0.0)
         elif self.backup_counter <= params.FRAME_RATE * (BACKUP_TIME + ROTATE_TIME):
-            print("   Rotating")
+            print("   [orange1]Rotating")
             control = carla.VehicleVelocityControl(0.0, np.pi / 4)
         # elif self.backup_counter <= params.FRAME_RATE * (BACKUP_TIME + ROTATE_TIME + DRIVE_TIME):
         #     print("   Moving forward")
@@ -260,9 +262,12 @@ class NavAgent(AutonomousAgent):
             return carla.VehicleVelocityControl(0.0, 0.0)
         if advanced:
             agent_map = self.update_map()
-            if RERUN:
+            if not EVAL:
                 geometric_score = get_geometric_score(self.ground_truth_map, agent_map)
                 rocks_score = get_rocks_score(self.ground_truth_map, agent_map)
+                print(f"[bold green]Geometric score: {geometric_score:.4f}")
+                print(f"[bold green]Rocks score: {rocks_score:.4f}")
+            if RERUN:
                 Rerun.log_2d_seq_scalar("/scores/geometric", self.step, geometric_score)
                 Rerun.log_2d_seq_scalar("/scores/rocks", self.step, rocks_score)
                 Rerun.log_scalar("/metrics/rocks_score", rocks_score)

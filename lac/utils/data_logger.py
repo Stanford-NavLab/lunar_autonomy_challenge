@@ -17,7 +17,6 @@ import carla
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.util import transform_to_numpy
-from lac.params import DEFAULT_RUN_NAME
 
 
 class DataLogger:
@@ -26,6 +25,8 @@ class DataLogger:
         agent: AutonomousAgent,
         agent_name: str,
         run_name: str,
+        preset: int,
+        seed: int,
         camera_config: dict,
         log_file: str = None,
     ):
@@ -40,6 +41,9 @@ class DataLogger:
 
         self.agent = agent
         self.cameras = camera_config
+
+        self.data["preset"] = preset
+        self.data["seed"] = seed
 
         # Log initial data
         initial_rover_pose = transform_to_numpy(self.agent.get_initial_position())
