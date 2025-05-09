@@ -29,7 +29,7 @@ from lac.mapping.mapper import process_map
 from lac.mapping.map_utils import get_geometric_score, get_rocks_score
 from lac.utils.data_logger import DataLogger
 from lac.utils.rerun_interface import Rerun
-from lac.util import get_positions_from_poses
+from lac.util import get_positions_from_poses, positions_rmse_from_poses
 import lac.params as params
 
 
@@ -43,7 +43,6 @@ MISSION_TIMEOUT = 100000  # Number of frames to end mission after
 
 LOG_DATA = True  # Whether to log data
 RERUN = True  # Whether to use rerun for visualization
-USE_TEMPORAL = False
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
@@ -123,10 +122,7 @@ class NavAgent(AutonomousAgent):
             trajectory_type=self.config["planning"]["trajectory"],
             waypoint_reached_threshold=self.config["planning"]["waypoint_reached_threshold_m"],
         )
-        if USE_TEMPORAL:
-            self.arc_planner = TemporalArcPlanner()
-        else:
-            self.arc_planner = ArcPlanner()
+        self.arc_planner = ArcPlanner()
         self.arcs = self.arc_planner.np_candidate_arcs
 
         """ State variables """
@@ -142,12 +138,13 @@ class NavAgent(AutonomousAgent):
 
         """ Data logging """
         if LOG_DATA:
-            # self.run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            self.run_name = "default_run"
+            self.run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            # self.run_name = "default_run"
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.run_name, self.cameras)
             with open(f"output/{agent_name}/{self.run_name}/config.json", "w") as f:
                 json.dump(self.config, f, indent=4)
+            self.slam_eval_poses = []
         if RERUN:
             Rerun.init_vo()
             self.gt_poses = [self.initial_pose]
@@ -287,24 +284,14 @@ class NavAgent(AutonomousAgent):
 
                     data = self.frontend.process_frame(images_gray)
                     self.backend.update(data)
-                    depth = data["depth"]
+
+                    if LOG_DATA:
+                        self.slam_eval_poses.append(ground_truth_pose)
 
                     # Path planning
-                    self.arcs = self.arc_planner.np_candidate_arcs
-                    if USE_TEMPORAL:
-                        control, path, waypoint_local = self.arc_planner.plan_arc(
-                            self.step,
-                            waypoint,
-                            nav_pose,
-                            data["rock_data"]["centers"],
-                            data["rock_data"]["radii"],
-                            self.current_velocity,
-                            depth,
-                        )
-                    else:
-                        control, path, waypoint_local = self.arc_planner.plan_arc(
-                            waypoint, nav_pose, data["rock_data"]
-                        )
+                    control, path, _ = self.arc_planner.plan_arc(
+                        waypoint, nav_pose, data["rock_data"]
+                    )
                     if control is not None:
                         self.current_v, self.current_w = control
                         # Proportional feedback on v
@@ -325,18 +312,6 @@ class NavAgent(AutonomousAgent):
                                     centers=data["rock_data"]["centers"][:, :2],
                                     radii=data["rock_data"]["radii"],
                                 )
-                        # if self.step % 100 == 0:
-                        #     if USE_TEMPORAL:
-                        #         combined_map = self.arc_planner.get_combined_rock_map(nav_pose)
-                        #         self.arc_planner.plot_rocks(
-                        #             combined_map, self.arcs, path, self.step
-                        #         )
-                        #     else:
-                        #         rock_data = (
-                        #             data["rock_data"]["centers"],
-                        #             data["rock_data"]["radii"],
-                        #         )
-                        #         self.arc_planner.plot_rocks(rock_data, self.arcs, path, self.step)
 
             if LOG_DATA:
                 self.data_logger.log_images(self.step, input_data)
@@ -408,10 +383,9 @@ class NavAgent(AutonomousAgent):
             self.data_logger.save_log()
             slam_poses = np.array(self.backend.get_trajectory())
             np.save(f"output/{get_entry_point()}/{self.run_name}/slam_poses.npy", slam_poses)
+            print(f"Final RMSE: {positions_rmse_from_poses(slam_poses, self.slam_eval_poses)} m")
 
             backend_state = self.backend.get_state()
-            # with open(f"output/{get_entry_point()}/default_run/backend_state.", 'w') as file:
-            #     json.dump(data, file, indent=4) # indent for readability
             np.savez_compressed(
                 f"output/{get_entry_point()}/{self.run_name}/backend_state.npz",
                 odometry=backend_state["odometry"],
