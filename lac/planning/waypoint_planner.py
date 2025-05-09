@@ -36,9 +36,7 @@ class WaypointPlanner:
             case "five_loops":
                 self.waypoints = gen_loops(initial_pose, extra_closure=True)
             case "triangles":
-                self.waypoints = gen_triangle_loops(
-                    initial_pose, loop_width=7.0, additional_loops=True
-                )
+                self.waypoints = gen_triangle_loops(initial_pose, additional_loops=False)
             case _:
                 raise ValueError(f"Unknown trajectory type: {trajectory_type}")
 

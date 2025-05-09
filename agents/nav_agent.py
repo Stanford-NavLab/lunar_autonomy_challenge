@@ -339,6 +339,7 @@ class NavAgent(AutonomousAgent):
         slam_poses = self.backend.get_trajectory()
         self.current_pose = slam_poses[-1]
         self.current_velocity = self.frontend.current_velocity
+        print(f"Estimated position: {np.round(self.current_pose[:3, 3], 2)}")
 
         """ Rerun logging """
         if RERUN:
@@ -359,7 +360,7 @@ class NavAgent(AutonomousAgent):
                 "/trajectory_error/velocity", self.step, np.linalg.norm(self.current_velocity)
             )
 
-        print("\n-----------------------------------------------")
+        print("\n---------------------------------------------------------------------------------")
 
         return carla_control
 

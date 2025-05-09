@@ -12,7 +12,7 @@ from lac.perception.depth import (
 from lac.localization.imu_recovery import ImuEstimator
 from lac.params import STEREO_BASELINE, FL_X, DT
 
-KEYFRAME_INTERVAL = 40  # Interval for keyframe selection (steps)
+KEYFRAME_INTERVAL = 20  # Interval for keyframe selection (steps)
 
 
 class Frontend:
