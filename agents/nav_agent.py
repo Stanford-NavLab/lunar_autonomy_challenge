@@ -41,7 +41,7 @@ MISSION_TIMEOUT = 100000  # Number of frames to end mission after
 
 LOG_DATA = True  # Whether to log data
 RERUN = True  # Whether to use rerun for visualization
-USE_TEMPORAL = True
+USE_TEMPORAL = False
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
