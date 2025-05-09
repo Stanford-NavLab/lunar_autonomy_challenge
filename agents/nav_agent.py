@@ -38,7 +38,7 @@ BACK_CAMERAS = True
 
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
-MISSION_TIMEOUT = 100000  # Number of frames to end mission after
+MISSION_TIMEOUT = 30000  # Number of frames to end mission after
 
 LOG_DATA = True  # Whether to log data
 RERUN = False  # Whether to use rerun for visualization
@@ -381,7 +381,11 @@ class NavAgent(AutonomousAgent):
         print("Number of semantic points: ", len(semantic_points.points))
         if LOG_DATA:
             semantic_points.save(f"output/{get_entry_point()}/{self.run_name}/semantic_points.npz")
-        map_array = process_map(semantic_points, map_array)
+        map_array = process_map(
+            semantic_points,
+            map_array,
+            rock_count_thresh=self.config["mapping"]["rock_count_thresh"],
+        )
         return map_array.copy()
 
     def finalize(self):
@@ -389,7 +393,8 @@ class NavAgent(AutonomousAgent):
         self.update_map()
 
         if LOG_DATA:
-            print(f"blue]   Run name: {self.run_name}")
+            print(f"[blue]   Preset: {PRESET}")
+            print(f"[blue]   Run name: {self.run_name}")
             self.data_logger.save_log()
             slam_poses = np.array(self.backend.get_trajectory())
             np.save(f"output/{get_entry_point()}/{self.run_name}/slam_poses.npy", slam_poses)

@@ -88,7 +88,9 @@ def interpolate_heights(height_array: np.ndarray) -> np.ndarray:
     return height_array_interpolated
 
 
-def process_map(semantic_points: SemanticPointCloud, agent_map: np.ndarray) -> np.ndarray:
+def process_map(
+    semantic_points: SemanticPointCloud, agent_map: np.ndarray, rock_count_thresh: int = 25
+) -> np.ndarray:
     # Height map
     ground_points = semantic_points.points[semantic_points.labels == SemanticClasses.GROUND.value]
     ground_grid = bin_points_to_grid(ground_points)
@@ -103,7 +105,7 @@ def process_map(semantic_points: SemanticPointCloud, agent_map: np.ndarray) -> n
     rock_counts, _, _ = np.histogram2d(
         rock_points[:, 0], rock_points[:, 1], bins=[x_edges, y_edges]
     )
-    agent_map[:, :, 3] = np.where(rock_counts > ROCK_COUNT_THRESH, 1, 0)
+    agent_map[:, :, 3] = np.where(rock_counts > rock_count_thresh, 1, 0)
 
     return agent_map
 
