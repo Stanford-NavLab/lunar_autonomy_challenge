@@ -13,6 +13,7 @@ import cv2 as cv
 import numpy as np
 import signal
 import json
+from datetime import datetime
 from collections import deque
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
@@ -58,8 +59,8 @@ def get_entry_point():
 class NavAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
         """Load config params"""
-        config = json.load(open(path_to_conf_file))
-        print(f"config lc dist thresh: {config['loop_closure']['distance_threshold_m']}")
+        self.config = json.load(open(path_to_conf_file))
+        print(f"config lc dist thresh: {self.config['loop_closure']['distance_threshold_m']}")
 
         """Control variables"""
         self.current_v = 0
@@ -117,7 +118,11 @@ class NavAgent(AutonomousAgent):
         self.lander_pose = self.initial_pose @ transform_to_numpy(
             self.get_initial_lander_position()
         )
-        self.planner = WaypointPlanner(self.initial_pose, triangle_loops=False)
+        self.planner = WaypointPlanner(
+            self.initial_pose,
+            trajectory_type=self.config["planning"]["trajectory"],
+            waypoint_reached_threshold=self.config["planning"]["waypoint_reached_threshold_m"],
+        )
         if USE_TEMPORAL:
             self.arc_planner = TemporalArcPlanner()
         else:
@@ -133,12 +138,15 @@ class NavAgent(AutonomousAgent):
         feature_tracker = SemanticFeatureTracker(self.cameras)
         back_feature_tracker = SemanticFeatureTracker(self.cameras, cam="BackLeft")
         self.frontend = Frontend(feature_tracker, back_feature_tracker, self.initial_pose)
-        self.backend = Backend(self.initial_pose, feature_tracker)
+        self.backend = Backend(self.initial_pose, feature_tracker, self.config["loop_closure"])
 
         """ Data logging """
         if LOG_DATA:
+            self.run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             agent_name = get_entry_point()
-            self.data_logger = DataLogger(self, agent_name, self.cameras)
+            self.data_logger = DataLogger(self, agent_name, self.run_name, self.cameras)
+            with open(f"output/{agent_name}/{self.run_name}/config.json", "w") as f:
+                json.dump(self.config, f, indent=4)
         if RERUN:
             Rerun.init_vo()
             self.gt_poses = [self.initial_pose]
@@ -300,7 +308,9 @@ class NavAgent(AutonomousAgent):
                         self.current_v, self.current_w = control
                         # Proportional feedback on v
                         v_norm = np.linalg.norm(self.current_velocity)
-                        v_delta = params.KP_LINEAR * (params.TARGET_SPEED - v_norm)
+                        v_delta = self.config["control"]["kp_linear"] * (
+                            params.TARGET_SPEED - v_norm
+                        )
                         self.current_v += np.clip(
                             v_delta, -params.MAX_LINEAR_DELTA, params.MAX_LINEAR_DELTA
                         )
@@ -385,7 +395,7 @@ class NavAgent(AutonomousAgent):
         semantic_points = self.backend.project_point_map()
         print("Number of semantic points: ", len(semantic_points.points))
         if LOG_DATA:
-            semantic_points.save(f"output/{get_entry_point()}/default_run/semantic_points.npz")
+            semantic_points.save(f"output/{get_entry_point()}/{self.run_name}/semantic_points.npz")
         map_array = process_map(semantic_points, map_array)
         return map_array.copy()
 
@@ -396,13 +406,13 @@ class NavAgent(AutonomousAgent):
         if LOG_DATA:
             self.data_logger.save_log()
             slam_poses = np.array(self.backend.get_trajectory())
-            np.save(f"output/{get_entry_point()}/default_run/slam_poses.npy", slam_poses)
+            np.save(f"output/{get_entry_point()}/{self.run_name}/slam_poses.npy", slam_poses)
 
             backend_state = self.backend.get_state()
             # with open(f"output/{get_entry_point()}/default_run/backend_state.", 'w') as file:
             #     json.dump(data, file, indent=4) # indent for readability
             np.savez_compressed(
-                f"output/{get_entry_point()}/default_run/backend_state.npz",
+                f"output/{get_entry_point()}/{self.run_name}/backend_state.npz",
                 odometry=backend_state["odometry"],
                 odometry_sources=backend_state["odometry_sources"],
                 loop_closures=backend_state["loop_closures"],

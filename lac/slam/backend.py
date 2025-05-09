@@ -33,7 +33,9 @@ class SemanticPointCloud:
 class Backend:
     """Backend for SLAM"""
 
-    def __init__(self, initial_pose: np.ndarray, feature_tracker: SemanticFeatureTracker):
+    def __init__(
+        self, initial_pose: np.ndarray, feature_tracker: SemanticFeatureTracker, config: dict
+    ):
         """Initialize the backend"""
         self.feature_tracker = feature_tracker
 
@@ -50,6 +52,12 @@ class Backend:
         self.keyframe_traj_list = []
         self.keyframe_traj = None
         self.loop_closures = []
+
+        # Config parameters
+        self.LC_MIN_SCORE = config["min_score"]
+        self.LC_MIN_MATCHES = config["min_matches"]
+        self.LC_DIST_THRESHOLD = config["distance_threshold_m"]
+        self.LC_ANGLE_THRESHOLD = config["angle_threshold_deg"]
 
         # TODO: log these for debugging
         self.pose_idx_map = {}
@@ -145,11 +153,11 @@ class Backend:
             dists = np.linalg.norm(
                 self.keyframe_traj[:-LOOP_CLOSURE_EXCLUDE, :2, 3] - new_pose[:2, 3], axis=1
             )
-            dist_check_idxs = np.where(dists < LOOP_CLOSURE_DIST_THRESHOLD)[0]
+            dist_check_idxs = np.where(dists < self.LC_DIST_THRESHOLD)[0]
             for idx in dist_check_idxs:
                 if (
                     rotation_matrix_error(self.keyframe_traj[idx, :3, :3], new_pose[:3, :3])
-                    < LOOP_CLOSURE_ANGLE_THRESHOLD
+                    < self.LC_ANGLE_THRESHOLD
                 ):
                     loop_closure_idxs.append(idx)
         return loop_closure_idxs
@@ -160,7 +168,11 @@ class Backend:
             pose_idx = list(self.keyframe_data.keys())[idx]
             keyframe_data = self.keyframe_data[pose_idx]
             relative_pose, num_matches = keyframe_estimate_loop_closure_pose(
-                self.feature_tracker, keyframe_data, data["FrontLeft"]
+                self.feature_tracker,
+                keyframe_data,
+                data["FrontLeft"],
+                self.LC_MIN_SCORE,
+                self.LC_MIN_MATCHES,
             )
             if relative_pose is None:
                 continue

@@ -9,9 +9,9 @@ import numpy as np
 
 from lac.params import WAYPOINT_REACHED_DIST_THRESHOLD
 
-SPIRAL_MAX = 13.5  # [m]
+SPIRAL_MAX = 5.5  # [m]
 SPIRAL_MIN = 3.5  # [m]
-SPIRAL_STEP = 2.0  # [m]
+SPIRAL_STEP = 0.5  # [m]
 
 # Clockwise order: top-left, top-right, bottom-right, bottom-left
 DEFAULT_ORDER = np.array([[-1, 1], [1, 1], [1, -1], [-1, -1]])
@@ -20,14 +20,31 @@ WAYPOINT_TIMEOUT = 2000  # [steps] timeout to give up on a waypoint
 
 
 class WaypointPlanner:
-    def __init__(self, initial_pose: np.ndarray, triangle_loops: bool = False):
-        # self.waypoints = gen_spiral(initial_pose, spiral_min, spiral_max, spiral_step, repeat)
-        if triangle_loops:
-            self.waypoints = gen_triangle_loops(initial_pose, loop_width=7.0, additional_loops=True)
-        else:
-            self.waypoints = gen_loops(initial_pose, extra_closure=True)
+    def __init__(
+        self,
+        initial_pose: np.ndarray,
+        trajectory_type: str = "five_loops",
+        waypoint_reached_threshold: float = WAYPOINT_REACHED_DIST_THRESHOLD,
+    ):
+        """
+        trajectory_type: str = "spiral", "five_loops", or "triangles"
+
+        """
+        match trajectory_type:
+            case "spiral":
+                self.waypoints = gen_spiral(initial_pose, SPIRAL_MIN, SPIRAL_MAX, SPIRAL_STEP)
+            case "five_loops":
+                self.waypoints = gen_loops(initial_pose, extra_closure=True)
+            case "triangles":
+                self.waypoints = gen_triangle_loops(
+                    initial_pose, loop_width=7.0, additional_loops=True
+                )
+            case _:
+                raise ValueError(f"Unknown trajectory type: {trajectory_type}")
+
         self.waypoint_idx = 0
         self.last_waypoint_step = 0
+        self.waypoint_reached_threshold = waypoint_reached_threshold
 
     def get_waypoint(
         self, step: int, pose: np.ndarray, print_progress: bool = False
@@ -47,7 +64,7 @@ class WaypointPlanner:
             advanced = True
 
         # Check if the waypoint has been reached
-        if np.linalg.norm(xy_position - waypoint) < WAYPOINT_REACHED_DIST_THRESHOLD:
+        if np.linalg.norm(xy_position - waypoint) < self.waypoint_reached_threshold:
             advanced = True
 
         if advanced:

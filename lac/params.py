@@ -157,6 +157,7 @@ CAMERA_CONFIG_INIT = {
 
 
 """-------------------------------------- Parameters --------------------------------------"""
+
 ARM_ANGLE_STATIC_RAD = 1.0472  # [rad] (60 degrees)
 FRONT_ARM_ANGLE_STATIC_RAD = np.deg2rad(90)  # [rad]
 

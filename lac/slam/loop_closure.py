@@ -49,7 +49,11 @@ def estimate_loop_closure_pose(
 
 
 def keyframe_estimate_loop_closure_pose(
-    tracker: FeatureTracker, keyframe_data: tuple, left_img2: np.ndarray
+    tracker: FeatureTracker,
+    keyframe_data: tuple,
+    left_img2: np.ndarray,
+    min_score: float = MIN_SCORE,
+    min_matches: int = MIN_MATCHES,
 ) -> np.ndarray | None:
     """Estimate the loop closure pose using stereo images.
 
@@ -63,10 +67,10 @@ def keyframe_estimate_loop_closure_pose(
     matched_pts_left1 = matched_feats1["keypoints"][0]
     points_local1 = tracker.project_stereo(np.eye(4), matched_pts_left1, depths1)
 
-    matches12_left = tracker.match_feats(feats_left1, feats_left2, min_score=MIN_SCORE)
+    matches12_left = tracker.match_feats(feats_left1, feats_left2, min_score=min_score)
     num_matches = len(matches12_left)
 
-    if num_matches < MIN_MATCHES:
+    if num_matches < min_matches:
         print("Not enough matches for loop closure")
         return None, num_matches
 
