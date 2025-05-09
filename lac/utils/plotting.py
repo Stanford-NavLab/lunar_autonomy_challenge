@@ -1,13 +1,14 @@
 """Plotting functions"""
 
-import typing as T
-
+import os
+import shutil
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import imageio.v2 as imageio
 
-from lac.params import LANDER_GLOBAL, LANDER_HEIGHT, HEIGHT_ERROR_TOLERANCE
+from lac.params import LANDER_GLOBAL, LANDER_HEIGHT, HEIGHT_ERROR_TOLERANCE, MAP_EXTENT
 
 # ==================================================================================================
 #                                    2D Plotting Functions
@@ -197,6 +198,7 @@ def plot_waypoints(
             mode="markers+lines",
             line=dict(color="blue", width=2),
             hovertext=np.arange(len(waypoints)),
+            showlegend=False,
         )
     )
 
@@ -237,11 +239,49 @@ def plot_waypoints(
                 mode="markers",
                 marker=dict(color="green", size=arrow_size),
                 name="Endpoint",
+                showlegend=False,
             )
         )
 
-    fig.update_layout(width=600, height=600, xaxis=dict(scaleanchor="y"))
+    fig.update_layout(
+        width=600,
+        height=600,
+        xaxis=dict(scaleanchor="y"),
+        xaxis_range=[-MAP_EXTENT, MAP_EXTENT],
+        yaxis_range=[-MAP_EXTENT, MAP_EXTENT],
+    )
     return fig
+
+
+def save_waypoints_gif(waypoints: np.ndarray, name: str, path: str, dt: int = 5.0):
+    """
+    Save a gif of the waypoints.
+
+    Returns:
+        None
+    """
+    image_folder = f"{path}/{name}"
+    output_gif = f"{path}/{name}.gif"
+
+    if os.path.exists(image_folder):
+        shutil.rmtree(image_folder)
+    os.makedirs(image_folder)
+
+    for i in range(len(waypoints)):
+        fig = plot_waypoints(waypoints[: i + 1], show_endpoint=True)
+        fig.write_image(f"{image_folder}/{i:03}.png")
+
+    # Sort filenames to ensure correct order
+    image_files = sorted(
+        [f for f in os.listdir(image_folder) if f.endswith((".png", ".jpg", ".jpeg"))]
+    )
+
+    # Read and write images into a GIF
+    with imageio.get_writer(output_gif, mode="I", duration=dt) as writer:
+        for filename in image_files:
+            image_path = os.path.join(image_folder, filename)
+            image = imageio.imread(image_path)
+            writer.append_data(image)
 
 
 def plot_rocks_rover_frame(rock_points, rock_radii, waypoint=None, fig=None, color="red", **kwargs):
@@ -812,7 +852,7 @@ def vector_trace(
     return [tail_trace, head_trace]
 
 
-def plot_reference_frames(poses: T.List[np.ndarray], pose_names: T.List[str]) -> go.Figure:
+def plot_reference_frames(poses: list[np.ndarray], pose_names: list[str]) -> go.Figure:
     """Generate a figure of the various frames of reference."""
 
     fig_poses = go.Figure()

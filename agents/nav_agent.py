@@ -265,8 +265,8 @@ class NavAgent(AutonomousAgent):
             if not EVAL:
                 geometric_score = get_geometric_score(self.ground_truth_map, agent_map)
                 rocks_score = get_rocks_score(self.ground_truth_map, agent_map)
-                print(f"[bold green]Geometric score: {geometric_score:.4f}")
-                print(f"[bold green]Rocks score: {rocks_score:.4f}")
+                print(f"[bold green]    Geometric score: {geometric_score:.4f}")
+                print(f"[bold green]    Rocks score: {rocks_score:.4f}")
             if RERUN:
                 Rerun.log_2d_seq_scalar("/scores/geometric", self.step, geometric_score)
                 Rerun.log_2d_seq_scalar("/scores/rocks", self.step, rocks_score)
@@ -385,15 +385,16 @@ class NavAgent(AutonomousAgent):
         return map_array.copy()
 
     def finalize(self):
-        print("Running finalize")
+        print("[bold blue]Running finalize")
         self.update_map()
 
         if LOG_DATA:
+            print(f"blue]   Run name: {self.run_name}")
             self.data_logger.save_log()
             slam_poses = np.array(self.backend.get_trajectory())
             np.save(f"output/{get_entry_point()}/{self.run_name}/slam_poses.npy", slam_poses)
             print(
-                f"[bold green]Final RMSE: {positions_rmse_from_poses(slam_poses, self.slam_eval_poses):.4f} m"
+                f"[bold green]  Final RMSE: {positions_rmse_from_poses(slam_poses, self.slam_eval_poses):.4f} m"
             )
 
             backend_state = self.backend.get_state()

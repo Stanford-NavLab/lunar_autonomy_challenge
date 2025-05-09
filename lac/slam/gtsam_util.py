@@ -21,9 +21,11 @@ K = gtsam.Cal3_S2(FL_X, FL_Y, 0.0, IMG_WIDTH / 2, IMG_HEIGHT / 2)
 VO_ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
     np.array([0.0004, 0.00027, 0.00033, 0.0012, 0.001, 0.0007])
 )
-IMU_ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
-    np.array([0.004, 0.0015, 0.0015, 0.004, 0.004, 0.001])
-)
+# # NOTE: measured based on IMU integration
+# IMU_ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
+#     np.array([0.004, 0.0015, 0.0015, 0.004, 0.004, 0.001])
+# )
+IMU_ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(0.1 * np.ones(6))
 LOOP_CLOSURE_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
     np.array([0.00087, 0.00087, 0.00087, 0.005, 0.005, 0.005])
 )

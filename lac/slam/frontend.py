@@ -81,6 +81,8 @@ class Frontend:
             for measurement in data["imu_measurements"]:
                 self.imu_estimator.update(measurement, exact=False)
             odometry = np.linalg.inv(data["prev_pose"]) @ self.imu_estimator.get_pose()
+            # NOTE: Above estimation seems to blow up occasionally, use identity for now
+            odometry = np.eye(4)
             data["odometry_source"] = "IMU"
         else:
             # Update IMU estimator with the odometry
