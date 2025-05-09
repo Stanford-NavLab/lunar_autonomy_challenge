@@ -76,9 +76,9 @@ class Frontend:
 
         # If VO failed, use IMU odometry instead
         if odometry is None:
-            # Compute IMU odometry
+            print("Using IMU odometry")
             for measurement in data["imu_measurements"]:
-                self.imu_estimator.update(measurement)
+                self.imu_estimator.update(measurement, exact=False)
             odometry = np.linalg.inv(data["prev_pose"]) @ self.imu_estimator.get_pose()
             data["odometry_source"] = "IMU"
         else:

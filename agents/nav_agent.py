@@ -142,7 +142,8 @@ class NavAgent(AutonomousAgent):
 
         """ Data logging """
         if LOG_DATA:
-            self.run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            # self.run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            self.run_name = "default_run"
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.run_name, self.cameras)
             with open(f"output/{agent_name}/{self.run_name}/config.json", "w") as f:
@@ -199,9 +200,9 @@ class NavAgent(AutonomousAgent):
         elif self.backup_counter <= params.FRAME_RATE * (BACKUP_TIME + ROTATE_TIME):
             print("   Rotating")
             control = carla.VehicleVelocityControl(0.0, np.pi / 4)
-        elif self.backup_counter <= params.FRAME_RATE * (BACKUP_TIME + ROTATE_TIME + DRIVE_TIME):
-            print("   Moving forward")
-            control = carla.VehicleVelocityControl(0.2, 0.0)
+        # elif self.backup_counter <= params.FRAME_RATE * (BACKUP_TIME + ROTATE_TIME + DRIVE_TIME):
+        #     print("   Moving forward")
+        #     control = carla.VehicleVelocityControl(0.2, 0.0)
         else:
             self.backup_counter = 0
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)

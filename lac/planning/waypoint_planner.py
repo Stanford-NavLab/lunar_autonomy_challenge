@@ -9,9 +9,9 @@ import numpy as np
 
 from lac.params import WAYPOINT_REACHED_DIST_THRESHOLD
 
-SPIRAL_MAX = 5.5  # [m]
 SPIRAL_MIN = 3.5  # [m]
-SPIRAL_STEP = 0.5  # [m]
+SPIRAL_MAX = 5.5  # [m]
+SPIRAL_STEP = 0.35  # [m]
 
 # Clockwise order: top-left, top-right, bottom-right, bottom-left
 DEFAULT_ORDER = np.array([[-1, 1], [1, 1], [1, -1], [-1, -1]])
