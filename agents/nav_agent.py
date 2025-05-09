@@ -113,18 +113,10 @@ class NavAgent(AutonomousAgent):
             self.get_initial_lander_position()
         )
         self.planner = WaypointPlanner(self.initial_pose, triangle_loops=True)
-        self.arc_planner = ArcPlanner()
-        arc_config_val = 31
-        arc_duration_val = 8
-        max_omega = 0.8
-        if USE_TEMPORAL == True:
-            self.arc_planner = TemporalArcPlanner(
-                arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
-            )
+        if USE_TEMPORAL:
+            self.arc_planner = TemporalArcPlanner()
         else:
-            self.arc_planner = ArcPlanner(
-                arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
-            )
+            self.arc_planner = ArcPlanner()
         self.arcs = self.arc_planner.np_candidate_arcs
 
         """ State variables """
@@ -187,19 +179,16 @@ class NavAgent(AutonomousAgent):
         self.backup_counter += 1
         BACKUP_TIME = 5.0  # [s]
         ROTATE_TIME = 2.0  # [s]
+        DRIVE_TIME = 2.0  # [s]
         if self.backup_counter <= params.FRAME_RATE * BACKUP_TIME:
-            # Go backwards for 3 seconds
             print("   Backing up")
             control = carla.VehicleVelocityControl(-0.2, 0.0)
-
         elif self.backup_counter <= params.FRAME_RATE * (BACKUP_TIME + ROTATE_TIME):
-            # Rotate 90 deg/s for 1.5 seconds (overcorrecting because it isn't rotating in 1 second)
             print("   Rotating")
             control = carla.VehicleVelocityControl(0.0, np.pi / 4)
-        # elif self.backup_counter <= params.FRAME_RATE * 9:
-        #     # Go forward for 6 seconds
-        #     print("   Moving forward")
-        #     control = carla.VehicleVelocityControl(0.2, 0.0)
+        elif self.backup_counter <= params.FRAME_RATE * (BACKUP_TIME + ROTATE_TIME + DRIVE_TIME):
+            print("   Moving forward")
+            control = carla.VehicleVelocityControl(0.2, 0.0)
         else:
             self.backup_counter = 0
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)

@@ -23,7 +23,7 @@ from lac.utils.plotting import (
 class TemporalArcPlanner:
     def __init__(
         self,
-        arc_config: int | tuple[int, int] = 31,
+        arc_config: int | tuple[int, int] = 41,
         arc_duration: float | tuple[float, float] = 8.0,
         max_omega: float | tuple[float, float] = 0.8,
         max_queue_size: int = 5,

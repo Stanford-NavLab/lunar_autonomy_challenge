@@ -23,7 +23,7 @@ class WaypointPlanner:
     def __init__(self, initial_pose: np.ndarray, triangle_loops: bool = False):
         # self.waypoints = gen_spiral(initial_pose, spiral_min, spiral_max, spiral_step, repeat)
         if triangle_loops:
-            self.waypoints = gen_triangle_loops(initial_pose, loop_width=7.0)
+            self.waypoints = gen_triangle_loops(initial_pose, loop_width=7.0, additional_loops=True)
         else:
             self.waypoints = gen_loops(initial_pose, extra_closure=True)
         self.waypoint_idx = 0
@@ -215,7 +215,9 @@ def gen_loops(initial_pose: np.ndarray, loop_width: float = 7.0, extra_closure: 
     return points
 
 
-def gen_triangle_loops(initial_pose: np.ndarray, loop_width: float = 7.0):
+def gen_triangle_loops(
+    initial_pose: np.ndarray, loop_width: float = 7.0, additional_loops: bool = False
+):
     """ """
     W = loop_width
 
@@ -228,7 +230,10 @@ def gen_triangle_loops(initial_pose: np.ndarray, loop_width: float = 7.0):
     points.append(center_loop[:2])  # [0, 1]
 
     # Side points for (+,+) quadrant (top-right), which is the first side to be added if start index is 0
-    side_points = W * np.array([[0, -1], [1, -1], [1, 0], [0, -1]])
+    if additional_loops:
+        side_points = W * np.array([[0, -1], [1, -1], [0, 0], [1, 0], [1, -1], [0, 0], [0, -1]])
+    else:
+        side_points = W * np.array([[0, -1], [1, -1], [1, 0], [0, -1]])
     R = np.array([[0, 1], [-1, 0]])  # 90-deg clockwise rotation
     # Rotate the side points based on start index
     for j in range(start_index):

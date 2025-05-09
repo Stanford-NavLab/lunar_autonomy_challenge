@@ -7,7 +7,7 @@ from lac.slam.feature_tracker import FeatureTracker, prune_features
 from lac.perception.vision import solve_vision_pnp
 
 MIN_MATCHES = 120
-MIN_SCORE = 0.0
+MIN_SCORE = 0.25
 
 
 def estimate_loop_closure_pose(

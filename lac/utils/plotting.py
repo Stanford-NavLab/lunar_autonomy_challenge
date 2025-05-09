@@ -184,6 +184,7 @@ def plot_waypoints(
     fig: go.Figure | None = None,
     arrow_scale: float = 0.2,
     arrow_size: int = 12,
+    show_endpoint: bool = False,
 ):
     if fig is None:
         fig = go.Figure()
@@ -226,6 +227,18 @@ def plot_waypoints(
             ),
         )
     )
+
+    if show_endpoint:
+        # Add the last waypoint as a marker
+        fig.add_trace(
+            go.Scatter(
+                x=[waypoints[-1, 0]],
+                y=[waypoints[-1, 1]],
+                mode="markers",
+                marker=dict(color="green", size=arrow_size),
+                name="Endpoint",
+            )
+        )
 
     fig.update_layout(width=600, height=600, xaxis=dict(scaleanchor="y"))
     return fig
