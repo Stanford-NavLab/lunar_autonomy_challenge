@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import apriltag
 import torch
+from rich import print
 
 from lightglue import LightGlue, SuperPoint, match_pair
 from lightglue.utils import load_image, rbd
@@ -119,7 +120,7 @@ def solve_vision_pnp(
     np.ndarray (4, 4) - Estimated rover pose in world/local frame
     """
     if len(points3D) < 4:
-        print("Not enough points to solve PnP.")
+        print("[red]Not enough points to solve PnP.")
         return None
     success, rvec, tvec, inliers = cv2.solvePnPRansac(
         objectPoints=points3D,
@@ -138,7 +139,7 @@ def solve_vision_pnp(
         rover_pose = w_T_c @ invert_transform_mat(get_cam_pose_rover(cam_name))
         return rover_pose
     else:
-        print("PnP solve failed.")
+        print("[red]PnP solve failed.")
         return None
 
 

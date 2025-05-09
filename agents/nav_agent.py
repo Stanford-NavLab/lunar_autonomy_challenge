@@ -15,6 +15,7 @@ import signal
 import json
 from datetime import datetime
 from collections import deque
+from rich import print
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
@@ -35,14 +36,14 @@ import lac.params as params
 
 """ Agent parameters and settings """
 EVAL = False  # Whether running in evaluation mode (disable ground truth)
-BACK_CAMERAS = True
+BACK_CAMERAS = False
 
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 MISSION_TIMEOUT = 100000  # Number of frames to end mission after
 
 LOG_DATA = True  # Whether to log data
-RERUN = True  # Whether to use rerun for visualization
+RERUN = False  # Whether to use rerun for visualization
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
@@ -59,7 +60,6 @@ class NavAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
         """Load config params"""
         self.config = json.load(open(path_to_conf_file))
-        print(f"config lc dist thresh: {self.config['loop_closure']['distance_threshold_m']}")
 
         """Control variables"""
         self.current_v = 0
@@ -132,8 +132,11 @@ class NavAgent(AutonomousAgent):
 
         """ SLAM """
         feature_tracker = SemanticFeatureTracker(self.cameras)
-        back_feature_tracker = SemanticFeatureTracker(self.cameras, cam="BackLeft")
-        self.frontend = Frontend(feature_tracker, back_feature_tracker, self.initial_pose)
+        if BACK_CAMERAS:
+            back_feature_tracker = SemanticFeatureTracker(self.cameras, cam="BackLeft")
+            self.frontend = Frontend(feature_tracker, back_feature_tracker, self.initial_pose)
+        else:
+            self.frontend = Frontend(feature_tracker, initial_pose=self.initial_pose)
         self.backend = Backend(self.initial_pose, feature_tracker, self.config["loop_closure"])
 
         """ Data logging """
@@ -186,7 +189,7 @@ class NavAgent(AutonomousAgent):
         return sensors
 
     def run_backup_maneuver(self):
-        print("Running backup maneuver")
+        print("[bold orange]Running backup maneuver")
         self.backup_counter += 1
         BACKUP_TIME = 5.0  # [s]
         ROTATE_TIME = 2.0  # [s]
@@ -235,7 +238,7 @@ class NavAgent(AutonomousAgent):
         print("\nStep: ", self.step)
 
         if self.step > MISSION_TIMEOUT:
-            print("Mission timed out!")
+            print("[bold red]Mission timed out!")
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
 
@@ -323,10 +326,10 @@ class NavAgent(AutonomousAgent):
             carla_control = carla.VehicleVelocityControl(0.0, 0.0)
         # If agent is stuck, perform backup maneuver
         elif self.backup_counter > 0 or self.check_stuck():
-            print("Agent is stuck.")
+            print("[bold red]Agent is stuck")
             carla_control = self.run_backup_maneuver()
         elif control is None:
-            print("No safe paths found by planner!")
+            print("[bold red]No safe paths found by planner!")
             carla_control = self.run_backup_maneuver()
         else:
             carla_control = carla.VehicleVelocityControl(self.current_v, self.current_w)
@@ -385,7 +388,7 @@ class NavAgent(AutonomousAgent):
             slam_poses = np.array(self.backend.get_trajectory())
             np.save(f"output/{get_entry_point()}/{self.run_name}/slam_poses.npy", slam_poses)
             print(
-                f"Final RMSE: {positions_rmse_from_poses(slam_poses, self.slam_eval_poses):.4f} m"
+                f"[bold green]Final RMSE: {positions_rmse_from_poses(slam_poses, self.slam_eval_poses):.4f} m"
             )
 
             backend_state = self.backend.get_state()

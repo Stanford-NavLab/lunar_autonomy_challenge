@@ -1,6 +1,7 @@
 """Frontend for SLAM"""
 
 import numpy as np
+from rich import print
 
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
 from lac.perception.segmentation import UnetSegmentation
@@ -76,7 +77,7 @@ class Frontend:
 
         # If VO failed, use IMU odometry instead
         if odometry is None:
-            print("Using IMU odometry")
+            print("[bold orange]Using IMU odometry")
             for measurement in data["imu_measurements"]:
                 self.imu_estimator.update(measurement, exact=False)
             odometry = np.linalg.inv(data["prev_pose"]) @ self.imu_estimator.get_pose()

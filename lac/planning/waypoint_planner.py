@@ -6,6 +6,7 @@ Generates waypoints for the agent to follow, and tracks the agent's progress.
 """
 
 import numpy as np
+from rich import print
 
 from lac.params import WAYPOINT_REACHED_DIST_THRESHOLD
 
@@ -58,7 +59,7 @@ class WaypointPlanner:
 
         # Check waypoint timeout
         if step - self.last_waypoint_step > WAYPOINT_TIMEOUT:
-            print(f"WAYPOINT TIMEOUT ON {self.waypoint_idx + 1}/{len(self.waypoints)}")
+            print(f"[bold red]WAYPOINT TIMEOUT ON {self.waypoint_idx + 1}/{len(self.waypoints)}")
             advanced = True
 
         # Check if the waypoint has been reached
