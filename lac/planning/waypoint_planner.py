@@ -63,7 +63,8 @@ class WaypointPlanner:
             advanced = True
 
         # Check if the waypoint has been reached
-        if np.linalg.norm(xy_position - waypoint) < self.waypoint_reached_threshold:
+        distance = np.linalg.norm(xy_position - waypoint)
+        if distance < self.waypoint_reached_threshold:
             advanced = True
 
         if advanced:
@@ -76,6 +77,7 @@ class WaypointPlanner:
 
         if print_progress:
             print(f"Waypoint {self.waypoint_idx + 1}/{len(self.waypoints)}: {waypoint}")
+            print(f"Distance to waypoint: {distance:.2f} m")
 
         return waypoint, advanced
 
