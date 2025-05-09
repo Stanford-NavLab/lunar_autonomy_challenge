@@ -7,7 +7,12 @@ Generates waypoints for the agent to follow, and tracks the agent's progress.
 import numpy as np
 from rich import print
 
-from lac.planning.waypoint_generation import gen_spiral, gen_five_loops, gen_triangle_loops
+from lac.planning.waypoint_generation import (
+    gen_spiral,
+    gen_five_loops,
+    gen_nine_loops,
+    gen_triangle_loops,
+)
 from lac.params import WAYPOINT_REACHED_DIST_THRESHOLD
 
 SPIRAL_MIN = 3.5  # [m]
@@ -28,7 +33,7 @@ class WaypointPlanner:
         waypoint_reached_threshold: float = WAYPOINT_REACHED_DIST_THRESHOLD,
     ):
         """
-        trajectory_type: str = "spiral", "five_loops", or "triangles"
+        trajectory_type: str = "spiral", "five_loops", "nine_loops", "triangles"
 
         """
         match trajectory_type:
@@ -36,6 +41,8 @@ class WaypointPlanner:
                 self.waypoints = gen_spiral(initial_pose, SPIRAL_MIN, SPIRAL_MAX, SPIRAL_STEP)
             case "five_loops":
                 self.waypoints = gen_five_loops(initial_pose, extra_closure=True)
+            case "nine_loops":
+                self.waypoints = gen_nine_loops(initial_pose)
             case "triangles":
                 self.waypoints = gen_triangle_loops(initial_pose, additional_loops=False)
             case _:

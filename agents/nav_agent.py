@@ -33,8 +33,8 @@ from lac.util import get_positions_from_poses, positions_rmse_from_poses
 import lac.params as params
 
 """ Agent parameters and settings """
-EVAL = False  # Whether running in evaluation mode (disable ground truth)
-BACK_CAMERAS = False
+EVAL = True  # Whether running in evaluation mode (disable ground truth)
+BACK_CAMERAS = True
 
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise

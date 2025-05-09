@@ -16,3 +16,4 @@ rerun-sdk==0.22.1
 opt-einsum==3.4.0
 munch==4.0.0
 rich==12.6.0
+imageio==2.37.0
