@@ -55,7 +55,17 @@ class Rerun:
         Rerun.blueprint = rrb.Vertical(
             rrb.Horizontal(
                 rrb.Spatial3DView(name="3D", origin="/world"),
-                rrb.Spatial2DView(name="Camera", origin="/world/camera/image"),
+                rrb.Vertical(
+                    rrb.Spatial2DView(name="Camera", origin="/world/camera/image"),
+                    rrb.Spatial2DView(
+                        name="Local frame",
+                        origin="/local",
+                        background=[25, 25, 25],
+                        visual_bounds=rrb.VisualBounds2D(
+                            x_range=np.array([0, 5]), y_range=np.array([-5, 5])
+                        ),
+                    ),
+                ),
             ),
             rrb.Horizontal(
                 rrb.Horizontal(
@@ -63,19 +73,11 @@ class Rerun:
                     rrb.TimeSeriesView(origin="/scores"),
                     column_shares=[1, 1],
                 ),
-                rrb.Spatial2DView(
-                    name="Local frame",
-                    origin="/local",
-                    background=[25, 25, 25],
-                    visual_bounds=rrb.VisualBounds2D(
-                        x_range=np.array([0, 5]), y_range=np.array([-5, 5])
-                    ),
-                ),
-                rrb.TensorView(
-                    name="Metrics",
-                    origin="/metrics",  # <--- ADD THIS
-                ),
-                column_shares=[3, 2, 1],
+                # rrb.TensorView(
+                #     name="Metrics",
+                #     origin="/metrics",  # <--- ADD THIS
+                # ),
+                column_shares=[3, 2],
             ),
             row_shares=[3, 2],  # 3 "parts" in the first Horizontal, 2 in the second
         )
@@ -166,9 +168,9 @@ class Rerun:
         lander_points = semantic_points.points[
             semantic_points.labels == SemanticClasses.LANDER.value
         ]
-        Rerun.log_3d_points(ground_points, topic="/world/ground_points", color=[120, 0, 255])
+        Rerun.log_3d_points(ground_points, topic="/world/ground_points", color=[120, 120, 120])
         Rerun.log_3d_points(rock_points, topic="/world/rock_points", color=[255, 0, 0])
-        Rerun.log_3d_points(lander_points, topic="/world/lander_points", color=[0, 255, 0])
+        Rerun.log_3d_points(lander_points, topic="/world/lander_points", color=[255, 215, 0])
 
     # ===================================================================================
     # 2D logging

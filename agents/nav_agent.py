@@ -33,7 +33,7 @@ from lac.util import get_positions_from_poses, positions_rmse_from_poses
 import lac.params as params
 
 """ Agent parameters and settings """
-EVAL = True  # Whether running in evaluation mode (disable ground truth)
+EVAL = False  # Whether running in evaluation mode (disable ground truth)
 BACK_CAMERAS = True
 
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
@@ -41,7 +41,8 @@ ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 MISSION_TIMEOUT = 30000  # Number of frames to end mission after
 
 LOG_DATA = True  # Whether to log data
-RERUN = False  # Whether to use rerun for visualization
+RERUN = True  # Whether to use rerun for visualization
+RERUN_PLOT_POINTS = True  # Whether to plot points in rerun
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
@@ -326,6 +327,10 @@ class NavAgent(AutonomousAgent):
             if RERUN:
                 Rerun.log_img(images_gray["FrontLeft"])
 
+                if len(self.backend.point_map) > 0 and RERUN_PLOT_POINTS:
+                    semantic_points = self.backend.project_point_map()
+                    Rerun.log_3d_semantic_points(semantic_points)
+
         """ Control """
         if self.step < ARM_RAISE_WAIT_FRAMES:  # Wait for arms to raise before moving
             carla_control = carla.VehicleVelocityControl(0.0, 0.0)
@@ -356,17 +361,17 @@ class NavAgent(AutonomousAgent):
             slam_trajectory = get_positions_from_poses(slam_poses)
             position_error = slam_trajectory[-1] - ground_truth_pose[:3, 3]
             Rerun.log_3d_trajectory(
-                self.step, gt_trajectory, trajectory_string="ground_truth", color=[20, 20, 20]
+                self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 0]
             )
             Rerun.log_3d_trajectory(
-                self.step, slam_trajectory, trajectory_string="slam", color=[0, 50, 200]
+                self.step, slam_trajectory, trajectory_string="estimated", color=[100, 206, 255]
             )
             Rerun.log_2d_seq_scalar("/trajectory_error/err_x", self.step, position_error[0])
             Rerun.log_2d_seq_scalar("/trajectory_error/err_y", self.step, position_error[1])
             Rerun.log_2d_seq_scalar("/trajectory_error/err_z", self.step, position_error[2])
-            Rerun.log_2d_seq_scalar(
-                "/trajectory_error/velocity", self.step, np.linalg.norm(self.current_velocity)
-            )
+            # Rerun.log_2d_seq_scalar(
+            #     "/trajectory_error/velocity", self.step, np.linalg.norm(self.current_velocity)
+            # )
 
         print("\n---------------------------------------------------------------------------------")
 
