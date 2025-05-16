@@ -43,6 +43,7 @@ MISSION_TIMEOUT = 30000  # Number of frames to end mission after
 LOG_DATA = True  # Whether to log data
 RERUN = True  # Whether to use rerun for visualization
 RERUN_PLOT_POINTS = True  # Whether to plot points in rerun
+RERUN_SAVE = False  # Whether to save rerun log to file and disable viewer
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
@@ -153,7 +154,12 @@ class NavAgent(AutonomousAgent):
                 json.dump(self.config, f, indent=4)
             self.slam_eval_poses = [self.initial_pose]
         if RERUN:
-            Rerun.init_vo()
+            if RERUN_SAVE:
+                Rerun.init_vo(
+                    img_compress=True, save_path=f"output/{agent_name}/{self.run_name}/rerun.rrd"
+                )
+            else:
+                Rerun.init_vo(img_compress=True)
             self.gt_poses = [self.initial_pose]
 
         """ Load the ground truth map for real-time score updates """

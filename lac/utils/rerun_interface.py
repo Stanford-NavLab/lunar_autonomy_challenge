@@ -32,7 +32,7 @@ class Rerun:
     # ===================================================================================
 
     # @staticmethod
-    def init(img_compress: bool = False) -> None:
+    def init(img_compress: bool = False, save_path: str = None) -> None:
         Rerun.img_compress = img_compress
 
         if Rerun.blueprint:
@@ -40,16 +40,18 @@ class Rerun:
         else:
             rr.init("lac_dashboard", spawn=True)
         # rr.connect()  # Connect to a remote viewer
+        if save_path is not None:
+            rr.save(save_path)
         Rerun.is_initialized = True
 
     # @staticmethod
-    def init3d(img_compress: bool = False) -> None:
-        Rerun.init(img_compress)
+    def init3d(img_compress: bool = False, save_path: str = None) -> None:
+        Rerun.init(img_compress, save_path)
         rr.log("/world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
         Rerun.log_3d_grid_plane()
 
     # @staticmethod
-    def init_vo(img_compress: bool = False) -> None:
+    def init_vo(img_compress: bool = False, save_path: str = None) -> None:
         # Setup the blueprint
         print("Setting rerun blueprint")
         Rerun.blueprint = rrb.Vertical(
@@ -82,7 +84,7 @@ class Rerun:
             row_shares=[3, 2],  # 3 "parts" in the first Horizontal, 2 in the second
         )
         # Init rerun
-        Rerun.init3d(img_compress)
+        Rerun.init3d(img_compress, save_path)
         Rerun.log_2d_grid()
 
     # ===================================================================================
@@ -160,14 +162,16 @@ class Rerun:
         )
 
     @staticmethod
-    def log_3d_semantic_points(semantic_points: SemanticPointCloud) -> None:
+    def log_3d_semantic_points(semantic_points: SemanticPointCloud, downsample: int = 10) -> None:
         ground_points = semantic_points.points[
             semantic_points.labels == SemanticClasses.GROUND.value
+        ][::downsample]
+        rock_points = semantic_points.points[semantic_points.labels == SemanticClasses.ROCK.value][
+            ::downsample
         ]
-        rock_points = semantic_points.points[semantic_points.labels == SemanticClasses.ROCK.value]
         lander_points = semantic_points.points[
             semantic_points.labels == SemanticClasses.LANDER.value
-        ]
+        ][::downsample]
         Rerun.log_3d_points(ground_points, topic="/world/ground_points", color=[120, 120, 120])
         Rerun.log_3d_points(rock_points, topic="/world/rock_points", color=[255, 0, 0])
         Rerun.log_3d_points(lander_points, topic="/world/lander_points", color=[255, 215, 0])

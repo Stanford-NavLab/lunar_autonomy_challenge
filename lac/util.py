@@ -35,7 +35,7 @@ def load_data(data_path: str | Path, dynamics=False):
 
     if len(waypoints) > 0:
         return initial_pose, lander_pose, poses, imu_data, cam_config, waypoints
-    return initial_pose, lander_pose, poses, imu_data, cam_config
+    return initial_pose, lander_pose, poses, imu_data, cam_config, json_data
 
 
 def _load_image(img_path: str | Path, frame: int):
