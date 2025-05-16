@@ -1,9 +1,11 @@
 """Visualization utils"""
 
 import numpy as np
-import cv2 as cv
+import cv2
 import matplotlib.pyplot as plt
 import matplotlib.colors
+
+from lac.slam.semantic_feature_tracker import TrackedPoints
 
 
 def int_to_color(i, cmap_name="tab20", hex=False):
@@ -19,8 +21,8 @@ def cv_display_text(text, height=300, width=500, font_scale=1, color=(255, 255, 
     """Clear the image and display new text."""
     window_name = "Output Window"
     img = np.zeros((height, width, 3), dtype=np.uint8)
-    cv.putText(img, text, (50, 150), cv.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness)
-    cv.imshow(window_name, img)
+    cv2.putText(img, text, (50, 150), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness)
+    cv2.imshow(window_name, img)
 
 
 def color_mask(mask: np.ndarray, color) -> np.ndarray:
@@ -32,7 +34,7 @@ def color_mask(mask: np.ndarray, color) -> np.ndarray:
     """
     # Ensure mask has 3 channels
     if len(mask.shape) == 2:
-        mask = 255 * cv.cvtColor(mask.astype(np.uint8), cv.COLOR_GRAY2RGB)
+        mask = 255 * cv2.cvtColor(mask.astype(np.uint8), cv2.COLOR_GRAY2RGB)
     mask = mask * np.array(color)
     return mask
 
@@ -43,9 +45,9 @@ def overlay_mask(image_gray, mask, color=(1, 0, 0)):
     mask : np.ndarray (H, W) - Binary mask
     color : tuple (3) - RGB color
     """
-    image_rgb = cv.cvtColor(image_gray, cv.COLOR_GRAY2BGR)
+    image_rgb = cv2.cvtColor(image_gray, cv2.COLOR_GRAY2BGR)
     mask_colored = color_mask(mask, color).astype(image_rgb.dtype)
-    return cv.addWeighted(image_rgb, 1.0, mask_colored, beta=0.5, gamma=0)
+    return cv2.addWeighted(image_rgb, 1.0, mask_colored, beta=0.5, gamma=0)
 
 
 def overlay_stereo_rock_depths(left_image, depth_results):
@@ -58,12 +60,12 @@ def overlay_stereo_rock_depths(left_image, depth_results):
     for result in depth_results:
         left_centroid = result["left_centroid"]
         depth = result["depth"]
-        cv.circle(overlay, tuple(left_centroid), 5, (0, 255, 0), -1)
-        cv.putText(
+        cv2.circle(overlay, tuple(left_centroid), 5, (0, 255, 0), -1)
+        cv2.putText(
             overlay,
             f"{depth:.2f} m",
             tuple(left_centroid + text_offset),
-            cv.FONT_HERSHEY_SIMPLEX,
+            cv2.FONT_HERSHEY_SIMPLEX,
             1,
             (0, 255, 0),
             2,
@@ -74,11 +76,22 @@ def overlay_stereo_rock_depths(left_image, depth_results):
 def overlay_points(image, points, color=(0, 255, 0), size=5, thickness=-1):
     """
     left_image : np.ndarray (H, W, 3) - RGB image
-    pooints : np.ndarray (N, 2) - points to overlay
+    points : np.ndarray (N, 2) - points to overlay
+    color : color in BGR
     """
     overlay = image.copy()
     for point in points:
-        cv.circle(overlay, tuple(point.astype(int)), size, color, thickness)
+        cv2.circle(overlay, tuple(point.astype(int)), size, color, thickness)
+    return overlay
+
+
+def overlay_tracked_points(image: np.ndarray, tracks: TrackedPoints):
+    if len(image.shape) == 2:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    new_kps = tracks.points[tracks.lengths == 0]
+    tracked_kps = tracks.points[tracks.lengths != 0]
+    overlay = overlay_points(image, new_kps, color=(0, 165, 255), size=3)  # orange
+    overlay = overlay_points(overlay, tracked_kps, color=(0, 255, 0), size=3)  # green
     return overlay
 
 
@@ -87,11 +100,11 @@ def overlay_tag_detections(image_gray, detections):
     image_gray : np.ndarray (H, W) - grayscale image
     detections : list of apriltag.Detection - AprilTag detections
     """
-    image_rgb = cv.cvtColor(image_gray, cv.COLOR_GRAY2BGR)
+    image_rgb = cv2.cvtColor(image_gray, cv2.COLOR_GRAY2BGR)
     overlay = image_rgb.copy()
     for detection in detections:
         for pt in detection.corners:
-            cv.circle(overlay, tuple(pt.astype(int)), 5, (0, 255, 0), -1)
+            cv2.circle(overlay, tuple(pt.astype(int)), 5, (0, 255, 0), -1)
     return overlay
 
 
@@ -121,7 +134,7 @@ def draw_steering_arc(image, steering, l=0.4, color=(0, 0, 255), thickness=3):
     # If steering is nearly zero, draw a straight line upward.
     if abs(steering) < 1e-3:
         end_point = (cx, int(cy - arc_length))
-        cv.line(overlay, (cx, cy), end_point, color, thickness)
+        cv2.line(overlay, (cx, cy), end_point, color, thickness)
     else:
         # For nonzero steering, we will compute a circular arc.
         # We choose R so that an angular sweep Δθ = arc_length/R corresponds approximately to our look-ahead.
@@ -160,10 +173,10 @@ def draw_steering_arc(image, steering, l=0.4, color=(0, 0, 255), thickness=3):
             y = cy_center + R * np.sin(theta)
             pts.append((int(x), int(y)))
         pts = np.array(pts, np.int32).reshape((-1, 1, 2))
-        cv.polylines(overlay, [pts], isClosed=False, color=color, thickness=thickness)
+        cv2.polylines(overlay, [pts], isClosed=False, color=color, thickness=thickness)
 
     # Blend the overlay with the original image (here 50% transparency for the arc)
-    output = cv.addWeighted(image, 1.0, overlay, 0.5, 0)
+    output = cv2.addWeighted(image, 1.0, overlay, 0.5, 0)
     return output
 
 

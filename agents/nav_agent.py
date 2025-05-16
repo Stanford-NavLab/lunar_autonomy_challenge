@@ -20,6 +20,7 @@ from rich import print
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.util import transform_to_numpy
+from lac.perception.segmentation import SemanticClasses
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
 from lac.slam.frontend import Frontend
 from lac.slam.backend import Backend
@@ -27,6 +28,10 @@ from lac.planning.arc_planner import ArcPlanner
 from lac.planning.waypoint_planner import WaypointPlanner
 from lac.mapping.mapper import process_map
 from lac.mapping.map_utils import get_geometric_score, get_rocks_score
+from lac.utils.visualization import (
+    overlay_mask,
+    overlay_tracked_points,
+)
 from lac.utils.data_logger import DataLogger
 from lac.utils.rerun_interface import Rerun
 from lac.util import get_positions_from_poses, positions_rmse_from_poses
@@ -327,11 +332,16 @@ class NavAgent(AutonomousAgent):
                                     centers=data["rock_data"]["centers"][:, :2],
                                     radii=data["rock_data"]["radii"],
                                 )
+                    if RERUN:
+                        rock_mask = data["left_pred"] == SemanticClasses.ROCK.value
+                        display_img = overlay_mask(
+                            images_gray["FrontLeft"], rock_mask, color=(0, 0, 1)
+                        )
+                        display_img = overlay_tracked_points(display_img, data["tracked_points"])
+                        Rerun.log_img(display_img)
 
             if LOG_DATA:
                 self.data_logger.log_images(self.step, input_data)
-            if RERUN:
-                Rerun.log_img(images_gray["FrontLeft"])
 
                 if len(self.backend.point_map) > 0 and RERUN_PLOT_POINTS:
                     semantic_points = self.backend.project_point_map()

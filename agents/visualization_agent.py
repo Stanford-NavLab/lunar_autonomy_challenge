@@ -16,6 +16,7 @@ import json
 from datetime import datetime
 from collections import deque
 from rich import print
+import cv2
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
@@ -30,6 +31,7 @@ from lac.mapping.mapper import process_map
 from lac.mapping.map_utils import get_geometric_score, get_rocks_score
 from lac.utils.visualization import (
     overlay_mask,
+    overlay_tracked_points,
     overlay_stereo_rock_depths,
 )
 from lac.utils.data_logger import DataLogger
@@ -49,6 +51,8 @@ LOG_DATA = False  # Whether to log data
 RERUN = True  # Whether to use rerun for visualization
 RERUN_PLOT_POINTS = True  # Whether to plot points in rerun
 RERUN_SAVE = False  # Whether to save rerun log to file and disable viewer
+
+IMAGE_VIS = "tracking"  # "raw", "rocks", "tracking"
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
@@ -334,10 +338,26 @@ class VizAgent(AutonomousAgent):
                                 )
 
                     if RERUN:
-                        rock_mask = data["left_pred"] == SemanticClasses.ROCK.value
-                        overlay = overlay_mask(images_gray["FrontLeft"], rock_mask, color=(0, 0, 1))
-                        overlay = overlay_stereo_rock_depths(overlay, data["rock_depth"])
-                        Rerun.log_img(overlay)
+                        match IMAGE_VIS:
+                            case "raw":
+                                display_img = images_gray["FrontLeft"]
+                            case "rocks":
+                                rock_mask = data["left_pred"] == SemanticClasses.ROCK.value
+                                display_img = overlay_mask(
+                                    images_gray["FrontLeft"], rock_mask, color=(0, 0, 1)
+                                )
+                                display_img = overlay_stereo_rock_depths(
+                                    display_img, data["rock_depth"]
+                                )
+                            case "tracking":
+                                display_img = overlay_tracked_points(
+                                    images_gray["FrontLeft"], data["tracked_points"]
+                                )
+                            case _:
+                                display_img = images_gray["FrontLeft"]
+                        Rerun.log_img(display_img)
+                        # cv2.imshow("Rock segmentation", display_img)
+                        # cv2.waitKey(1)
 
                         if len(self.backend.point_map) > 0 and RERUN_PLOT_POINTS:
                             semantic_points = self.backend.project_point_map()
