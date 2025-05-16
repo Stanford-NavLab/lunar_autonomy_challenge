@@ -193,12 +193,27 @@ class Rerun:
             lines.append([[minx + div_size * n, miny], [minx + div_size * n, maxy]])
             lines.append([[minx, miny + div_size * n], [maxx, miny + div_size * n]])
 
+        axes = [
+            [[0, miny], [0, maxy]],
+            [[minx, 0], [maxx, 0]],
+        ]
+
         rr.log(
             "/local/grid",
             rr.LineStrips2D(
                 lines,
-                radii=0.01,
-                colors=[0.7 * 255, 0.7 * 255, 0.7 * 255],
+                radii=0.005,
+                # colors=[0.7 * 255, 0.7 * 255, 0.7 * 255],
+                colors=[0, 0, 0],
+            ),
+        )
+        rr.log(
+            "/local/axes",
+            rr.LineStrips2D(
+                axes,
+                radii=0.02,
+                # colors=[0.7 * 255, 0.7 * 255, 0.7 * 255],
+                colors=[0, 0, 0],
             ),
         )
 

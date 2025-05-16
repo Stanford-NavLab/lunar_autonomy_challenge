@@ -57,14 +57,14 @@ class Frontend:
         """
         # Segmentation
         # left_pred = self.segmentation.predict(data["FrontLeft"])
-        left_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(
+        left_rock_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(
             data["FrontLeft"], output_pred=True
         )
-        right_seg_masks, right_labels = self.segmentation.segment_rocks(data["FrontRight"])
+        right_rock_seg_masks, right_labels = self.segmentation.segment_rocks(data["FrontRight"])
 
         # Rock detection
         stereo_depth_results = stereo_depth_from_segmentation(
-            left_seg_masks, right_seg_masks, STEREO_BASELINE, FL_X
+            left_rock_seg_masks, right_rock_seg_masks, STEREO_BASELINE, FL_X
         )
         rock_coords = compute_rock_coords_rover_frame(
             stereo_depth_results, self.feature_tracker.cam_config
@@ -103,6 +103,7 @@ class Frontend:
         data["keyframe"] = data["step"] % KEYFRAME_INTERVAL == 0
         data["tracked_points"] = self.feature_tracker.tracked_points
         data["rock_data"] = {"centers": rock_coords, "radii": rock_radii}
-        data["depth"] = stereo_depth_results
+        data["rock_depth"] = stereo_depth_results
+        data["left_pred"] = left_pred
 
         return data
