@@ -16,6 +16,15 @@ from lac.utils.plotting import (
 )
 
 
+def nonlinear_linspace(min_val, max_val, num_points, power=2):
+    # Generate values in [-1, 1]
+    x = np.linspace(-1, 1, num_points)
+    # Apply a power law, keeping sign (more values near 0)
+    x_nonlinear = np.sign(x) * np.abs(x) ** power
+    # Scale to desired range
+    return min_val + (x_nonlinear + 1) * (max_val - min_val) / 2
+
+
 class ArcPlanner:
     """Arc planner"""
 
@@ -53,7 +62,8 @@ class ArcPlanner:
         if isinstance(arc_config, int):
             self.is_branch = False
             NUM_OMEGAS_1 = arc_config
-            self.omegas1 = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS_1)
+            # self.omegas1 = np.linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS_1)
+            self.omegas1 = nonlinear_linspace(-MAX_OMEGA, MAX_OMEGA, NUM_OMEGAS_1)
         else:
             self.is_branch = True
             NUM_OMEGAS_1 = arc_config[0]

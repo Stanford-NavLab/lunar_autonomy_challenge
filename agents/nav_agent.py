@@ -401,7 +401,7 @@ class NavAgent(AutonomousAgent):
 
     def finalize(self):
         print("[bold blue]Running finalize")
-        self.update_map()
+        agent_map = self.update_map()
 
         if LOG_DATA:
             print(f"[blue]   Preset: {PRESET}")
@@ -409,8 +409,14 @@ class NavAgent(AutonomousAgent):
             self.data_logger.save_log()
             slam_poses = np.array(self.backend.get_trajectory())
             np.save(f"output/{get_entry_point()}/{self.run_name}/slam_poses.npy", slam_poses)
-            print(
-                f"[bold green]  Final RMSE: {positions_rmse_from_poses(slam_poses, self.slam_eval_poses):.4f} m"
+            final_rmse = positions_rmse_from_poses(slam_poses, self.slam_eval_poses)
+            print(f"[bold green]  Final RMSE: {final_rmse:.4f} m")
+            geometric_score = get_geometric_score(self.ground_truth_map, agent_map)
+            rocks_score = get_rocks_score(self.ground_truth_map, agent_map)
+            np.savetxt(
+                f"output/{get_entry_point()}/{self.run_name}/results.txt",
+                [final_rmse, geometric_score, rocks_score, geometric_score + rocks_score],
+                fmt="%.6f",
             )
 
             backend_state = self.backend.get_state()
