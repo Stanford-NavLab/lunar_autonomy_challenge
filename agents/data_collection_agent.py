@@ -13,6 +13,8 @@ import carla
 import cv2 as cv
 from pynput import keyboard
 import signal
+import os
+from datetime import datetime
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
@@ -29,8 +31,11 @@ TURN_RATE = 0.3
 
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 
-MODE = "teleop"  # {"teleop", "waypoint", "dynamics"}
+MODE = "waypoint"  # {"teleop", "waypoint", "dynamics"}
 DISPLAY_IMAGES = True  # Set to False to disable image display
+
+PRESET = os.environ.get("MISSIONS_SUBSET")
+SEED = os.environ.get("SEED")
 
 
 def get_entry_point():
@@ -53,7 +58,7 @@ class DataCollectionAgent(AutonomousAgent):
         """ Planner """
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = WaypointPlanner(initial_pose)
+        self.planner = WaypointPlanner(initial_pose, trajectory_type="spiral")
 
         # Camera config
         self.cameras = params.CAMERA_CONFIG_INIT
@@ -62,56 +67,56 @@ class DataCollectionAgent(AutonomousAgent):
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["FrontRight"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["Front"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["BackLeft"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["BackRight"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["Back"] = {
-            "active": False,
+            "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["Left"] = {
             "active": True,
-            "light": 0.0,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["Right"] = {
             "active": True,
-            "light": 0.0,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         agent_name = get_entry_point()
 
@@ -119,10 +124,11 @@ class DataCollectionAgent(AutonomousAgent):
         self.v = 0.2
         self.w = 0.4
         log_file = f"results/dynamics/v{self.v}_w{self.w}_scaled2.json"
+        run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         if MODE == "dynamics":
             self.data_logger = DataLogger(self, agent_name, self.cameras, log_file=log_file)
         else:
-            self.data_logger = DataLogger(self, agent_name, self.cameras)
+            self.data_logger = DataLogger(self, agent_name, run_name, PRESET, SEED, self.cameras)
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
 
@@ -153,8 +159,8 @@ class DataCollectionAgent(AutonomousAgent):
 
     def initialize(self):
         # Move the arms out of the way
-        self.set_front_arm_angle(params.FRONT_ARM_ANGLE_STATIC_RAD)
-        self.set_back_arm_angle(params.ARM_ANGLE_STATIC_RAD)
+        self.set_front_arm_angle(np.deg2rad(75))
+        self.set_back_arm_angle(np.deg2rad(75))
 
     def run_step(self, input_data):
         if self.step == 0:
