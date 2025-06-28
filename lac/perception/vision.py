@@ -4,13 +4,19 @@ import cv2
 import numpy as np
 import apriltag
 import torch
+from rich import print
 
 from lightglue import LightGlue, SuperPoint, match_pair
 from lightglue.utils import load_image, rbd
 
 from lac.perception.pnp import solve_tag_pnp
-from lac.utils.frames import invert_transform_mat, get_cam_pose_rover
-from lac.params import IMG_FOV_RAD
+from lac.utils.frames import (
+    make_transform_mat,
+    invert_transform_mat,
+    get_cam_pose_rover,
+    OPENCV_TO_CAMERA_PASSIVE,
+)
+from lac.params import IMG_FOV_RAD, CAMERA_INTRINSICS
 
 
 def grayscale_to_3ch_tensor(np_image):
@@ -19,67 +25,6 @@ def grayscale_to_3ch_tensor(np_image):
     # Add channel dimension and repeat across 3 channels
     torch_tensor = torch.from_numpy(np_image).unsqueeze(0).repeat(3, 1, 1)
     return torch_tensor
-
-
-class LightGlueMatcher:
-    def __init__(self):
-        self.extractor = SuperPoint(max_num_keypoints=2048).eval().cuda()  # load the extractor
-        self.matcher = LightGlue(features="superpoint").eval().cuda()  # load the matcher
-
-    def match(self, img0, img1):
-        """
-        Match keypoints between two images
-        """
-        image0 = grayscale_to_3ch_tensor(img0).cuda()
-        image1 = grayscale_to_3ch_tensor(img1).cuda()
-        feats0, feats1, matches01 = match_pair(self.extractor, self.matcher, image0, image1)
-        return feats0, feats1, matches01
-
-
-class StereoVIO:
-    def __init__(self, fl_x, baseline):
-        self.matcher = LightGlueMatcher()
-        self.fl_x = fl_x  # Focal length in x direction
-        self.baseline = baseline  # Stereo baseline
-        self.prev_feats = None
-        self.prev_depths = None
-
-    def process_stereo_pair(self, left_img, right_img):
-        # Match the stereo pair to get depths
-        feats0, feats1, matches01 = self.matcher.match(left_img, right_img)
-
-        # Extract matched points
-        points0 = feats0["keypoints"][matches01["matches"][:, 0]]
-        points1 = feats1["keypoints"][matches01["matches"][:, 1]]
-
-        # Calculate disparities and depths
-        disparities = (points0 - points1)[:, 0]  # X-coordinates only
-        depths = self.fl_x * self.baseline / disparities
-
-        # Store features and depths for frame-to-frame tracking
-        self.prev_feats = points0
-        self.prev_depths = depths
-
-    def track_frame(self, new_left_img, K):
-        if self.prev_feats is None:
-            raise ValueError("No previous frame to track!")
-
-        # Match previous left frame with current left frame
-        new_feats, _, matches = self.matcher.match(self.prev_feats, new_left_img)
-
-        # Extract matched keypoints
-        prev_pts = self.prev_feats[matches["matches"][:, 0]]
-        new_pts = new_feats["keypoints"][matches["matches"][:, 1]]
-
-        # Convert prev_pts to 3D points using the depths
-        prev_depths = self.prev_depths[matches["matches"][:, 0]]
-        prev_pts_h = np.hstack([prev_pts, np.ones((prev_pts.shape[0], 1))])
-        prev_pts_3d = (np.linalg.inv(K) @ prev_pts_h.T).T * prev_depths[:, None]
-
-        # Estimate pose with PnP
-        _, rvec, tvec, inliers = cv2.solvePnPRansac(prev_pts_3d, new_pts, K, None, flags=cv2.SOLVEPNP_ITERATIVE)
-
-        return rvec, tvec
 
 
 def get_camera_intrinsics(cam_name: str, camera_config: dict):
@@ -153,6 +98,51 @@ def project_pixels_to_3D(pixels, depths, K):
     return np.column_stack((X, Y, Z))
 
 
+PNP_REPROJECTION_ERROR_THRESHOLD = 1.0  # pixels
+
+
+def solve_vision_pnp(
+    points3D: np.ndarray,
+    points2D: np.ndarray,
+    K: np.ndarray = CAMERA_INTRINSICS,
+    cam_name: str = "FrontLeft",
+) -> np.ndarray | None:
+    """
+    Solve the PnP problem to estimate the camera pose from 3D-2D point correspondences.
+
+    NOTE: we apply to cam to rover transform to return rover pose by default
+
+    points3D : np.ndarray (N, 3) - 3D points in world/local frame
+    points2D : np.ndarray (N, 2) - 2D points in image frame
+    K : np.ndarray (3, 3) - Camera intrinsics matrix
+
+    Returns:
+    np.ndarray (4, 4) - Estimated rover pose in world/local frame
+    """
+    if len(points3D) < 4:
+        print("[red]Not enough points to solve PnP.")
+        return None
+    success, rvec, tvec, inliers = cv2.solvePnPRansac(
+        objectPoints=points3D,
+        imagePoints=points2D,
+        cameraMatrix=K,
+        distCoeffs=None,
+        flags=cv2.SOLVEPNP_ITERATIVE,
+        reprojectionError=PNP_REPROJECTION_ERROR_THRESHOLD,
+        iterationsCount=500,
+        confidence=0.99,
+    )
+    if success:
+        R, _ = cv2.Rodrigues(rvec)
+        w_T_c = invert_transform_mat(make_transform_mat(R, tvec))
+        w_T_c[:3, :3] = w_T_c[:3, :3] @ OPENCV_TO_CAMERA_PASSIVE
+        rover_pose = w_T_c @ invert_transform_mat(get_cam_pose_rover(cam_name))
+        return rover_pose
+    else:
+        print("[red]PnP solve failed.")
+        return None
+
+
 class FiducialLocalizer:
     def __init__(self, camera_config: dict):
         self.camera_config = camera_config
@@ -197,6 +187,8 @@ class FiducialLocalizer:
         cam_poses = solve_tag_pnp(detections, cam_intrisics, lander_pose)
         rover_to_cam = get_cam_pose_rover(cam_name)
         cam_to_rover = invert_transform_mat(rover_to_cam)
-        rover_pose_estimates = {tag_id: cam_pose @ cam_to_rover for tag_id, cam_pose in cam_poses.items()}
+        rover_pose_estimates = {
+            tag_id: cam_pose @ cam_to_rover for tag_id, cam_pose in cam_poses.items()
+        }
 
         return rover_pose_estimates, detections

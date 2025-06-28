@@ -17,15 +17,23 @@ import carla
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.util import transform_to_numpy
-from lac.params import DEFAULT_RUN_NAME
 
 
 class DataLogger:
-    def __init__(self, agent: AutonomousAgent, agent_name: str, camera_config: dict, log_file: str = None):
+    def __init__(
+        self,
+        agent: AutonomousAgent,
+        agent_name: str,
+        run_name: str,
+        preset: int,
+        seed: int,
+        camera_config: dict,
+        log_file: str = None,
+    ):
         self.agent_name = agent_name
         self.data = {}
         self.frames = []
-        self.run_name = DEFAULT_RUN_NAME
+        self.run_name = run_name
         if log_file is not None:
             self.log_file = log_file
         else:
@@ -33,6 +41,9 @@ class DataLogger:
 
         self.agent = agent
         self.cameras = camera_config
+
+        self.data["preset"] = preset
+        self.data["seed"] = seed
 
         # Log initial data
         initial_rover_pose = transform_to_numpy(self.agent.get_initial_position())
@@ -53,7 +64,9 @@ class DataLogger:
                 if config["semantic"]:
                     os.makedirs(f"output/{self.agent_name}/{self.run_name}/{cam_name}_semantic")
 
-    def log_data(self, step: int, control: carla.VehicleVelocityControl, est_pose=None, waypoint=None):
+    def log_data(
+        self, step: int, control: carla.VehicleVelocityControl, est_pose=None, waypoint=None
+    ):
         """
         step - current step in the simulation
         """

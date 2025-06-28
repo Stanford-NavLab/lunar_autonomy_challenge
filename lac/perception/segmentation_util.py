@@ -31,7 +31,7 @@ def get_mask_centroids(masks, sorted=False):
     return mask_centroids
 
 
-def centroid_matching(left_centroids, right_centroids, max_y_diff=5, max_x_diff=300):
+def centroid_matching(left_centroids, right_centroids, max_y_diff=25, max_x_diff=300):
     """
     Matches left centroids to right centroids based on the closest y-coordinate difference.
     Ensures that each right centroid is matched only once, optimizing globally.
@@ -57,7 +57,9 @@ def centroid_matching(left_centroids, right_centroids, max_y_diff=5, max_x_diff=
 
     # Create a list of candidate matches (left_idx, right_idx, y_diff, x_diff)
     candidates = [
-        (i, j, y_diffs[i, j], x_diffs[i, j]) for i in range(len(left_centroids)) for j in range(len(right_centroids))
+        (i, j, y_diffs[i, j], x_diffs[i, j])
+        for i in range(len(left_centroids))
+        for j in range(len(right_centroids))
     ]
 
     # Sort candidates by y-coordinate difference
@@ -67,7 +69,12 @@ def centroid_matching(left_centroids, right_centroids, max_y_diff=5, max_x_diff=
     used_right = set()
 
     for left_idx, right_idx, y_diff, x_diff in candidates:
-        if y_diff < max_y_diff and x_diff < max_x_diff and left_idx not in used_left and right_idx not in used_right:
+        if (
+            y_diff < max_y_diff
+            and x_diff < max_x_diff
+            and left_idx not in used_left
+            and right_idx not in used_right
+        ):
             # matches.append((left_centroids[left_idx], right_centroids[right_idx]))
             matches.append((left_idx, right_idx))
             used_left.add(left_idx)

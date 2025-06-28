@@ -13,11 +13,13 @@ import carla
 import cv2 as cv
 from pynput import keyboard
 import signal
+import os
+from datetime import datetime
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.planning.waypoint_planner import Planner
-from lac.control.controller import waypoint_steering
+from lac.planning.waypoint_planner import WaypointPlanner
+from lac.control.steering import waypoint_steering
 from lac.utils.data_logger import DataLogger
 from lac.util import transform_to_numpy
 import lac.params as params
@@ -27,8 +29,13 @@ MAX_SPEED = 0.2
 SPEED_INCREMENT = 0.05
 TURN_RATE = 0.3
 
-MODE = "dynamics"  # {"teleop", "waypoint", "dynamics"}
-DISPLAY_IMAGES = False  # Set to False to disable image display
+ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
+
+MODE = "waypoint"  # {"teleop", "waypoint", "dynamics"}
+DISPLAY_IMAGES = True  # Set to False to disable image display
+
+PRESET = os.environ.get("MISSIONS_SUBSET")
+SEED = os.environ.get("SEED")
 
 
 def get_entry_point():
@@ -51,7 +58,7 @@ class DataCollectionAgent(AutonomousAgent):
         """ Planner """
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(initial_pose, spiral_min=3.5, spiral_max=13.5, spiral_step=2.0)
+        self.planner = WaypointPlanner(initial_pose, trajectory_type="spiral")
 
         # Camera config
         self.cameras = params.CAMERA_CONFIG_INIT
@@ -60,56 +67,56 @@ class DataCollectionAgent(AutonomousAgent):
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["FrontRight"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["Front"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["BackLeft"] = {
-            "active": False,
-            "light": 0.0,
+            "active": True,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["BackRight"] = {
-            "active": False,
-            "light": 0.0,
+            "active": True,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["Back"] = {
-            "active": False,
-            "light": 0.0,
+            "active": True,
+            "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["Left"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         self.cameras["Right"] = {
             "active": True,
             "light": 1.0,
             "width": 1280,
             "height": 720,
-            "semantic": False,
+            "semantic": True,
         }
         agent_name = get_entry_point()
 
@@ -117,7 +124,11 @@ class DataCollectionAgent(AutonomousAgent):
         self.v = 0.2
         self.w = 0.4
         log_file = f"results/dynamics/v{self.v}_w{self.w}_scaled2.json"
-        self.data_logger = DataLogger(self, agent_name, self.cameras, log_file=log_file)
+        run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        if MODE == "dynamics":
+            self.data_logger = DataLogger(self, agent_name, self.cameras, log_file=log_file)
+        else:
+            self.data_logger = DataLogger(self, agent_name, run_name, PRESET, SEED, self.cameras)
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
 
@@ -148,8 +159,8 @@ class DataCollectionAgent(AutonomousAgent):
 
     def initialize(self):
         # Move the arms out of the way
-        self.set_front_arm_angle(params.ARM_ANGLE_STATIC_RAD)
-        self.set_back_arm_angle(params.ARM_ANGLE_STATIC_RAD)
+        self.set_front_arm_angle(np.deg2rad(75))
+        self.set_back_arm_angle(np.deg2rad(75))
 
     def run_step(self, input_data):
         if self.step == 0:
@@ -168,18 +179,20 @@ class DataCollectionAgent(AutonomousAgent):
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
         elif MODE == "waypoint":
             ground_truth_pose = transform_to_numpy(self.get_transform())
-            waypoint, _ = self.planner.get_waypoint(ground_truth_pose, print_progress=True)
+            waypoint, _ = self.planner.get_waypoint(
+                self.step, ground_truth_pose, print_progress=True
+            )
             if waypoint is None:
                 self.mission_complete()
                 return carla.VehicleVelocityControl(0.0, 0.0)
             nominal_steering = waypoint_steering(waypoint, ground_truth_pose)
 
-            if self.step < 100:  # Wait for arms to raise before moving
+            if self.step < ARM_RAISE_WAIT_FRAMES:  # Wait for arms to raise before moving
                 control = carla.VehicleVelocityControl(0.0, 0.0)
             else:
-                control = carla.VehicleVelocityControl(0.2, nominal_steering)
+                control = carla.VehicleVelocityControl(params.TARGET_SPEED, nominal_steering)
         elif MODE == "dynamics":
-            if self.step >= 100:
+            if self.step >= ARM_RAISE_WAIT_FRAMES:
                 control = carla.VehicleVelocityControl(self.v, 2 * self.w)
             else:
                 control = carla.VehicleVelocityControl(0.0, 0.0)

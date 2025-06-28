@@ -39,4 +39,4 @@ RUN python3 -m pip install segmentation-models-pytorch
 # placeholders. These filenames need to be relative to your agent's team code
 # folder.
 ENV TEAM_AGENT=${TEAM_CODE_ROOT}/agents/nav_agent.py
-# ENV TEAM_CONFIG=${TEAM_CODE_ROOT}/agents/test_agent.py
+ENV TEAM_CONFIG=${TEAM_CODE_ROOT}/configs/config.json

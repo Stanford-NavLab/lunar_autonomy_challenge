@@ -10,6 +10,9 @@ import rerun as rr
 import rerun.blueprint as rrb
 import math as math
 
+from lac.perception.segmentation import SemanticClasses
+from lac.slam.backend import SemanticPointCloud
+
 
 class Rerun:
     # Static parameters
@@ -29,7 +32,7 @@ class Rerun:
     # ===================================================================================
 
     # @staticmethod
-    def init(img_compress: bool = False) -> None:
+    def init(img_compress: bool = False, save_path: str = None) -> None:
         Rerun.img_compress = img_compress
 
         if Rerun.blueprint:
@@ -37,41 +40,52 @@ class Rerun:
         else:
             rr.init("lac_dashboard", spawn=True)
         # rr.connect()  # Connect to a remote viewer
+        if save_path is not None:
+            rr.save(save_path)
         Rerun.is_initialized = True
 
     # @staticmethod
-    def init3d(img_compress: bool = False) -> None:
-        Rerun.init(img_compress)
+    def init3d(img_compress: bool = False, save_path: str = None) -> None:
+        Rerun.init(img_compress, save_path)
         rr.log("/world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
         Rerun.log_3d_grid_plane()
 
     # @staticmethod
-    def init_vo(img_compress: bool = False) -> None:
+    def init_vo(img_compress: bool = False, save_path: str = None) -> None:
         # Setup the blueprint
         print("Setting rerun blueprint")
         Rerun.blueprint = rrb.Vertical(
             rrb.Horizontal(
                 rrb.Spatial3DView(name="3D", origin="/world"),
-                rrb.Spatial2DView(name="Camera", origin="/world/camera/image"),
+                rrb.Vertical(
+                    rrb.Spatial2DView(name="Camera", origin="/world/camera/image"),
+                    rrb.Spatial2DView(
+                        name="Local frame",
+                        origin="/local",
+                        background=[25, 25, 25],
+                        visual_bounds=rrb.VisualBounds2D(
+                            x_range=np.array([0, 5]), y_range=np.array([-5, 5])
+                        ),
+                    ),
+                ),
             ),
             rrb.Horizontal(
                 rrb.Horizontal(
                     rrb.TimeSeriesView(origin="/trajectory_error"),
-                    rrb.TimeSeriesView(origin="/trajectory_stats"),
+                    rrb.TimeSeriesView(origin="/scores"),
                     column_shares=[1, 1],
                 ),
-                rrb.Spatial2DView(
-                    name="Local frame",
-                    origin="/local",
-                    background=[50, 50, 50],
-                    visual_bounds=rrb.VisualBounds2D(x_range=np.array([0, 5]), y_range=np.array([-5, 5])),
-                ),
+                # rrb.TensorView(
+                #     name="Metrics",
+                #     origin="/metrics",  # <--- ADD THIS
+                # ),
                 column_shares=[3, 2],
             ),
             row_shares=[3, 2],  # 3 "parts" in the first Horizontal, 2 in the second
         )
         # Init rerun
-        Rerun.init3d(img_compress)
+        Rerun.init3d(img_compress, save_path)
+        Rerun.log_2d_grid()
 
     # ===================================================================================
     # Image logging
@@ -123,7 +137,7 @@ class Rerun:
         color=[255, 0, 0],
         size=0.05,
     ) -> None:
-        rr.set_time_sequence("frame_id", frame_id)
+        # rr.set_time_sequence("frame_id", frame_id)
         points = np.array(points).reshape(-1, 3)
         rr.log(
             "/world/" + trajectory_string,
@@ -147,30 +161,85 @@ class Rerun:
             ),
         )
 
+    @staticmethod
+    def log_3d_semantic_points(semantic_points: SemanticPointCloud, downsample: int = 10) -> None:
+        ground_points = semantic_points.points[
+            semantic_points.labels == SemanticClasses.GROUND.value
+        ][::downsample]
+        rock_points = semantic_points.points[semantic_points.labels == SemanticClasses.ROCK.value][
+            ::downsample
+        ]
+        lander_points = semantic_points.points[
+            semantic_points.labels == SemanticClasses.LANDER.value
+        ][::downsample]
+        Rerun.log_3d_points(ground_points, topic="/world/ground_points", color=[120, 120, 120])
+        Rerun.log_3d_points(rock_points, topic="/world/rock_points", color=[255, 0, 0])
+        Rerun.log_3d_points(lander_points, topic="/world/lander_points", color=[255, 215, 0])
+
     # ===================================================================================
     # 2D logging
     # ===================================================================================
-
-    # TODO: test
     @staticmethod
-    def log_2d_trajectory(topic: str, frame_id: int, trajectory: np.ndarray) -> None:
-        rr.set_time_sequence("frame_id", frame_id)
+    def log_2d_grid(num_divs: int = 20, div_size: int = 1) -> None:
+        rr.set_time_sequence("frame_id", 0)
+        # Plane parallel to x-y at z = 0 with normal +z
+        minx = -num_divs * div_size
+        miny = -num_divs * div_size
+        maxx = num_divs * div_size
+        maxy = num_divs * div_size
+
+        lines = []
+        for n in range(2 * num_divs):
+            lines.append([[minx + div_size * n, miny], [minx + div_size * n, maxy]])
+            lines.append([[minx, miny + div_size * n], [maxx, miny + div_size * n]])
+
+        axes = [
+            [[0, miny], [0, maxy]],
+            [[minx, 0], [maxx, 0]],
+        ]
+
+        rr.log(
+            "/local/grid",
+            rr.LineStrips2D(
+                lines,
+                radii=0.005,
+                # colors=[0.7 * 255, 0.7 * 255, 0.7 * 255],
+                colors=[0, 0, 0],
+            ),
+        )
+        rr.log(
+            "/local/axes",
+            rr.LineStrips2D(
+                axes,
+                radii=0.02,
+                # colors=[0.7 * 255, 0.7 * 255, 0.7 * 255],
+                colors=[0, 0, 0],
+            ),
+        )
+
+    @staticmethod
+    def log_2d_trajectory(
+        frame_id: int, trajectory: np.ndarray, topic: str = "/local/path"
+    ) -> None:
+        # rr.set_time_sequence("frame_id", frame_id)
         # Swap x and y, and invert y
-        trajectory = np.column_stack((trajectory[:, 1], -trajectory[:, 0]))
+        trajectory = np.column_stack((-trajectory[:, 1], -trajectory[:, 0]))
         rr.log(
             topic,
             rr.LineStrips2D(
                 [trajectory],
-                radii=0.01,
+                radii=0.05,
                 colors=[0, 0, 255],
             ),
         )
 
-    # TODO: test
     @staticmethod
-    def log_2d_obstacle_map(topic: str, frame_id: int, centers: np.ndarray, radii: np.ndarray) -> None:
-        rr.set_time_sequence("frame_id", frame_id)
-        centers = np.column_stack((centers[:, 1], -centers[:, 0]))
+    def log_2d_obstacle_map(
+        frame_id: int, centers: np.ndarray, radii: np.ndarray, topic: str = "/local/obstacles"
+    ) -> None:
+        # rr.set_time_sequence("frame_id", frame_id)
+        # Swap x and y, and invert y
+        centers = np.column_stack((-centers[:, 1], -centers[:, 0]))
         rr.log(
             topic,
             rr.Points2D(
@@ -209,3 +278,7 @@ class Rerun:
             rr.log(topic, rr.Image(img).compress(jpeg_quality=Rerun.img_compress_jpeg_quality))
         else:
             rr.log(topic, rr.Image(img))
+
+    @staticmethod
+    def log_scalar(topic: str, value: float):
+        rr.log(topic, rr.Scalar(value))

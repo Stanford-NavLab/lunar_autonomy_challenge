@@ -1,20 +1,23 @@
 """Methods for loop closure detection and pose estimation."""
 
-import cv2
 import torch
 import numpy as np
 
 from lac.slam.feature_tracker import FeatureTracker, prune_features
-from lac.utils.frames import (
-    invert_transform_mat,
-    OPENCV_TO_CAMERA_PASSIVE,
-)
-from lac.params import CAMERA_INTRINSICS
+from lac.perception.vision import solve_vision_pnp
+
+MIN_MATCHES = 120
+MIN_SCORE = 0.25
 
 
 def estimate_loop_closure_pose(
     tracker: FeatureTracker, left_img1, right_img1, left_img2, right_img2
-):
+) -> np.ndarray | None:
+    """Estimate the loop closure pose using stereo images.
+
+    Returns None if not enough points/matches or PnP fails.
+
+    """
     feats_left1, feats_right1, stereo_matches1, depths1 = tracker.process_stereo(
         left_img1, right_img1
     )
@@ -26,7 +29,7 @@ def estimate_loop_closure_pose(
     matched_pts_left1 = matched_feats1["keypoints"][0]
     points_local1 = tracker.project_stereo(np.eye(4), matched_pts_left1, depths1)
 
-    matches12_left = tracker.match_feats(feats_left1, feats_left2, min_score=0.6)
+    matches12_left = tracker.match_feats(feats_left1, feats_left2, min_score=MIN_SCORE)
 
     stereo_indices = stereo_matches1[:, 0]
     frame_indices = matches12_left[:, 0]
@@ -39,20 +42,50 @@ def estimate_loop_closure_pose(
     points3D = points_local1[torch.isin(stereo_indices, common_indices).cpu().numpy()]
     points2D = feats_left2["keypoints"][0][frame_common[:, 1]].cpu().numpy()
 
-    success, rvec, tvec, inliers = cv2.solvePnPRansac(
-        objectPoints=points3D,
-        imagePoints=points2D,
-        cameraMatrix=CAMERA_INTRINSICS,
-        distCoeffs=None,
-        flags=cv2.SOLVEPNP_ITERATIVE,
-        reprojectionError=8.0,
-        iterationsCount=100,
-    )
+    # relative pose from frame 1 to frame 2, i.e. pose2 = pose1 @ rel_pose
+    rel_pose = solve_vision_pnp(points3D, points2D)
 
-    R, _ = cv2.Rodrigues(rvec)
-    T = np.hstack((R, tvec))
-    est_pose = np.vstack((T, [0, 0, 0, 1]))
-    w_T_c = invert_transform_mat(est_pose)
-    w_T_c[:3, :3] = w_T_c[:3, :3] @ OPENCV_TO_CAMERA_PASSIVE
-    rel_pose = w_T_c  # relative pose from frame 1 to frame 2, i.e. pose2 = pose1 @ rel_pose
     return rel_pose
+
+
+def keyframe_estimate_loop_closure_pose(
+    tracker: FeatureTracker,
+    keyframe_data: tuple,
+    left_img2: np.ndarray,
+    min_score: float = MIN_SCORE,
+    min_matches: int = MIN_MATCHES,
+) -> np.ndarray | None:
+    """Estimate the loop closure pose using stereo images.
+
+    Returns None if not enough points/matches or PnP fails.
+
+    """
+    feats_left1, feats_right1, stereo_matches1, depths1 = keyframe_data
+    feats_left2 = tracker.extract_feats(left_img2)
+
+    matched_feats1 = prune_features(feats_left1, stereo_matches1[:, 0])
+    matched_pts_left1 = matched_feats1["keypoints"][0]
+    points_local1 = tracker.project_stereo(np.eye(4), matched_pts_left1, depths1)
+
+    matches12_left = tracker.match_feats(feats_left1, feats_left2, min_score=min_score)
+    num_matches = len(matches12_left)
+
+    if num_matches < min_matches:
+        print("Not enough matches for loop closure")
+        return None, num_matches
+
+    stereo_indices = stereo_matches1[:, 0]
+    frame_indices = matches12_left[:, 0]
+
+    common_indices = torch.tensor(
+        list(set(stereo_indices.cpu().numpy()) & set(frame_indices.cpu().numpy()))
+    ).cuda()
+    frame_common = matches12_left[torch.isin(frame_indices, common_indices)]
+
+    points3D = points_local1[torch.isin(stereo_indices, common_indices).cpu().numpy()]
+    points2D = feats_left2["keypoints"][0][frame_common[:, 1]].cpu().numpy()
+
+    # relative pose from frame 1 to frame 2, i.e. pose2 = pose1 @ rel_pose
+    rel_pose = solve_vision_pnp(points3D, points2D)
+
+    return rel_pose, num_matches

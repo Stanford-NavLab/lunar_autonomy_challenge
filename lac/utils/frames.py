@@ -24,7 +24,7 @@ def make_transform_mat(R: np.ndarray, t: np.ndarray) -> np.ndarray:
     """
     transf = np.eye(4)
     transf[:3, :3] = R
-    transf[:3, 3] = t
+    transf[:3, 3] = t.ravel()
     return transf
 
 

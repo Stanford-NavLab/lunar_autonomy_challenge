@@ -26,8 +26,8 @@ from lac.perception.depth import (
     compute_rock_coords_rover_frame,
     compute_rock_radii,
 )
-from lac.control.controller import ArcPlanner
-from lac.planning.waypoint_planner import Planner
+from lac.planning.arc_planner import ArcPlanner
+from lac.planning.waypoint_planner import WaypointPlanner
 from lac.utils.visualization import (
     overlay_mask,
     draw_steering_arc,
@@ -87,7 +87,7 @@ class AutoAgent(AutonomousAgent):
         self.lander_pose = self.initial_pose @ transform_to_numpy(
             self.get_initial_lander_position()
         )
-        self.planner = Planner(self.initial_pose)
+        self.planner = WaypointPlanner(self.initial_pose)
 
         """ Path planner """
         self.arc_planner = ArcPlanner()

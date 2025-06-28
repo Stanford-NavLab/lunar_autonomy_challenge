@@ -1,0 +1,15 @@
+{
+    "planning": {
+        "trajectory": "five_loops",
+        "waypoint_reached_threshold_m": 1.5
+    },
+    "loop_closure": {
+        "min_score": 0.5,
+        "min_matches": 100,
+        "distance_threshold_m": 1.0,
+        "angle_threshold_deg": 5.0
+    },
+    "control": {
+        "kp_linear": 1.0
+    }
+}

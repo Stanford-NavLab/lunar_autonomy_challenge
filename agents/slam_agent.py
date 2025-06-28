@@ -16,23 +16,25 @@ import signal
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import (
-    pose_to_pos_rpy,
-    transform_to_numpy,
-    transform_to_pos_rpy,
-)
-from lac.planning.waypoint_planner import Planner
-from lac.slam.visual_odometry import StereoVisualOdometry
-from lac.control.controller import waypoint_steering
+from lac.util import transform_to_numpy
+from lac.perception.segmentation import SemanticClasses
+from lac.planning.waypoint_planner import WaypointPlanner
+from lac.planning.arc_planner import ArcPlanner
+from lac.control.steering import waypoint_steering
+from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
+from lac.slam.frontend import Frontend
+from lac.slam.backend import Backend
+from lac.mapping.mapper import process_map
 from lac.utils.data_logger import DataLogger
 from lac.utils.rerun_interface import Rerun
+from lac.util import get_positions_from_poses
 import lac.params as params
 
 """ Agent parameters and settings """
 USE_GROUND_TRUTH_NAV = True  # Whether to use ground truth pose for navigation
-ARM_RAISE_WAIT_FRAMES = 100  # Number of frames to wait for the arms to raise
+ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 
-DISPLAY_IMAGES = True  # Whether to display the camera views
+RERUN_PLOT_POINTS = True  # Whether to plot points in rerun
 TELEOP = False  # Whether to use teleop control or autonomous control
 
 
@@ -46,7 +48,7 @@ class SlamAgent(AutonomousAgent):
         listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
 
-        """ For teleop """
+        """ Control variables """
         self.current_v = 0
         self.current_w = 0
 
@@ -75,20 +77,41 @@ class SlamAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
+        self.cameras["BackLeft"] = {
+            "active": True,
+            "light": 1.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
+        self.cameras["BackRight"] = {
+            "active": True,
+            "light": 1.0,
+            "width": 1280,
+            "height": 720,
+            "semantic": False,
+        }
         self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
         """ Planner """
         self.initial_pose = transform_to_numpy(self.get_initial_position())
-        self.lander_pose = self.initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(self.initial_pose)
+        self.lander_pose = self.initial_pose @ transform_to_numpy(
+            self.get_initial_lander_position()
+        )
+        self.planner = WaypointPlanner(
+            self.initial_pose, spiral_min=3.0, spiral_max=7.0, spiral_step=0.25, repeat=0
+        )
+        self.arc_planner = ArcPlanner()
 
         """ SLAM """
-        self.svo = StereoVisualOdometry(self.cameras)
+        feature_tracker = SemanticFeatureTracker(self.cameras)
+        back_feature_tracker = SemanticFeatureTracker(self.cameras, cam="BackLeft")
+        self.frontend = Frontend(feature_tracker, back_feature_tracker)
+        self.backend = Backend(self.initial_pose, feature_tracker)
 
         """ Data logging """
         agent_name = get_entry_point()
         self.data_logger = DataLogger(self, agent_name, self.cameras)
-        self.ekf_result_file = f"output/{agent_name}/{params.DEFAULT_RUN_NAME}/ekf_result.npz"
 
         Rerun.init_vo()
         self.gt_poses = [self.initial_pose]
@@ -103,7 +126,7 @@ class SlamAgent(AutonomousAgent):
 
     def use_fiducials(self):
         """We want to use the fiducials, so we return True."""
-        return True
+        return False
 
     def sensors(self):
         sensors = {}
@@ -134,37 +157,6 @@ class SlamAgent(AutonomousAgent):
         ground_truth_pose = transform_to_numpy(self.get_transform())
         self.gt_poses.append(ground_truth_pose)
 
-        """ Image processing """
-        if self.image_available():
-            images_gray = {}
-            for cam in self.active_cameras:
-                images_gray[cam] = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
-
-            # Stereo VO
-            if self.step >= ARM_RAISE_WAIT_FRAMES:
-                if self.step == ARM_RAISE_WAIT_FRAMES:
-                    self.svo.initialize(self.initial_pose, images_gray["FrontLeft"], images_gray["FrontRight"])
-                else:
-                    self.svo.track(images_gray["FrontLeft"], images_gray["FrontRight"])
-                self.svo_poses.append(self.svo.get_pose())
-                self.current_pose = self.svo.get_pose()
-
-            if DISPLAY_IMAGES:
-                cv.imshow(cam, images_gray["FrontLeft"])
-                cv.waitKey(1)
-
-            self.data_logger.log_images(self.step, input_data)
-
-        # Rerun logging
-        position_error = self.current_pose[:3, 3] - ground_truth_pose[:3, 3]
-        gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
-        svo_trajectory = np.array([pose[:3, 3] for pose in self.svo_poses])
-        Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255])
-        Rerun.log_3d_trajectory(self.step, svo_trajectory, trajectory_string="EKF", color=[255, 165, 0])
-        Rerun.log_2d_seq_scalar("trajectory_error/err_x", self.step, position_error[0])
-        Rerun.log_2d_seq_scalar("trajectory_error/err_y", self.step, position_error[1])
-        Rerun.log_2d_seq_scalar("trajectory_error/err_z", self.step, position_error[2])
-
         if USE_GROUND_TRUTH_NAV:
             nav_pose = ground_truth_pose
         else:
@@ -177,6 +169,29 @@ class SlamAgent(AutonomousAgent):
             return carla.VehicleVelocityControl(0.0, 0.0)
         nominal_steering = waypoint_steering(waypoint, nav_pose)
 
+        """ Image processing """
+        if self.image_available():
+            images_gray = {}
+            for cam in self.active_cameras:
+                images_gray[cam] = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
+
+            # Stereo VO
+            if self.step >= ARM_RAISE_WAIT_FRAMES:
+                if self.step == ARM_RAISE_WAIT_FRAMES:
+                    self.frontend.initialize(images_gray)
+                else:
+                    images_gray["step"] = self.step
+                    images_gray["imu"] = self.get_imu_data()
+                    data = self.frontend.process_frame(images_gray)
+                    self.backend.update(data)
+
+            self.data_logger.log_images(self.step, input_data)
+            Rerun.log_img(images_gray["FrontLeft"])
+
+            if len(self.backend.point_map) > 0 and RERUN_PLOT_POINTS:
+                semantic_points = self.backend.project_point_map()
+                Rerun.log_3d_semantic_points(semantic_points)
+
         """ Control """
         if self.step < ARM_RAISE_WAIT_FRAMES:
             control = carla.VehicleVelocityControl(0.0, 0.0)
@@ -187,6 +202,21 @@ class SlamAgent(AutonomousAgent):
 
         """ Data logging """
         self.data_logger.log_data(self.step, control)
+
+        """ Rerun logging """
+        gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
+        slam_trajectory = get_positions_from_poses(self.backend.get_trajectory())
+        position_error = slam_trajectory[-1] - ground_truth_pose[:3, 3]
+        Rerun.log_3d_trajectory(
+            self.step, gt_trajectory, trajectory_string="ground_truth", color=[20, 20, 20]
+        )
+        Rerun.log_3d_trajectory(
+            self.step, slam_trajectory, trajectory_string="slam", color=[0, 50, 200]
+        )
+        Rerun.log_2d_seq_scalar("trajectory_error/err_x", self.step, position_error[0])
+        Rerun.log_2d_seq_scalar("trajectory_error/err_y", self.step, position_error[1])
+        Rerun.log_2d_seq_scalar("trajectory_error/err_z", self.step, position_error[2])
+
         print("\n-----------------------------------------------")
 
         return control
@@ -195,6 +225,12 @@ class SlamAgent(AutonomousAgent):
         print("Running finalize")
 
         self.data_logger.save_log()
+
+        # Set map
+        g_map = self.get_geometric_map()
+        map_array = g_map.get_map_array()
+        semantic_points = self.backend.project_point_map()
+        map_array = process_map(semantic_points, map_array)
 
         """In the finalize method, we should clear up anything we've previously initialized that might be taking up memory or resources.
         In this case, we should close the OpenCV window."""

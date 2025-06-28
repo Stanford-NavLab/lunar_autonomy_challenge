@@ -14,7 +14,7 @@ from lac.params import TEAM_CODE_ROOT
 
 class SemanticClasses(Enum):
     FIDUCIALS = 0
-    ROCKS = 1
+    ROCK = 1
     LANDER = 2
     GROUND = 3
     SKY = 4
@@ -35,7 +35,9 @@ class UnetSegmentation:
             .to(self.device)
             .to(memory_format=torch.channels_last)
         )
-        self.model.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=True))
+        self.model.load_state_dict(
+            torch.load(model_path, map_location=self.device, weights_only=True)
+        )
         self.model.eval()
 
         self.downscale_factor = 2
@@ -75,7 +77,7 @@ class UnetSegmentation:
             List of masks for each detected rock
         """
         pred = self.predict(image)
-        rock_mask = pred == SemanticClasses.ROCKS.value
+        rock_mask = pred == SemanticClasses.ROCK.value
 
         # Identify unique rock masks
         num_labels, labels = cv2.connectedComponents(rock_mask.astype(np.uint8))

@@ -4,34 +4,28 @@
 # For a copy, see <https://opensource.org/licenses/MIT>.
 
 """
-Full agent
+Collision recovery agent
 
 """
 
 import carla
 import cv2 as cv
 import numpy as np
-import json
-from PIL import Image
 import signal
 import pickle
+
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import (
-    pose_to_pos_rpy,
-    transform_to_numpy,
-    transform_to_pos_rpy,
-)
+from lac.util import transform_to_numpy
 from lac.perception.segmentation import UnetSegmentation
 from lac.perception.depth import (
     stereo_depth_from_segmentation,
     compute_rock_coords_rover_frame,
     compute_rock_radii,
 )
-from lac.control.controller import waypoint_steering, ArcPlanner
-from lac.planning.waypoint_planner import Planner
-from lac.localization.ekf import EKF, get_pose_measurement_tag, create_Q
-from lac.localization.imu_dynamics import propagate_state
+from lac.control.steering import waypoint_steering
+from lac.planning.arc_planner import ArcPlanner
+from lac.planning.waypoint_planner import WaypointPlanner
 from lac.utils.visualization import (
     overlay_mask,
     draw_steering_arc,
@@ -46,7 +40,7 @@ import lac.params as params
 TARGET_SPEED = 0.15  # [m/s]
 IMAGE_PROCESS_RATE = 10  # [Hz]
 
-DISPLAY_IMAGES = False  # Whether to display the camera views
+DISPLAY_IMAGES = True  # Whether to display the camera views
 ENABLE_RERUN = False  # Whether to enable Rerun dashboard
 LOG_DATA = True  # Whether to log data
 
@@ -115,12 +109,17 @@ class RecoveryAgent(AutonomousAgent):
         """ Planner """
         initial_pose = transform_to_numpy(self.get_initial_position())
         self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(initial_pose, spiral_min=3.5, spiral_max=13.5, spiral_step=2.0)
+        self.planner = WaypointPlanner(
+            initial_pose, spiral_min=3.5, spiral_max=13.5, spiral_step=2.0
+        )
 
         """ Path planner """
-        arc_config_val = 20
+        arc_config_val = 21
         arc_duration_val = 12.0
-        self.arc_planner = ArcPlanner(arc_config=arc_config_val, arc_duration=arc_duration_val)
+        max_omega = 0.6
+        self.arc_planner = ArcPlanner(
+            arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
+        )
         self.path_planner_statistics = {}
         self.path_planner_statistics["collision detections"] = []  # frame number and current pose
         self.path_planner_statistics["planner_failure"] = []
@@ -129,13 +128,12 @@ class RecoveryAgent(AutonomousAgent):
         self.first_time_stuck = True
         self.success = False
         self.backup_counter = 0
+        self.planner_failure_counter = 0
         """ Data logging """
         if LOG_DATA:
             agent_name = get_entry_point()
             self.data_logger = DataLogger(self, agent_name, self.cameras)
-            self.path_planner_file = (
-                f"results/planner_stats/path_planner_stats_arc{arc_config_val}_{arc_duration_val}s_scale2_rad0.75.pkl"
-            )
+            self.path_planner_file = f"results/planner_stats/path_planner_stats_arc{arc_config_val}_{arc_duration_val}s_scale2_rad0.6_replan20_rockradius0.08_backup5.pkl"
 
         if ENABLE_RERUN:
             Rerun.init_vo()
@@ -193,16 +191,16 @@ class RecoveryAgent(AutonomousAgent):
         print("Running backup maneuver")
         frame_rate = params.FRAME_RATE
         self.backup_counter += 1
-        if self.backup_counter <= frame_rate * 3:  # Go backwards for 3 seconds
+        if self.backup_counter <= frame_rate * 5:  # Go backwards for 3 seconds
             control = carla.VehicleVelocityControl(-0.2, 0.0)
-        elif (
-            self.backup_counter <= frame_rate * 5
-        ):  # Rotate 90 deg/s for 2 seconds (overcorrecting because it isn't rotating in 1 second)
-            control = carla.VehicleVelocityControl(0.0, np.pi / 2)
-        elif (
-            self.backup_counter <= frame_rate * 7
-        ):  # Move in an arc around the rock for 2 seconds (overcorrecting because it isn't rotating in 1 second)
-            control = carla.VehicleVelocityControl(0.2, -np.pi / 2)
+        # elif (
+        #     self.backup_counter <= frame_rate * 5
+        # ):  # Rotate 90 deg/s for 2 seconds (overcorrecting because it isn't rotating in 1 second)
+        #     control = carla.VehicleVelocityControl(0.0, np.pi / 2)
+        # elif (
+        #     self.backup_counter <= frame_rate * 7
+        # ):  # Move in an arc around the rock for 2 seconds (overcorrecting because it isn't rotating in 1 second)
+        #     control = carla.VehicleVelocityControl(0.2, -np.pi / 2)
         else:
             self.backup_counter = 0
             # control = self.run_nominal_step()
@@ -235,7 +233,9 @@ class RecoveryAgent(AutonomousAgent):
         gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
 
         if ENABLE_RERUN:
-            Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255])
+            Rerun.log_3d_trajectory(
+                self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 255]
+            )
             # Rerun.log_2d_seq_scalar("ground_truth_pose/x", self.step, ground_truth_pose[0, 3])
             # Rerun.log_2d_seq_scalar("ground_truth_pose/y", self.step, ground_truth_pose[1, 3])
             # Rerun.log_2d_seq_scalar("ground_truth_pose/z", self.step, ground_truth_pose[2, 3])
@@ -258,9 +258,12 @@ class RecoveryAgent(AutonomousAgent):
         waypoint, advanced = self.planner.get_waypoint(nav_pose, print_progress=True)
         if waypoint is None:
             self.mission_complete()
+            self.success = True
+            self.path_planner_statistics["success"] = True
             return carla.VehicleVelocityControl(0.0, 0.0)
 
         """ Rock segmentation """
+
         if self.image_available():
             # if self.step % (params.FRAME_RATE // IMAGE_PROCESS_RATE) == 0:  # This runs at 1 Hz
             FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
@@ -278,17 +281,23 @@ class RecoveryAgent(AutonomousAgent):
             rock_radii = compute_rock_radii(stereo_depth_results)
 
             # Path planning
-            control, path, waypoint_local = self.arc_planner.plan_arc(waypoint, nav_pose, rock_coords, rock_radii)
-            if control is None:
 
-                control = self.run_backup_maneuver()
-                self.path_planner_statistics["planner_failure"].append((self.step, ground_truth_pose))
-                if self.backup_counter == 5:
-                    self.mission_complete()  # For now, end the mission, but in reality we probably want some tolerance
-                return carla.VehicleVelocityControl(0.0, 0.0)
-            self.current_v, self.current_w = control
-            print(f"Control: linear = {self.current_v}, angular = {self.current_w}")
-            print(f"Waypoint_local: {waypoint_local}")
+            if self.step % 20 == 0:
+                control, path, waypoint_local = self.arc_planner.plan_arc(
+                    waypoint, nav_pose, rock_coords, rock_radii
+                )
+                if control is None:
+                    control = self.run_backup_maneuver()
+                    self.path_planner_statistics["planner_failure"].append(
+                        (self.step, ground_truth_pose)
+                    )
+                    self.planner_failure_counter += 1
+                    if self.planner_failure_counter == 20:
+                        self.mission_complete()  # For now, end the mission, but in reality we probably want some tolerance
+                    return carla.VehicleVelocityControl(0.0, 0.0)
+                self.current_v, self.current_w = control
+                print(f"Control: linear = {self.current_v}, angular = {self.current_w}")
+                print(f"Waypoint_local: {waypoint_local}")
 
             if LOG_DATA:
                 self.data_logger.log_images(self.step, input_data)
@@ -303,7 +312,9 @@ class RecoveryAgent(AutonomousAgent):
             """ Rerun visualization """
             if ENABLE_RERUN:
                 gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
-                Rerun.log_3d_trajectory(self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 120, 255])
+                Rerun.log_3d_trajectory(
+                    self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 120, 255]
+                )
                 print(f"path: {path.shape}")
                 Rerun.log_2d_trajectory(topic="/local/path", frame_id=self.step, trajectory=path)
                 if len(rock_coords) > 0:
@@ -324,7 +335,9 @@ class RecoveryAgent(AutonomousAgent):
         elif self.backup_counter > 0 or self.check_stuck(rov_vel):
             print("Agent is stuck.")
             if self.first_time_stuck:
-                self.path_planner_statistics["collision detections"].append((self.step, ground_truth_pose))
+                self.path_planner_statistics["collision detections"].append(
+                    (self.step, ground_truth_pose)
+                )
                 self.first_time_stuck = False
             carla_control = self.run_backup_maneuver()
         else:

@@ -9,55 +9,55 @@ Full agent
 """
 
 import carla
-import cv2 as cv
+import os
 import numpy as np
 import signal
+import json
+from datetime import datetime
+from collections import deque
+from rich import print
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
-from lac.util import (
-    pose_to_pos_rpy,
-    transform_to_numpy,
-    transform_to_pos_rpy,
-)
-from lac.perception.segmentation import UnetSegmentation, SemanticClasses
-from lac.perception.depth import (
-    stereo_depth_from_segmentation,
-    project_pixel_to_world,
-    compute_rock_coords_rover_frame,
-    compute_rock_radii,
-)
-from lac.slam.visual_odometry import StereoVisualOdometry
-from lac.slam.feature_tracker import FeatureTracker
-from lac.control.controller import ArcPlanner
-from lac.planning.waypoint_planner import Planner
-from lac.mapping.mapper import bin_points_to_grid, interpolate_heights
+from lac.util import transform_to_numpy
+from lac.perception.segmentation import SemanticClasses
+from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
+from lac.slam.frontend import Frontend
+from lac.slam.backend import Backend
+from lac.planning.arc_planner import ArcPlanner
+from lac.planning.waypoint_planner import WaypointPlanner
+from lac.mapping.mapper import process_map
+from lac.mapping.map_utils import get_geometric_score, get_rocks_score
 from lac.utils.visualization import (
     overlay_mask,
-    draw_steering_arc,
-    overlay_stereo_rock_depths,
+    overlay_tracked_points,
 )
-from lac.utils.frames import apply_transform
 from lac.utils.data_logger import DataLogger
+from lac.utils.rerun_interface import Rerun
+from lac.util import get_positions_from_poses, positions_rmse_from_poses
 import lac.params as params
 
-
 """ Agent parameters and settings """
-EVAL = True  # Whether running in evaluation mode (disable ground truth)
-USE_FIDUCIALS = False
+EVAL = False  # Whether running in evaluation mode (disable ground truth)
 BACK_CAMERAS = True
 
-EARLY_STOP_STEP = 0  # Number of steps before stopping the mission (0 for no early stop)
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
+MISSION_TIMEOUT = 30000  # Number of frames to end mission after
 
-DISPLAY_IMAGES = True  # Whether to display the camera views
 LOG_DATA = True  # Whether to log data
+RERUN = True  # Whether to use rerun for visualization
+RERUN_PLOT_POINTS = True  # Whether to plot points in rerun
+RERUN_SAVE = False  # Whether to save rerun log to file and disable viewer
 
 if EVAL:
     USE_GROUND_TRUTH_NAV = False
-    DISPLAY_IMAGES = False
     LOG_DATA = False
+    RERUN = False
+
+if LOG_DATA:
+    PRESET = os.environ.get("MISSIONS_SUBSET")
+    SEED = os.environ.get("SEED")
 
 
 def get_entry_point():
@@ -66,13 +66,14 @@ def get_entry_point():
 
 class NavAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
-        """Controller variables"""
-        self.steer_delta = 0.0
+        """Load config params"""
+        self.config = json.load(open(path_to_conf_file))
 
-        """ Perception modules """
-        self.segmentation = UnetSegmentation()
+        """Control variables"""
+        self.current_v = 0
+        self.current_w = 0
 
-        """ Initialize a counter to keep track of the number of simulation steps. """
+        """Initialize a counter to keep track of the number of simulation steps."""
         self.step = 0
 
         """ Initialize a counter for backup maneuvers. """
@@ -100,6 +101,8 @@ class NavAgent(AutonomousAgent):
             "height": 720,
             "semantic": False,
         }
+        # Turn on front camera light
+        self.cameras["Front"]["light"] = 1.0
         if BACK_CAMERAS:
             self.cameras["BackLeft"] = {
                 "active": True,
@@ -117,30 +120,58 @@ class NavAgent(AutonomousAgent):
             }
         self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
-        """ Planner """
+        """ Planning """
         self.initial_pose = transform_to_numpy(self.get_initial_position())
-        self.lander_pose = self.initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = Planner(self.initial_pose, spiral_min=2.5, spiral_max=2.5, spiral_step=1.0)
+        self.lander_pose = self.initial_pose @ transform_to_numpy(
+            self.get_initial_lander_position()
+        )
+        self.planner = WaypointPlanner(
+            self.initial_pose,
+            trajectory_type=self.config["planning"]["trajectory"],
+            waypoint_reached_threshold=self.config["planning"]["waypoint_reached_threshold_m"],
+        )
+        self.arc_planner = ArcPlanner()
+        self.arcs = self.arc_planner.np_candidate_arcs
 
         """ State variables """
         self.current_pose = self.initial_pose
         self.current_velocity = np.zeros(3)
+        self.imu_measurements = deque(maxlen=2)  # IMU measurements since last image
 
         """ SLAM """
-        self.svo = StereoVisualOdometry(self.cameras)
-        self.svo_poses = [self.initial_pose]
-        self.feature_tracker = FeatureTracker(self.cameras)
-        self.ground_points = []
-        self.rock_detections = {}
-        self.rock_points = []
-
-        """ Path planner """
-        self.arc_planner = ArcPlanner()
+        feature_tracker = SemanticFeatureTracker(self.cameras)
+        if BACK_CAMERAS:
+            back_feature_tracker = SemanticFeatureTracker(self.cameras, cam="BackLeft")
+            self.frontend = Frontend(feature_tracker, back_feature_tracker, self.initial_pose)
+        else:
+            self.frontend = Frontend(feature_tracker, initial_pose=self.initial_pose)
+        self.backend = Backend(self.initial_pose, feature_tracker, self.config["loop_closure"])
 
         """ Data logging """
         if LOG_DATA:
+            self.run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            # self.run_name = "default_run"
             agent_name = get_entry_point()
-            self.data_logger = DataLogger(self, agent_name, self.cameras)
+            self.data_logger = DataLogger(
+                self, agent_name, self.run_name, PRESET, SEED, self.cameras
+            )
+            with open(f"output/{agent_name}/{self.run_name}/config.json", "w") as f:
+                json.dump(self.config, f, indent=4)
+            self.slam_eval_poses = [self.initial_pose]
+        if RERUN:
+            if RERUN_SAVE:
+                Rerun.init_vo(
+                    img_compress=True, save_path=f"output/{agent_name}/{self.run_name}/rerun.rrd"
+                )
+            else:
+                Rerun.init_vo(img_compress=True)
+            self.gt_poses = [self.initial_pose]
+
+        """ Load the ground truth map for real-time score updates """
+        if not EVAL:
+            self.ground_truth_map = np.load(
+                f"results/Moon_Map_01_{PRESET}_rep0.dat", allow_pickle=True
+            )
 
         signal.signal(signal.SIGINT, self.handle_interrupt)
 
@@ -150,28 +181,14 @@ class NavAgent(AutonomousAgent):
 
     def initialize(self):
         # Move the arms out of the way
-        self.set_front_arm_angle(params.ARM_ANGLE_STATIC_RAD)
+        self.set_front_arm_angle(params.FRONT_ARM_ANGLE_STATIC_RAD)
         self.set_back_arm_angle(params.ARM_ANGLE_STATIC_RAD)
-
-        # Initialize the map
-        g_map = self.get_geometric_map()
-        map_array = g_map.get_map_array()
-        map_array[:, :, 2] = self.initial_pose[2, 3]  # Height
-        map_array[:, :, 3] = 1.0  # Rocks
-        # TODO: clear a patch of no rock around the initial pose and lander
-        i, j = g_map.get_cell_indexes(self.initial_pose[0, 3], self.initial_pose[1, 3])
-        r = int(params.ROVER_RADIUS / params.CELL_WIDTH)
-        map_array[i - r : i + r, j - r : j + r, 3] = 0.0
-        i, j = g_map.get_cell_indexes(0, 0)
-        r = int(params.LANDER_WIDTH / (2 * params.CELL_WIDTH))
-        map_array[i - r : i + r, j - r : j + r, 3] = 0.0
 
     def image_available(self):
         return self.step % 2 == 0  # Image data is available every other step
 
     def use_fiducials(self):
-        """We want to use the fiducials, so we return True."""
-        return USE_FIDUCIALS
+        return False
 
     def sensors(self):
         sensors = {}
@@ -186,18 +203,20 @@ class NavAgent(AutonomousAgent):
         return sensors
 
     def run_backup_maneuver(self):
-        print("Running backup maneuver")
-        frame_rate = params.FRAME_RATE
+        print("[bold orange1]Running backup maneuver")
         self.backup_counter += 1
-        if self.backup_counter <= frame_rate * 1.5:  # Go backwards for 3 seconds
+        BACKUP_TIME = 5.0  # [s]
+        ROTATE_TIME = 2.0  # [s]
+        DRIVE_TIME = 2.0  # [s]
+        if self.backup_counter <= params.FRAME_RATE * BACKUP_TIME:
+            print("   [orange1]Backing up")
             control = carla.VehicleVelocityControl(-0.2, 0.0)
-        elif (
-            self.backup_counter <= frame_rate * 3
-        ):  # Rotate 90 deg/s for 1.5 seconds (overcorrecting because it isn't rotating in 1 second)
+        elif self.backup_counter <= params.FRAME_RATE * (BACKUP_TIME + ROTATE_TIME):
+            print("   [orange1]Rotating")
             control = carla.VehicleVelocityControl(0.0, np.pi / 4)
-        elif self.backup_counter <= frame_rate * 9:
-            # Go forward for 6 seconds
-            control = carla.VehicleVelocityControl(0.2, 0.0)
+        # elif self.backup_counter <= params.FRAME_RATE * (BACKUP_TIME + ROTATE_TIME + DRIVE_TIME):
+        #     print("   Moving forward")
+        #     control = carla.VehicleVelocityControl(0.2, 0.0)
         else:
             self.backup_counter = 0
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
@@ -207,7 +226,7 @@ class NavAgent(AutonomousAgent):
         # Agent is stuck if the velocity is less than 0.1 m/s
         if self.step < ARM_RAISE_WAIT_FRAMES + 10:
             return False
-        is_stuck = np.linalg.norm(self.current_velocity) < 0.5 * params.TARGET_SPEED
+        is_stuck = np.linalg.norm(self.current_velocity) < 0.25 * params.TARGET_SPEED
         if is_stuck and self.stuck_timer == 0:
             self.stuck_counter += 1
             self.stuck_timer += 1
@@ -232,12 +251,13 @@ class NavAgent(AutonomousAgent):
         self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
         print("\nStep: ", self.step)
 
-        if self.stuck_timer > 0:
-            self.stuck_timer += 1
-
-        if EARLY_STOP_STEP != 0 and self.step >= EARLY_STOP_STEP:
+        if self.step > MISSION_TIMEOUT:
+            print("[bold red]Mission timed out!")
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
+
+        if self.stuck_timer > 0:
+            self.stuck_timer += 1
 
         if not EVAL:
             ground_truth_pose = transform_to_numpy(self.get_transform())
@@ -248,177 +268,172 @@ class NavAgent(AutonomousAgent):
             nav_pose = self.current_pose
 
         """ Waypoint navigation """
-        waypoint, advanced = self.planner.get_waypoint(nav_pose, print_progress=True)
+        waypoint, advanced = self.planner.get_waypoint(self.step, nav_pose, print_progress=True)
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
+        if advanced:
+            agent_map = self.update_map()
+            if not EVAL:
+                geometric_score = get_geometric_score(self.ground_truth_map, agent_map)
+                rocks_score = get_rocks_score(self.ground_truth_map, agent_map)
+                print(f"[bold green]    Geometric score: {geometric_score:.4f}")
+                print(f"[bold green]    Rocks score: {rocks_score:.4f}")
+            if RERUN:
+                Rerun.log_2d_seq_scalar("/scores/geometric", self.step, geometric_score)
+                Rerun.log_2d_seq_scalar("/scores/rocks", self.step, rocks_score)
+                Rerun.log_scalar("/metrics/rocks_score", rocks_score)
+
+        self.imu_measurements.append(self.get_imu_data())
+        control = (0.0, 0.0)
 
         """ Image processing """
         if self.image_available():
-            FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-            FR_gray = input_data["Grayscale"][carla.SensorPosition.FrontRight]
+            images_gray = {}
+            for cam in self.active_cameras:
+                images_gray[cam] = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
 
+            # Stereo VO
             if self.step >= ARM_RAISE_WAIT_FRAMES:
-                # VO
                 if self.step == ARM_RAISE_WAIT_FRAMES:
-                    self.svo.initialize(self.current_pose, FL_gray, FR_gray)
+                    self.frontend.initialize(images_gray)
                 else:
-                    self.svo.track(FL_gray, FR_gray)
-                self.svo_poses.append(self.svo.get_pose())
-                self.current_velocity = (self.svo.get_pose()[:3, 3] - self.current_pose[:3, 3]) / params.DT
-                self.current_pose = self.svo.get_pose()
+                    images_gray["step"] = self.step
+                    images_gray["imu_measurements"] = self.imu_measurements
+                    images_gray["prev_pose"] = self.current_pose
 
-                # Run segmentation
-                left_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(FL_gray, output_pred=True)
-                right_seg_masks, right_labels = self.segmentation.segment_rocks(FR_gray)
-                left_full_mask = np.clip(left_labels, 0, 1).astype(np.uint8)
+                    data = self.frontend.process_frame(images_gray)
+                    self.backend.update(data)
 
-                # Stereo rock depth
-                stereo_depth_results = stereo_depth_from_segmentation(
-                    left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
-                )
-                rock_coords = compute_rock_coords_rover_frame(stereo_depth_results, self.cameras)
-                rock_radii = compute_rock_radii(stereo_depth_results)
+                    if LOG_DATA:
+                        self.slam_eval_poses.append(ground_truth_pose)
 
-                # Add points for rock mapping
-                if self.step % 20 == 0:
-                    rock_points_world = apply_transform(self.current_pose, rock_coords)
-                    self.rock_points.append(rock_points_world)
-
-                # Feature matching depth
-                feats_left, feats_right, matches, depths = self.feature_tracker.process_stereo(
-                    FL_gray, FR_gray, return_matched_feats=True
-                )
-
-                # Extract ground points for height mapping
-                left_ground_mask = left_pred == SemanticClasses.GROUND.value
-                kps_left = feats_left["keypoints"][0].cpu().numpy()
-                ground_idxs = []
-                for i, kp in enumerate(kps_left):
-                    if left_ground_mask[int(kp[1]), int(kp[0])]:
-                        ground_idxs.append(i)
-                ground_kps = kps_left[ground_idxs]
-                ground_depths = depths[ground_idxs]
-                ground_points_world = self.feature_tracker.project_stereo(self.current_pose, ground_kps, ground_depths)
-                self.ground_points.append(ground_points_world)
-
-                if BACK_CAMERAS:
-                    BL_gray = input_data["Grayscale"][carla.SensorPosition.BackLeft]
-                    BR_gray = input_data["Grayscale"][carla.SensorPosition.BackRight]
-
-                    left_seg_masks, _, left_pred = self.segmentation.segment_rocks(BL_gray, output_pred=True)
-                    right_seg_masks, _ = self.segmentation.segment_rocks(BR_gray)
-
-                    back_stereo_depth_results = stereo_depth_from_segmentation(
-                        left_seg_masks, right_seg_masks, params.STEREO_BASELINE, params.FL_X
+                    # Path planning
+                    control, path, _ = self.arc_planner.plan_arc(
+                        waypoint, nav_pose, data["rock_data"]
                     )
-                    back_rock_coords = compute_rock_coords_rover_frame(
-                        back_stereo_depth_results, self.cameras, cam_name="BackLeft"
-                    )
+                    if control is not None:
+                        self.current_v, self.current_w = control
+                        # Proportional feedback on v
+                        v_norm = np.linalg.norm(self.current_velocity)
+                        v_delta = self.config["control"]["kp_linear"] * (
+                            params.TARGET_SPEED - v_norm
+                        )
+                        self.current_v += np.clip(
+                            v_delta, -params.MAX_LINEAR_DELTA, params.MAX_LINEAR_DELTA
+                        )
 
-                    # Add points for rock mapping
-                    if self.step % 20 == 0:
-                        rock_points_world = apply_transform(self.current_pose, back_rock_coords)
-                        self.rock_points.append(rock_points_world)
-
-                    # Feature matching depth
-                    feats_left, feats_right, matches, depths = self.feature_tracker.process_stereo(
-                        BL_gray, BR_gray, return_matched_feats=True
-                    )
-
-                    # Extract ground points for height mapping
-                    left_ground_mask = left_pred == SemanticClasses.GROUND.value
-                    kps_left = feats_left["keypoints"][0].cpu().numpy()
-                    ground_idxs = []
-                    for i, kp in enumerate(kps_left):
-                        if left_ground_mask[int(kp[1]), int(kp[0])]:
-                            ground_idxs.append(i)
-                    ground_kps = kps_left[ground_idxs]
-                    ground_depths = depths[ground_idxs]
-                    ground_points_world = self.feature_tracker.project_stereo(
-                        self.current_pose, ground_kps, ground_depths, cam_name="BackLeft"
-                    )
-                    self.ground_points.append(ground_points_world)
-
-                # Path planning
-                control, path, waypoint_local = self.arc_planner.plan_arc(waypoint, nav_pose, rock_coords, rock_radii)
-                if control is not None:
-                    self.current_v, self.current_w = control
-                else:
-                    print("No safe paths found!")
-
-                if DISPLAY_IMAGES:
-                    overlay = overlay_mask(FL_gray, left_full_mask, color=(0, 0, 1))
-                    overlay = draw_steering_arc(overlay, self.current_w, color=(255, 0, 0))
-                    overlay = overlay_stereo_rock_depths(overlay, stereo_depth_results)
-                    cv.imshow("Rock segmentation", overlay)
-                    cv.waitKey(1)
+                        if RERUN:
+                            Rerun.log_2d_trajectory(frame_id=self.step, trajectory=path)
+                            if len(data["rock_data"]["centers"]) > 0:
+                                # TODO: crop rocks within certain bounds
+                                Rerun.log_2d_obstacle_map(
+                                    frame_id=self.step,
+                                    centers=data["rock_data"]["centers"][:, :2],
+                                    radii=data["rock_data"]["radii"],
+                                )
+                    if RERUN:
+                        rock_mask = data["left_pred"] == SemanticClasses.ROCK.value
+                        display_img = overlay_mask(
+                            images_gray["FrontLeft"], rock_mask, color=(0, 0, 1)
+                        )
+                        display_img = overlay_tracked_points(display_img, data["tracked_points"])
+                        Rerun.log_img(display_img)
 
             if LOG_DATA:
                 self.data_logger.log_images(self.step, input_data)
 
+                if len(self.backend.point_map) > 0 and RERUN_PLOT_POINTS:
+                    semantic_points = self.backend.project_point_map()
+                    Rerun.log_3d_semantic_points(semantic_points)
+
         """ Control """
         if self.step < ARM_RAISE_WAIT_FRAMES:  # Wait for arms to raise before moving
-            control = carla.VehicleVelocityControl(0.0, 0.0)
+            carla_control = carla.VehicleVelocityControl(0.0, 0.0)
         # If agent is stuck, perform backup maneuver
         elif self.backup_counter > 0 or self.check_stuck():
-            print("Agent is stuck.")
-            control = self.run_backup_maneuver()
+            print("[bold red]Agent is stuck")
+            carla_control = self.run_backup_maneuver()
+        elif control is None:
+            print("[bold red]No safe paths found by planner!")
+            carla_control = self.run_backup_maneuver()
         else:
-            control = carla.VehicleVelocityControl(self.current_v, self.current_w)
-            # control = carla.VehicleVelocityControl(params.TARGET_SPEED, 0.0)  # drive straight
+            carla_control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         """ Data logging """
         if LOG_DATA:
-            self.data_logger.log_data(self.step, control, self.current_pose)
+            self.data_logger.log_data(self.step, carla_control, self.current_pose)
 
-        print("\n-----------------------------------------------")
+        """ Update state """
+        slam_poses = self.backend.get_trajectory()
+        self.current_pose = slam_poses[-1]
+        self.current_velocity = self.frontend.current_velocity
+        print(f"Estimated position: {np.round(self.current_pose[:3, 3], 2)}")
 
-        return control
+        """ Rerun logging """
+        if RERUN:
+            self.gt_poses.append(ground_truth_pose)
+            gt_trajectory = np.array([pose[:3, 3] for pose in self.gt_poses])
+            slam_trajectory = get_positions_from_poses(slam_poses)
+            position_error = slam_trajectory[-1] - ground_truth_pose[:3, 3]
+            Rerun.log_3d_trajectory(
+                self.step, gt_trajectory, trajectory_string="ground_truth", color=[0, 0, 0]
+            )
+            Rerun.log_3d_trajectory(
+                self.step, slam_trajectory, trajectory_string="estimated", color=[100, 206, 255]
+            )
+            Rerun.log_2d_seq_scalar("/trajectory_error/err_x", self.step, position_error[0])
+            Rerun.log_2d_seq_scalar("/trajectory_error/err_y", self.step, position_error[1])
+            Rerun.log_2d_seq_scalar("/trajectory_error/err_z", self.step, position_error[2])
+            # Rerun.log_2d_seq_scalar(
+            #     "/trajectory_error/velocity", self.step, np.linalg.norm(self.current_velocity)
+            # )
 
-    def finalize(self):
-        print("Running finalize")
+        print("\n---------------------------------------------------------------------------------")
 
-        # Set the map
+        return carla_control
+
+    def update_map(self):
+        """Update the map with current backend state"""
+        print("Updating map")
         g_map = self.get_geometric_map()
         map_array = g_map.get_map_array()
+        semantic_points = self.backend.project_point_map()
+        print("Number of semantic points: ", len(semantic_points.points))
+        if LOG_DATA:
+            semantic_points.save(f"output/{get_entry_point()}/{self.run_name}/semantic_points.npz")
+        map_array = process_map(
+            semantic_points,
+            map_array,
+            rock_count_thresh=self.config["mapping"]["rock_count_thresh"],
+        )
+        return map_array.copy()
 
-        # Heights
-        if len(self.ground_points) > 0:
-            all_ground_points = np.concatenate(self.ground_points, axis=0)
-            ground_grid = bin_points_to_grid(all_ground_points)
-            map_array[:, :, 2] = ground_grid
-            map_array[:] = interpolate_heights(map_array)
-
-            # map_array[:, :, 3] = ground_grid == -np.inf
-            map_array[:, :, 3] = 0.0
-            rock_points = np.concatenate(self.rock_points, axis=0)
-            xmin, xmax = np.min(map_array[:, :, 0]), np.max(map_array[:, :, 0])
-            ymin, ymax = np.min(map_array[:, :, 1]), np.max(map_array[:, :, 1])
-            nx, ny = map_array.shape[:2]
-            for p in rock_points:
-                i = int((p[0] - xmin) / (xmax - xmin) * nx)
-                j = int((p[1] - ymin) / (ymax - ymin) * ny)
-                if 0 <= i < nx and 0 <= j < ny:
-                    map_array[i, j, 3] = 1.0
-
-            # if LOG_DATA:
-            #     np.save(
-            #         f"output/{get_entry_point()}/{params.DEFAULT_RUN_NAME}/ground_points.npy",
-            #         all_ground_points,
-            #     )
-
-        # Rocks
-        # map_array[:, :, 3] = 0.0
-        # for id, detections in self.rock_detections.items():
-        #     points = np.array(detections["points"])
-        #     avg_point = np.median(points, axis=0)
-        #     radii = np.array(detections["radii"])
-        #     avg_radius = np.median(radii)
-        #     g_map.set_rock(avg_point[0], avg_point[1], True)
+    def finalize(self):
+        print("[bold blue]Running finalize")
+        agent_map = self.update_map()
 
         if LOG_DATA:
+            print(f"[blue]   Preset: {PRESET}")
+            print(f"[blue]   Run name: {self.run_name}")
             self.data_logger.save_log()
+            slam_poses = np.array(self.backend.get_trajectory())
+            np.save(f"output/{get_entry_point()}/{self.run_name}/slam_poses.npy", slam_poses)
+            final_rmse = positions_rmse_from_poses(slam_poses, self.slam_eval_poses)
+            print(f"[bold green]  Final RMSE: {final_rmse:.4f} m")
+            geometric_score = get_geometric_score(self.ground_truth_map, agent_map)
+            rocks_score = get_rocks_score(self.ground_truth_map, agent_map)
+            np.savetxt(
+                f"output/{get_entry_point()}/{self.run_name}/results.txt",
+                [final_rmse, geometric_score, rocks_score, geometric_score + rocks_score],
+                fmt="%.6f",
+            )
 
-        if DISPLAY_IMAGES:
-            cv.destroyAllWindows()
+            backend_state = self.backend.get_state()
+            np.savez_compressed(
+                f"output/{get_entry_point()}/{self.run_name}/backend_state.npz",
+                odometry=backend_state["odometry"],
+                odometry_sources=backend_state["odometry_sources"],
+                loop_closures=backend_state["loop_closures"],
+                loop_closure_poses=backend_state["loop_closures_poses"],
+            )

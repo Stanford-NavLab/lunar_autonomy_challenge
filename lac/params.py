@@ -1,4 +1,8 @@
-"""Shared constants and parameters"""
+"""Shared constants and parameters
+
+TODO: keep only constants here, and move parameters to config json
+
+"""
 
 import numpy as np
 import json
@@ -30,7 +34,9 @@ SCENE_MAX_Y = 20.0  # [m]
 SCENE_MIN_Y = -20.0  # [m]
 SCENE_MAX_Z = 10.0  # [m]  (could probably reduce this, based on max height of lander)
 SCENE_MIN_Z = 0.0  # [m]
-SCENE_BBOX = np.array([[SCENE_MIN_X, SCENE_MIN_Y, SCENE_MIN_Z], [SCENE_MAX_X, SCENE_MAX_Y, SCENE_MAX_Z]])
+SCENE_BBOX = np.array(
+    [[SCENE_MIN_X, SCENE_MIN_Y, SCENE_MIN_Z], [SCENE_MAX_X, SCENE_MAX_Y, SCENE_MAX_Z]]
+)
 
 # Lander dimensions
 LANDER_WIDTH = 3.0  # [m]  (approximate)
@@ -47,6 +53,9 @@ LANDER_GLOBAL = np.array(
 ROVER_RADIUS = 0.75  # [m]
 
 CELL_WIDTH = 0.15  # [m] width of each cell in the map
+MAP_EXTENT = 13.5  # [m] extent of the map in x and y directions
+MAP_SIZE = 180  # number of cells in each direction
+HEIGHT_ERROR_TOLERANCE = 0.05  # [m] tolerance for height error
 
 """-------------------------------------- Data Structures --------------------------------------"""
 
@@ -148,7 +157,9 @@ CAMERA_CONFIG_INIT = {
 
 
 """-------------------------------------- Parameters --------------------------------------"""
+
 ARM_ANGLE_STATIC_RAD = 1.0472  # [rad] (60 degrees)
+FRONT_ARM_ANGLE_STATIC_RAD = np.deg2rad(90)  # [rad]
 
 # TODO: these should be settable parameters
 IMG_WIDTH = 1280
@@ -159,10 +170,13 @@ CAMERA_INTRINSICS = np.array([[FL_X, 0, IMG_WIDTH / 2], [0, FL_Y, IMG_HEIGHT / 2
 
 # Controller parameters
 KP_STEER = 0.3
-KP_LINEAR = 0.1
-TARGET_SPEED = 0.2  # [m/s]
 MAX_STEER = 1.2  # [rad/s]
 MAX_STEER_DELTA = 1.0  # [rad/s]
+
+TARGET_SPEED = 0.2  # [m/s]
+KP_LINEAR = 1.0
+MAX_LINEAR_DELTA = 0.2  # [m/s]
+
 WAYPOINT_REACHED_DIST_THRESHOLD = 1.5  # distance threshold for moving to next waypoint [m]
 
 # Maximum area of a rock segmentation mask in pixels, anything larger is ignored
@@ -170,7 +184,7 @@ ROCK_MASK_MAX_AREA = 50000
 
 # Minimum area of a rock segmentation mask in pixels to be considered for obstacle avoidance
 ROCK_MASK_AVOID_MIN_AREA = 1000
-ROCK_MIN_RADIUS = 0.1  # [m] minimum radius of a rock to be considered for obstacle avoidance
+ROCK_MIN_RADIUS = 0.08  # [m] minimum radius of a rock to be considered for obstacle avoidance
 
 ROCK_AVOID_DIST = 2.0  # [m] distance to avoid rocks
 ROCK_BRIGHTNESS_THRESHOLD = 50  # [0-255] pixel threshold for segmentation to be consider rock

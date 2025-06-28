@@ -128,7 +128,13 @@ class SLAM:
                     self.landmark_ids.add(id)
                     self.landmarks[id] = tracker.world_points[j].copy()
 
-    def build_graph(self, window: list, use_imu: bool = True, first_pose: str = "fix"):
+    def build_graph(
+        self,
+        window: list,
+        use_imu: bool = False,
+        use_odometry: bool = False,
+        first_pose: str = "fix",  # ["fix", "prior"]
+    ):
         """Build the graph for a window of poses"""
         graph = gtsam.NonlinearFactorGraph()
         values = gtsam.Values()
@@ -144,13 +150,17 @@ class SLAM:
 
             # Fix first pose
             if i == window[0]:
-                graph.add(gtsam.NonlinearEqualityPose3(X(i), gtsam.Pose3(self.poses[i])))
+                if first_pose == "fix":
+                    graph.add(gtsam.NonlinearEqualityPose3(X(i), gtsam.Pose3(self.poses[i])))
+                elif first_pose == "prior":
+                    graph.add(gtsam.PriorFactorPose3(X(i), gtsam.Pose3(self.poses[i]), POSE_SIGMA))
                 if use_imu:
                     # NOTE: currently assuming stationary at first pose
                     graph.add(gtsam.PriorFactorVector(V(i), np.zeros(3), INITIAL_VELOCITY_NOISE))
 
             else:
-                # graph.add(self.odometry_factors[i])
+                if use_odometry:
+                    graph.add(self.odometry_factors[i])
                 if use_imu:
                     graph.add(self.imu_factors[i])
 
@@ -163,10 +173,17 @@ class SLAM:
 
         return graph, values, active_landmarks
 
-    def optimize(self, window: list, use_gnc: bool = False, verbose: bool = False):
+    def optimize(
+        self,
+        window: list,
+        use_gnc: bool = False,
+        use_odometry: bool = False,
+        remove_outliers: bool = False,
+        verbose: bool = False,
+    ):
         """Optimize over window of poses"""
         # Build the graph
-        graph, values, active_landmarks = self.build_graph(window)
+        graph, values, active_landmarks = self.build_graph(window, use_odometry=use_odometry)
 
         # Optimize
         if use_gnc:
@@ -193,6 +210,20 @@ class SLAM:
                 # TODO: Remove associated factors
                 for key in self.pose_to_landmark_map:
                     self.pose_to_landmark_map[key] = [x for x in self.pose_to_landmark_map[key] if x != id]
+
+        # Remove outliers
+        if remove_outliers:
+            for i in window:
+                for factor in self.projection_factors[i][:]:
+                    residual = factor.unwhitenedError(result)
+                    pixel_error = np.linalg.norm(residual)
+                    if pixel_error > 5.0:
+                        # Remove factor from self.projection_factors[i]
+                        self.projection_factors[i].remove(factor)
+                        id = gtsam.Symbol(factor.keys()[1]).index()
+                        # Remove landmark from self.landmarks
+                        if id in self.pose_to_landmark_map[i]:
+                            self.pose_to_landmark_map[i].remove(id)
 
         return result, graph, values
 
@@ -238,13 +269,36 @@ class SLAM:
         return fig
 
 
-class RockSLAM:
+class PoseGraph:
+    """Graph for odometry and loop closure relative pose optimization"""
+
     def __init__(self):
         self.poses = {}
-        self.rocks_positions = {}  # id -> point (3D centroid)
-        self.rock_features = {}
-        self.landmark_ids = set()
+        self.odometry_factors = {}  # i -> factor between i-1 and i
+        self.loop_closure_factors = {}  # (i,j) -> factor between i and j
 
-        self.optimizer_params = gtsam.LevenbergMarquardtParams()
-        # self.optimizer_params = gtsam.GncLMParams()
-        # self.optimizer_params.setVerbosity("TERMINATION")
+        self.graph = gtsam.NonlinearFactorGraph()
+        self.values = gtsam.Values()
+
+        self.lm_params = gtsam.LevenbergMarquardtParams()
+
+    def add_pose(self, i: int, pose: np.ndarray):
+        """Add a pose to the graph"""
+        self.values.insert(X(i), gtsam.Pose3(pose))
+
+    def add_odometry_factor(self, i: int, odometry: np.ndarray):
+        """Add an odometry factor to the graph"""
+        self.graph.add(gtsam.BetweenFactorPose3(X(i - 1), X(i), gtsam.Pose3(odometry), ODOMETRY_NOISE))
+
+    def add_loop_closure_factor(self, i: int, j: int, relative_pose: np.ndarray):
+        """Add an loop closure factor to the graph"""
+        self.graph.add(gtsam.BetweenFactorPose3(X(i), X(j), gtsam.Pose3(relative_pose), ODOMETRY_NOISE))
+
+    def optimize(self, verbose=False):
+        """Optimize the graph"""
+        optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, self.values, self.lm_params)
+        result = optimizer.optimize()
+        if verbose:
+            print(f"initial error = {self.graph.error(self.values)}")
+            print(f"final error = {self.graph.error(result)}")
+        return result

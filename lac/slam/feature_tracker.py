@@ -53,14 +53,8 @@ def highest_score_matches(matches: dict, N: int) -> np.ndarray:
 
 
 class FeatureTracker:
-    def __init__(
-        self,
-        cam_config: dict,
-        max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS,
-        max_stereo_matches: int = MAX_STEREO_MATCHES,
-    ):
+    def __init__(self, cam_config: dict, max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS):
         self.cam_config = cam_config
-        self.max_stereo_matches = max_stereo_matches
         self.extractor = SuperPoint(max_num_keypoints=max_keypoints).eval().cuda()
         self.matcher = LightGlue(features="superpoint").eval().cuda()
 
@@ -80,13 +74,17 @@ class FeatureTracker:
         self.world_points = None
         self.max_id = 0
 
-    def extract_feats(self, image: np.ndarray, min_score: float = None, max_keypoints: int = None) -> dict:
+    def extract_feats(
+        self, image: np.ndarray, min_score: float = None, max_keypoints: int = None
+    ) -> dict:
         """Extract features from image"""
         # TODO: handle min_score and max_keypoints
         feats = self.extractor.extract(grayscale_to_3ch_tensor(image).cuda())
         return feats
 
-    def match_feats(self, feats1: dict, feats2: dict, max_matches: int = None, min_score: float = None) -> torch.Tensor:
+    def match_feats(
+        self, feats1: dict, feats2: dict, max_matches: int = None, min_score: float = None
+    ) -> torch.Tensor:
         """Match features between two images"""
         matches = rbd(self.matcher({"image0": feats1, "image1": feats2}))
         if min_score is not None:
@@ -105,7 +103,7 @@ class FeatureTracker:
         min_score: float = None,
         max_depth: float = MAX_DEPTH,
         return_matched_feats: bool = False,
-    ):
+    ) -> tuple[dict, dict, torch.Tensor, torch.Tensor]:
         """Process stereo pair to get features and depths"""
         feats_left = self.extract_feats(left_image)
         feats_right = self.extract_feats(right_image)
@@ -121,7 +119,6 @@ class FeatureTracker:
             matches = matches[~outliers]
             depths = depths[~outliers]
 
-        # TODO: should we just return the matched left and right feats?
         if return_matched_feats:
             matched_feats_left = prune_features(feats_left, matches[:, 0])
             matched_feats_right = prune_features(feats_right, matches[:, 1])
@@ -135,7 +132,7 @@ class FeatureTracker:
         pixels: np.ndarray | torch.Tensor,
         depths: np.ndarray | torch.Tensor,
         cam_name: str = "FrontLeft",
-    ):
+    ) -> np.ndarray:
         """Project stereo pixel-depth pairs to world points"""
         if isinstance(pixels, torch.Tensor):
             pixels = pixels.cpu().numpy()
@@ -163,7 +160,11 @@ class FeatureTracker:
         self.max_id = num_pts  # Next ID to assign
 
     def track(self, next_image: np.ndarray):
-        """Track keypoints using optical flow"""
+        """Track keypoints using optical flow
+
+        TODO: test RAFT for optical flow
+
+        """
         next_pts, status, err = cv2.calcOpticalFlowPyrLK(
             self.prev_image, next_image, self.prev_pts, None, **self.lk_params
         )
@@ -183,9 +184,11 @@ class FeatureTracker:
         # TODO
         next_feats = self.extract_feats(next_image)
         matches = self.match_feats(self.prev_feats, next_feats)
-        pass
+        tracked_feats = prune_features(self.prev_feats, matches[:, 0])
 
-    def track_keyframe(self, curr_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray):
+    def track_keyframe(
+        self, curr_pose: np.ndarray, left_image: np.ndarray, right_image: np.ndarray
+    ):
         """Initialize world points and features"""
         # Triangulate new points
         feats_left, feats_right, matches_stereo, depths = self.process_stereo(
@@ -195,7 +198,6 @@ class FeatureTracker:
             max_depth=10.0,
             return_matched_feats=True,
         )
-        # new_feats = prune_features(feats_left, matches_stereo[:, 0])
         matched_pts_left = feats_left["keypoints"][0]
         num_new_pts = len(matched_pts_left)
         points_world = self.project_stereo(curr_pose, matched_pts_left, depths)

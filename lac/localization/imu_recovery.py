@@ -18,9 +18,10 @@ from symforce.values import Values
 from symforce.opt.factor import Factor
 from symforce.opt.optimizer import Optimizer
 
+from lac.utils.geometry import interpolate_rotation_matrix
 from lac.util import skew_symmetric, normalize_rotation_matrix
 from lac.utils.frames import make_transform_mat, invert_transform_mat
-from lac.params import LUNAR_GRAVITY
+from lac.params import LUNAR_GRAVITY, DT
 
 
 def recover_rotation(R_prev, omega, dt):
@@ -30,6 +31,7 @@ def recover_rotation(R_prev, omega, dt):
 
 
 def recover_rotation_delta(omega, dt):
+    # NOTE: this is not exact since Omega (R_k - R_{k-1}) is not a perfect skew symmetric matrix
     Omega = skew_symmetric(omega)
     return (np.eye(3) - Omega * dt).T
 
@@ -78,12 +80,26 @@ def recover_translation(t_prev_prev, t_prev, R_curr, a, dt):
     return t_curr
 
 
-def recover_translation_delta(a, dt):
-    pass
+def recover_translation_delta(a, R_curr, v_prev, dt):
+    return dt * (LUNAR_GRAVITY * dt - v_prev - R_curr @ a * dt)
+
+
+def estimate_imu_odometry(a, omega, R_curr, v_prev, dt=DT):
+    """
+    a : np.ndarray (3,) - Acceleration from IMU
+    omega : np.ndarray (3,) - Angular velocity from IMU
+    R_curr : np.ndarray (3, 3) - Current rotation (at k)
+    v_prev : np.ndarray (3,) - Velocity at k-1
+    dt : float - Time step in seconds
+
+    """
+    R_delta = recover_rotation_delta(omega, dt)
+    t_delta = recover_translation_delta(a, R_curr, v_prev, dt)
+    return make_transform_mat(R_delta, t_delta)
 
 
 class ImuEstimator:
-    def __init__(self, initial_pose: np.ndarray, dt: float = 0.05):
+    def __init__(self, initial_pose: np.ndarray, dt: float = DT):
         self.dt = dt
         self.R_prev = initial_pose[:3, :3]
         self.t_prev_prev = initial_pose[:3, 3]
@@ -95,6 +111,21 @@ class ImuEstimator:
         self.R_prev = initial_pose[:3, :3]
         self.t_prev_prev = initial_pose[:3, 3]
         self.t_prev = initial_pose[:3, 3]
+
+    def update_pose(self, pose: np.ndarray) -> None:
+        self.R_prev = self.R_curr
+        self.t_prev = self.t_curr
+        self.t_prev_prev = self.t_prev
+        self.R_curr = pose[:3, :3]
+        self.t_curr = pose[:3, 3]
+
+    def update_pose_from_vo(self, pose: np.ndarray) -> None:
+        """Interpolate assuming constant motion (since VO is 10 Hz and IMU is 20 Hz)"""
+        self.R_prev = interpolate_rotation_matrix(self.R_curr, pose[:3, :3], alpha=0.5)
+        self.t_prev = self.t_curr + 0.5 * (pose[:3, 3] - self.t_curr)
+        self.t_prev_prev = self.t_curr
+        self.R_curr = pose[:3, :3]
+        self.t_curr = pose[:3, 3]
 
     def update(self, imu_data: np.ndarray, exact: bool = True) -> None:
         a = imu_data[:3]
