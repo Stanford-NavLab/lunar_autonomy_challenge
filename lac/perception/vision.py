@@ -9,7 +9,7 @@ from rich import print
 from lightglue import LightGlue, SuperPoint, match_pair
 from lightglue.utils import load_image, rbd
 
-from lac.perception.pnp import solve_tag_pnp
+from lac.perception.fiducials import solve_tag_pnp
 from lac.utils.frames import (
     make_transform_mat,
     invert_transform_mat,

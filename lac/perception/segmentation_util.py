@@ -3,7 +3,47 @@
 import numpy as np
 import cv2
 
+from lac.perception.segmentation import SemanticClasses
 from lac.util import mask_centroid
+
+
+# Colors that we use for visualization
+CLASS_COLORS_VIS = {
+    SemanticClasses.FIDUCIALS: (250, 170, 30),  # Blue
+    SemanticClasses.ROCK: (42, 59, 108),  # Turquoise
+    SemanticClasses.LANDER: (160, 190, 110),  # Green
+    SemanticClasses.GROUND: (81, 0, 81),  # Purple
+    SemanticClasses.SKY: (255, 255, 255),  # White
+}
+
+# Semantic colors used by LAC
+LAC_LABEL_COLORS = {
+    SemanticClasses.FIDUCIALS: (250, 170, 30),  # Blue
+    SemanticClasses.ROCK: (42, 59, 108),  # Turquoise
+    SemanticClasses.LANDER: (160, 190, 110),  # Green
+    SemanticClasses.GROUND: (81, 0, 81),  # Purple
+    SemanticClasses.SKY: (0, 0, 0),  # Black
+}
+
+
+def color_to_label(img: np.ndarray):
+    """
+    Convert a color image to a label image.
+    """
+    label_img = np.zeros(img.shape[:2], dtype=np.uint8)
+    for label, color in LAC_LABEL_COLORS.items():
+        label_img[np.all(img == color, axis=-1)] = label.value
+    return label_img
+
+
+def label_to_color(label_img: np.ndarray, custom: bool = False):
+    """
+    Convert a label image to a color image.
+    """
+    color_img = np.zeros((*label_img.shape, 3), dtype=np.uint8)
+    for label, color in LAC_LABEL_COLORS.items() if not custom else CLASS_COLORS_VIS.items():
+        color_img[label_img == label.value] = color
+    return color_img
 
 
 def dilate_mask(mask, pixels=1):

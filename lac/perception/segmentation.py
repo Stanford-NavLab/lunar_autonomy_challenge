@@ -9,7 +9,7 @@ import segmentation_models_pytorch as smp
 from pathlib import Path
 from enum import Enum
 
-from lac.params import TEAM_CODE_ROOT
+from lac.params import TEAM_CODE_ROOT, MIN_ROCK_MASK_AREA
 
 
 class SemanticClasses(Enum):
@@ -18,15 +18,6 @@ class SemanticClasses(Enum):
     LANDER = 2
     GROUND = 3
     SKY = 4
-
-
-CLASS_COLORS = {
-    SemanticClasses.FIDUCIALS: (240, 228, 66),  # Yellow
-    SemanticClasses.ROCK: (86, 180, 233),  # Sky Blue
-    SemanticClasses.LANDER: (0, 158, 115),  # Teal
-    SemanticClasses.GROUND: (204, 121, 167),  # Magenta
-    SemanticClasses.SKY: (230, 159, 0),  # Orange-gold
-}
 
 
 class UnetSegmentation:
@@ -90,9 +81,6 @@ class UnetSegmentation:
 
         # Identify unique rock masks
         num_labels, labels = cv2.connectedComponents(rock_mask.astype(np.uint8))
-
-        MIN_ROCK_MASK_AREA = 100  # Minimum area to be considered a valid rock segmentation
-
         masks = []
 
         for label in range(1, num_labels):

@@ -58,9 +58,7 @@ def get_tag_corners_world(id: int, lander_pose: np.ndarray):
     return tag_corners_world
 
 
-def solve_tag_pnp(
-    detections: list, camera_intrinsics: np.ndarray, lander_pose: np.ndarray
-):
+def solve_tag_pnp(detections: list, camera_intrinsics: np.ndarray, lander_pose: np.ndarray):
     """
     Solves the PnP problem to estimate the camera pose in world frame
     NOTE: currently solves for each individual tag detection in a group, rather than stacking them
@@ -97,7 +95,6 @@ def solve_tag_pnp(
         if not success:
             print("PnP Solution failed on tag ID:", detection.tag_id)
             continue
-
 
         # Convert rotation vector to rotation matrix
         R, _ = cv2.Rodrigues(rvec)

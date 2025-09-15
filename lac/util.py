@@ -38,8 +38,13 @@ def load_data(data_path: str | Path, dynamics=False):
     return initial_pose, lander_pose, poses, imu_data, cam_config, json_data
 
 
-def _load_image(img_path: str | Path, frame: int):
-    return frame, cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+def _load_image(img_path: Path, frame: int, is_semantic: bool):
+    if is_semantic:
+        # Keep label IDs intact; don't convert to BGR
+        img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
+    else:
+        img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+    return frame, img
 
 
 def load_images(
@@ -48,40 +53,75 @@ def load_images(
     start_frame: Optional[int] = None,
     end_frame: Optional[int] = None,
     step: int = 1,
+    strict_intersection: bool = False,  # require same frames for all cameras
 ):
-    """Load images from set of cameras in data log file.
-
-    TODO: fix this
-
-    """
     data_path = Path(data_path)
-    all_frames = [int(img.split(".")[0]) for img in os.listdir(data_path / cameras[0])]
+
+    def numeric_stem(p: str) -> Optional[int]:
+        stem = p.split(".")[0]
+        return int(stem) if stem.isdigit() else None
+
+    # Collect all frames seen in the first camera (or across all, below)
+    first_cam_dir = data_path / cameras[0]
+    all_frames_first = []
+    for f in os.listdir(first_cam_dir):
+        n = numeric_stem(f)
+        if n is not None:
+            all_frames_first.append(n)
+
+    if not all_frames_first:
+        raise ValueError(f"No numeric frame files found in {first_cam_dir}")
 
     if start_frame is None:
-        start_frame = min(all_frames)
+        start_frame = min(all_frames_first)
     if end_frame is None:
-        end_frame = max(all_frames)
+        end_frame = max(all_frames_first)
 
-    camera_files = {
-        cam: [
-            img
-            for img in os.listdir(data_path / cam)
-            if int(img.split(".")[0]) % step == 0
-            and start_frame <= int(img.split(".")[0]) <= end_frame
-        ]
-        for cam in cameras
-    }
+    # Build per-camera file lists (sorted, filtered)
+    camera_files = {}
+    per_cam_frames = {}
+    for cam in cameras:
+        cam_dir = data_path / cam
+        files = []
+        frames = []
+        for fname in os.listdir(cam_dir):
+            n = numeric_stem(fname)
+            if n is None:
+                continue
+            if (n % step == 0) and (start_frame <= n <= end_frame):
+                files.append(fname)
+                frames.append(n)
+        # sort by numeric frame index to keep things tidy
+        order = sorted(range(len(frames)), key=lambda i: frames[i])
+        files = [files[i] for i in order]
+        frames = [frames[i] for i in order]
+        camera_files[cam] = files
+        per_cam_frames[cam] = set(frames)
+
+    # Optionally enforce strict intersection of frames across cameras
+    if strict_intersection:
+        common = set.intersection(*per_cam_frames.values())
+        if not common:
+            raise ValueError("No common frames across cameras in the specified range.")
+        # Filter file lists down to common frames only
+        for cam in cameras:
+            files = camera_files[cam]
+            camera_files[cam] = [f for f in files if numeric_stem(f) in common]
+
+    results = {}
 
     with ThreadPoolExecutor() as executor:
-        results = {}
         for cam in cameras:
-            results[cam] = executor.map(
-                lambda img: _load_image(data_path / cam / img, int(img.split(".")[0])),
-                tqdm(camera_files[cam], desc=cam),
+            cam_dir = data_path / cam
+            is_semantic = "semantic" in cam.lower()
+            # Bind cam_dir and is_semantic at definition time
+            loader = partial(_load_image, is_semantic=is_semantic)
+            # Map over this camera's list
+            iterable = (
+                (cam_dir / img, int(img.split(".")[0])) for img in tqdm(camera_files[cam], desc=cam)
             )
-
-    for cam in cameras:
-        results[cam] = dict(results[cam])
+            # Materialize results here (inside the context manager)
+            results[cam] = dict(executor.map(lambda args: loader(*args), iterable))
 
     return results
 
