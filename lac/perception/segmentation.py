@@ -20,6 +20,15 @@ class SemanticClasses(Enum):
     SKY = 4
 
 
+CLASS_COLORS = {
+    SemanticClasses.FIDUCIALS: (240, 228, 66),  # Yellow
+    SemanticClasses.ROCK: (86, 180, 233),  # Sky Blue
+    SemanticClasses.LANDER: (0, 158, 115),  # Teal
+    SemanticClasses.GROUND: (204, 121, 167),  # Magenta
+    SemanticClasses.SKY: (230, 159, 0),  # Orange-gold
+}
+
+
 class UnetSegmentation:
     def __init__(self, model_path=None):
         if model_path is None:

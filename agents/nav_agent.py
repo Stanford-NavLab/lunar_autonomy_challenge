@@ -36,6 +36,7 @@ from lac.utils.data_logger import DataLogger
 from lac.utils.rerun_interface import Rerun
 from lac.util import get_positions_from_poses, positions_rmse_from_poses
 import lac.params as params
+from lac.utils.profiler import Profiler
 
 """ Agent parameters and settings """
 EVAL = False  # Whether running in evaluation mode (disable ground truth)
@@ -68,6 +69,13 @@ class NavAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
         """Load config params"""
         self.config = json.load(open(path_to_conf_file))
+
+        """Profiler"""
+        profiling_cfg = self.config.get("profiling", {}) if isinstance(self.config, dict) else {}
+        self.profiler = Profiler(
+            enabled=profiling_cfg.get("enabled", True),
+            print_every_steps=profiling_cfg.get("print_every_steps", 10),
+        )
 
         """Control variables"""
         self.current_v = 0
@@ -268,7 +276,12 @@ class NavAgent(AutonomousAgent):
             nav_pose = self.current_pose
 
         """ Waypoint navigation """
-        waypoint, advanced = self.planner.get_waypoint(self.step, nav_pose, print_progress=True)
+        with self.profiler.section("planning/get_waypoint"):
+            waypoint, advanced = self.planner.get_waypoint(
+                self.step,
+                nav_pose,
+                print_progress=not getattr(self.profiler, "enabled", True),
+            )
         if waypoint is None:
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
@@ -296,22 +309,26 @@ class NavAgent(AutonomousAgent):
             # Stereo VO
             if self.step >= ARM_RAISE_WAIT_FRAMES:
                 if self.step == ARM_RAISE_WAIT_FRAMES:
-                    self.frontend.initialize(images_gray)
+                    with self.profiler.section("frontend/initialize"):
+                        self.frontend.initialize(images_gray)
                 else:
                     images_gray["step"] = self.step
                     images_gray["imu_measurements"] = self.imu_measurements
                     images_gray["prev_pose"] = self.current_pose
 
-                    data = self.frontend.process_frame(images_gray)
-                    self.backend.update(data)
+                    with self.profiler.section("frontend/process_frame"):
+                        data = self.frontend.process_frame(images_gray)
+                    with self.profiler.section("backend/update"):
+                        self.backend.update(data)
 
                     if LOG_DATA:
                         self.slam_eval_poses.append(ground_truth_pose)
 
                     # Path planning
-                    control, path, _ = self.arc_planner.plan_arc(
-                        waypoint, nav_pose, data["rock_data"]
-                    )
+                    with self.profiler.section("planning/arc"):
+                        control, path, _ = self.arc_planner.plan_arc(
+                            waypoint, nav_pose, data["rock_data"]
+                        )
                     if control is not None:
                         self.current_v, self.current_w = control
                         # Proportional feedback on v
@@ -348,17 +365,18 @@ class NavAgent(AutonomousAgent):
                     Rerun.log_3d_semantic_points(semantic_points)
 
         """ Control """
-        if self.step < ARM_RAISE_WAIT_FRAMES:  # Wait for arms to raise before moving
-            carla_control = carla.VehicleVelocityControl(0.0, 0.0)
-        # If agent is stuck, perform backup maneuver
-        elif self.backup_counter > 0 or self.check_stuck():
-            print("[bold red]Agent is stuck")
-            carla_control = self.run_backup_maneuver()
-        elif control is None:
-            print("[bold red]No safe paths found by planner!")
-            carla_control = self.run_backup_maneuver()
-        else:
-            carla_control = carla.VehicleVelocityControl(self.current_v, self.current_w)
+        with self.profiler.section("control"):
+            if self.step < ARM_RAISE_WAIT_FRAMES:  # Wait for arms to raise before moving
+                carla_control = carla.VehicleVelocityControl(0.0, 0.0)
+            # If agent is stuck, perform backup maneuver
+            elif self.backup_counter > 0 or self.check_stuck():
+                print("[bold red]Agent is stuck")
+                carla_control = self.run_backup_maneuver()
+            elif control is None:
+                print("[bold red]No safe paths found by planner!")
+                carla_control = self.run_backup_maneuver()
+            else:
+                carla_control = carla.VehicleVelocityControl(self.current_v, self.current_w)
 
         """ Data logging """
         if LOG_DATA:
@@ -391,22 +409,28 @@ class NavAgent(AutonomousAgent):
 
         print("\n---------------------------------------------------------------------------------")
 
+        # End-of-step profiler hook (prints occasionally if enabled)
+        self.profiler.end_step(self.step)
+
         return carla_control
 
     def update_map(self):
         """Update the map with current backend state"""
         print("Updating map")
-        g_map = self.get_geometric_map()
-        map_array = g_map.get_map_array()
-        semantic_points = self.backend.project_point_map()
+        with self.profiler.section("mapping/get_map_array"):
+            g_map = self.get_geometric_map()
+            map_array = g_map.get_map_array()
+        with self.profiler.section("mapping/project_point_map"):
+            semantic_points = self.backend.project_point_map()
         print("Number of semantic points: ", len(semantic_points.points))
         if LOG_DATA:
             semantic_points.save(f"output/{get_entry_point()}/{self.run_name}/semantic_points.npz")
-        map_array = process_map(
-            semantic_points,
-            map_array,
-            rock_count_thresh=self.config["mapping"]["rock_count_thresh"],
-        )
+        with self.profiler.section("mapping/process_map"):
+            map_array = process_map(
+                semantic_points,
+                map_array,
+                rock_count_thresh=self.config["mapping"]["rock_count_thresh"],
+            )
         return map_array.copy()
 
     def finalize(self):
@@ -437,3 +461,7 @@ class NavAgent(AutonomousAgent):
                 loop_closures=backend_state["loop_closures"],
                 loop_closure_poses=backend_state["loop_closures_poses"],
             )
+
+        # Save profiler CSV
+        out_dir = f"output/{get_entry_point()}/{self.run_name}"
+        self.profiler.save_csv(os.path.join(out_dir, "profile.csv"))

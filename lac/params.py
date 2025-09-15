@@ -14,6 +14,7 @@ TEAM_CODE_ROOT = Path(os.path.abspath(__file__)).parent.parent
 # "/workspace/team_code" - Location in the docker container
 
 LAC_BASE_PATH = TEAM_CODE_ROOT.parent
+LAC_DATA_PATH = Path("/home/shared/data_raw/LAC")
 
 DEFAULT_RUN_NAME = "default_run"
 

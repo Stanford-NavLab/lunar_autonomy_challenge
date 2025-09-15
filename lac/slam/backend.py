@@ -67,6 +67,20 @@ class Backend:
         self.loop_closures_poses = []
         self.loop_closures_matches = []
 
+    def reset(self, initial_pose: np.ndarray):
+        """Reset the backend"""
+        self.graph = gtsam.NonlinearFactorGraph()
+        self.values = gtsam.Values()
+        self.opt_params = gtsam.LevenbergMarquardtParams()
+        self.values.insert(X(0), gtsam.Pose3(initial_pose))
+        self.graph.add(gtsam.NonlinearEqualityPose3(X(0), gtsam.Pose3(initial_pose)))
+        self.pose_idx = 1
+        self.point_map = {}
+        self.keyframe_data = {}
+        self.keyframe_traj_list = []
+        self.keyframe_traj = None
+        self.loop_closures = []
+
     def update(self, data: dict):
         """Update the backend with new data
 
@@ -131,6 +145,7 @@ class Backend:
 
         # Handle keyframe
         if data["keyframe"]:
+            # TODO: don't recompute this, instead pass it in from frontend
             self.keyframe_data[self.pose_idx] = self.feature_tracker.process_stereo(
                 data["FrontLeft"], data["FrontRight"]
             )

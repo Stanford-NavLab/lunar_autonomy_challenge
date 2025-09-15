@@ -8,7 +8,13 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import imageio.v2 as imageio
 
-from lac.params import LANDER_GLOBAL, LANDER_HEIGHT, HEIGHT_ERROR_TOLERANCE, MAP_EXTENT
+from lac.params import (
+    LANDER_GLOBAL,
+    LANDER_WIDTH,
+    LANDER_HEIGHT,
+    HEIGHT_ERROR_TOLERANCE,
+    MAP_EXTENT,
+)
 
 # ==================================================================================================
 #                                    2D Plotting Functions
@@ -185,7 +191,14 @@ def plot_waypoints(
     fig: go.Figure | None = None,
     arrow_scale: float = 0.2,
     arrow_size: int = 12,
+    line_width: int = 2,
+    marker_size: int = 12,
     show_endpoint: bool = False,
+    endpoint_marker_size: int = 16,
+    path_color: str = "blue",
+    waypoint_color: str = "dodgerblue",
+    endpoint_color: str = "lime",
+    dark_mode: bool = False,
 ):
     if fig is None:
         fig = go.Figure()
@@ -196,7 +209,8 @@ def plot_waypoints(
             x=waypoints[:, 0],
             y=waypoints[:, 1],
             mode="markers+lines",
-            line=dict(color="blue", width=2),
+            line=dict(color=path_color, width=line_width),
+            marker=dict(color=waypoint_color, size=marker_size),
             hovertext=np.arange(len(waypoints)),
             showlegend=False,
         )
@@ -224,11 +238,14 @@ def plot_waypoints(
                 symbol="triangle-up",
                 size=arrow_size,
                 angle=angles,
-                color="blue",
+                color=path_color,
                 line=dict(width=0),
             ),
         )
     )
+
+    # Show lander
+    plot_lander_2d(fig)
 
     if show_endpoint:
         # Add the last waypoint as a marker
@@ -237,51 +254,40 @@ def plot_waypoints(
                 x=[waypoints[-1, 0]],
                 y=[waypoints[-1, 1]],
                 mode="markers",
-                marker=dict(color="green", size=arrow_size),
+                marker=dict(color=endpoint_color, size=endpoint_marker_size),
                 name="Endpoint",
                 showlegend=False,
             )
         )
 
     fig.update_layout(
-        width=600,
-        height=600,
+        width=800,
+        height=800,
         xaxis=dict(scaleanchor="y"),
         xaxis_range=[-MAP_EXTENT, MAP_EXTENT],
         yaxis_range=[-MAP_EXTENT, MAP_EXTENT],
     )
+    if dark_mode:
+        fig.update_layout(
+            plot_bgcolor="black",
+            paper_bgcolor="black",
+            font=dict(color="white"),
+            xaxis=dict(
+                gridcolor="#333333",
+                gridwidth=1,
+                title="X (m)",
+                zerolinecolor="#444444",
+                zerolinewidth=2,
+            ),
+            yaxis=dict(
+                gridcolor="#333333",
+                gridwidth=1,
+                title="Y (m)",
+                zerolinecolor="#444444",
+                zerolinewidth=2,
+            ),
+        )
     return fig
-
-
-def save_waypoints_gif(waypoints: np.ndarray, name: str, path: str, dt: int = 5.0):
-    """
-    Save a gif of the waypoints.
-
-    Returns:
-        None
-    """
-    image_folder = f"{path}/{name}"
-    output_gif = f"{path}/{name}.gif"
-
-    if os.path.exists(image_folder):
-        shutil.rmtree(image_folder)
-    os.makedirs(image_folder)
-
-    for i in range(len(waypoints)):
-        fig = plot_waypoints(waypoints[: i + 1], show_endpoint=True)
-        fig.write_image(f"{image_folder}/{i:03}.png")
-
-    # Sort filenames to ensure correct order
-    image_files = sorted(
-        [f for f in os.listdir(image_folder) if f.endswith((".png", ".jpg", ".jpeg"))]
-    )
-
-    # Read and write images into a GIF
-    with imageio.get_writer(output_gif, mode="I", duration=dt) as writer:
-        for filename in image_files:
-            image_path = os.path.join(image_folder, filename)
-            image = imageio.imread(image_path)
-            writer.append_data(image)
 
 
 def plot_rocks_rover_frame(rock_points, rock_radii, waypoint=None, fig=None, color="red", **kwargs):
@@ -438,7 +444,7 @@ def plot_path_rover_frame(
                 **kwargs,
             )
         )
-        # Create parametric circles for all rocks in a single trac
+    # If color is set to green plot rover circle buffer along arc
     if color == "green":
         theta = np.linspace(0, 2 * np.pi, 100)
         circle_x = np.cos(theta)
@@ -519,7 +525,7 @@ def plot_surface(
     return fig
 
 
-def plot_rock_map(grid: np.ndarray, fig=None, no_axes=False, **kwargs):
+def plot_rock_map_3d(grid: np.ndarray, fig=None, no_axes=False, **kwargs):
     """
     grid is NxNx4 array where 4th channel is rock presence (0 or 1)
 
@@ -764,6 +770,22 @@ def plot_loop_closures(trajectory, loop_closures: list, fig=None, **kwargs):
             )
         )
     fig.update_layout(width=1600, height=900, scene_aspectmode="data")
+    return fig
+
+
+def plot_lander_2d(fig=None, color="gold"):
+    """Plot the lander as a 3x3 box in 2D."""
+    if fig is None:
+        fig = go.Figure()
+    fig.add_shape(
+        type="rect",
+        x0=-LANDER_WIDTH / 2,
+        x1=LANDER_WIDTH / 2,
+        y0=-LANDER_WIDTH / 2,
+        y1=LANDER_WIDTH / 2,
+        fillcolor=color,
+        line=dict(color="darkgoldenrod", width=2),
+    )
     return fig
 
 

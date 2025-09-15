@@ -45,6 +45,23 @@ class Frontend:
                 data["BackLeft"], data["BackRight"], back_left_pred
             )
 
+    def detect_rocks(self, data: dict):
+        """Detect rocks in the image"""
+        left_rock_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(
+            data["FrontLeft"], output_pred=True
+        )
+        right_rock_seg_masks, right_labels = self.segmentation.segment_rocks(data["FrontRight"])
+        # Rock detection
+        stereo_depth_results = stereo_depth_from_segmentation(
+            left_rock_seg_masks, right_rock_seg_masks, STEREO_BASELINE, FL_X
+        )
+        rock_coords = compute_rock_coords_rover_frame(
+            stereo_depth_results, self.feature_tracker.cam_config
+        )
+        rock_radii = compute_rock_radii(stereo_depth_results)
+
+        return rock_coords, rock_radii, left_pred
+
     def process_frame(self, data: dict):
         """Process the data
 
@@ -56,7 +73,6 @@ class Frontend:
 
         """
         # Segmentation
-        # left_pred = self.segmentation.predict(data["FrontLeft"])
         left_rock_seg_masks, left_labels, left_pred = self.segmentation.segment_rocks(
             data["FrontLeft"], output_pred=True
         )

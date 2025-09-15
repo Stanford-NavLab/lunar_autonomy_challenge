@@ -14,9 +14,9 @@ def get_starting_direction_order(initial_pose):
 
 def gen_spiral(
     initial_pose: np.ndarray,
-    min_val: float,
-    max_val: float,
-    step: float,
+    min_val: float = 3.5,
+    max_val: float = 5.5,
+    step: float = 1.0,
     repeat: int = 0,
 ):
     """
