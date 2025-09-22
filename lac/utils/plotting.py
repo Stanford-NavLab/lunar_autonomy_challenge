@@ -21,6 +21,30 @@ from lac.params import (
 # ==================================================================================================
 
 
+def plot_path_2d(path: np.ndarray, fig=None, color="blue", linewidth=2, **kwargs):
+    """Plot a 2D path."""
+    if fig is None:
+        fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=path[:, 0],
+            y=path[:, 1],
+            mode="lines",
+            line=dict(color=color, width=linewidth),
+            **kwargs,
+        )
+    )
+    fig.update_layout(
+        width=900,
+        height=900,
+        xaxis=dict(scaleanchor="y"),
+        xaxis_title="X (m)",
+        yaxis_title="Y (m)",
+        font=dict(size=25),
+    )
+    return fig
+
+
 def plot_heatmap(data: np.ndarray, fig=None, colorscale="Viridis", no_axes=False):
     """Plot a 2D heatmap."""
     if fig is None:
@@ -58,58 +82,100 @@ def plot_heightmaps(ground_map: np.ndarray, agent_map: np.ndarray):
 
 
 def plot_height_error(ground_map: np.ndarray, agent_map: np.ndarray):
-    fig = go.Figure()
+    x = ground_map[:, :, 0][:, 0]  # x centers, length = nx
+    y = ground_map[:, :, 1][0, :]  # y centers, length = ny
+
+    # cell sizes (assumes uniform grid)
+    dx = float(np.mean(np.diff(x)))
+    dy = float(np.mean(np.diff(y)))
+
     error = np.abs(ground_map[:, :, 2] - agent_map[:, :, 2])
+
+    fig = go.Figure()
     fig.add_trace(
         go.Heatmap(
             z=(error < HEIGHT_ERROR_TOLERANCE).astype(np.uint8),
-            x=ground_map[:, :, 0][:, 0],
-            y=ground_map[:, :, 1][0, :],
-            colorscale=["red", "green"],
+            x=x,
+            y=y,
+            colorscale=[(0.0, "red"), (1.0, "green")],
             showscale=False,
-        ),
+        )
     )
+
+    fig.update_xaxes(
+        range=[x.min() - dx / 2, x.max() + dx / 2], constrain="domain", scaleanchor="y"
+    )
+    fig.update_yaxes(range=[y.min() - dy / 2, y.max() + dy / 2], constrain="domain", scaleratio=1)
+
     fig.update_layout(
         width=900,  # Adjust the figure width
         height=900,  # Adjust the figure height
         xaxis=dict(scaleanchor="y"),
-        xaxis_title="X",
-        yaxis_title="Y",
+        xaxis_title="X (m)",
+        yaxis_title="Y (m)",
+        font=dict(size=25),
     )
     return fig
 
 
 def plot_rock_results(ground_map: np.ndarray, agent_map: np.ndarray):
-    fig = go.Figure()
+    x = ground_map[:, :, 0][:, 0]  # x centers
+    y = ground_map[:, :, 1][0, :]  # y centers
+
+    # assume uniform grid spacing
+    dx = float(np.mean(np.diff(x)))
+    dy = float(np.mean(np.diff(y)))
+
     result = np.zeros_like(ground_map[:, :, 3])
     result[(ground_map[:, :, 3] == 0) & (agent_map[:, :, 3] == 0)] = 0  # TN
     result[(ground_map[:, :, 3] == 0) & (agent_map[:, :, 3] == 1)] = 1  # FP
     result[(ground_map[:, :, 3] == 1) & (agent_map[:, :, 3] == 0)] = 2  # FN
     result[(ground_map[:, :, 3] == 1) & (agent_map[:, :, 3] == 1)] = 3  # TP
+
     label_names = ["TN", "FP", "FN", "TP"]
-    colors = ["gray", "red", "yellow", "green"]  # gray, red, yellow, green
+    colors = ["gray", "red", "yellow", "green"]
+
+    fig = go.Figure()
     fig.add_trace(
         go.Heatmap(
             z=result,
-            x=ground_map[:, :, 0][:, 0],
-            y=ground_map[:, :, 1][0, :],
-            colorscale=colors,
+            x=x,
+            y=y,
+            colorscale=[(i / (len(colors) - 1), c) for i, c in enumerate(colors)],
             showscale=False,
         )
     )
-    # Add fake scatter traces for legend
+
+    # Legend entries
     for i, name in enumerate(label_names):
         fig.add_trace(
             go.Scatter(
-                x=[None], y=[None], mode="markers", marker=dict(size=10, color=colors[i]), name=name
+                x=[None],
+                y=[None],
+                mode="markers",
+                marker=dict(size=10, color=colors[i]),
+                name=name,
             )
         )
+
+    # Axis fixes: pad by half a cell
+    fig.update_xaxes(
+        range=[x.min() - dx / 2, x.max() + dx / 2],
+        constrain="domain",
+        scaleanchor="y",
+    )
+    fig.update_yaxes(
+        range=[y.min() - dy / 2, y.max() + dy / 2],
+        constrain="domain",
+        scaleratio=1,
+    )
+
     fig.update_layout(
-        width=800,  # Adjust the figure width
-        height=800,  # Adjust the figure height
-        xaxis=dict(scaleanchor="y"),
-        xaxis_title="X",
-        yaxis_title="Y",
+        width=900,
+        height=900,
+        xaxis_title="X (m)",
+        yaxis_title="Y (m)",
+        font=dict(size=25),
     )
     return fig
 

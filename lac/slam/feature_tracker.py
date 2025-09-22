@@ -55,10 +55,8 @@ def highest_score_matches(matches: dict, N: int) -> np.ndarray:
 class FeatureTracker:
     def __init__(self, cam_config: dict, max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS):
         self.cam_config = cam_config
-        # Select device with safe CUDA fallback
-        self.device = self._select_device()
-        self.extractor = SuperPoint(max_num_keypoints=max_keypoints).eval().to(self.device)
-        self.matcher = LightGlue(features="superpoint").eval().to(self.device)
+        self.extractor = SuperPoint(max_num_keypoints=max_keypoints).eval().cuda()
+        self.matcher = LightGlue(features="superpoint").eval().cuda()
 
         # Currently default parameters
         self.lk_params = dict(
@@ -81,7 +79,7 @@ class FeatureTracker:
     ) -> dict:
         """Extract features from image"""
         # TODO: handle min_score and max_keypoints
-        feats = self.extractor.extract(grayscale_to_3ch_tensor(image).to(self.device))
+        feats = self.extractor.extract(grayscale_to_3ch_tensor(image).cuda())
         return feats
 
     def match_feats(
@@ -173,29 +171,13 @@ class FeatureTracker:
         tracked = status.squeeze() == 1
         next_pts_tracked = next_pts[tracked]
         tracked_feats = prune_features(self.prev_feats, tracked)
-        tracked_feats["keypoints"] = torch.from_numpy(next_pts_tracked).unsqueeze(0).to(self.device)
+        tracked_feats["keypoints"] = torch.from_numpy(next_pts_tracked).unsqueeze(0).cuda()
 
         self.track_ids = self.track_ids[tracked]
         self.prev_image = next_image
         self.prev_pts = next_pts_tracked
         self.prev_feats = tracked_feats
         self.world_points = self.world_points[tracked]
-
-    @staticmethod
-    def _select_device() -> torch.device:
-        """Return a usable torch.device, falling back to CPU if CUDA init fails.
-
-        This guards against environments where torch thinks CUDA is available
-        but driver/hardware initialization fails (e.g., error 804).
-        """
-        if torch.cuda.is_available():
-            try:
-                # Probe CUDA to ensure it actually works
-                _ = torch.empty(1, device="cuda")
-                return torch.device("cuda")
-            except Exception:
-                pass
-        return torch.device("cpu")
 
     def track_lightglue(self, next_image: np.ndarray):
         """Track keypoints using LightGlue"""
