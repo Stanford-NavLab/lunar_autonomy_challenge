@@ -15,6 +15,7 @@ from pynput import keyboard
 import signal
 import os
 from datetime import datetime
+import json
 
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
@@ -44,6 +45,9 @@ def get_entry_point():
 
 class DataCollectionAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
+        """Load config params"""
+        self.config = json.load(open(path_to_conf_file))
+
         """Set up a keyboard listener from pynput to capture the key commands for controlling the robot using the arrow keys."""
         listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
@@ -56,68 +60,27 @@ class DataCollectionAgent(AutonomousAgent):
         self.step = 0
 
         """ Planner """
-        initial_pose = transform_to_numpy(self.get_initial_position())
-        self.lander_pose = initial_pose @ transform_to_numpy(self.get_initial_lander_position())
-        self.planner = WaypointPlanner(initial_pose, trajectory_type="spiral")
+        self.initial_pose = transform_to_numpy(self.get_initial_position())
+        self.lander_pose = self.initial_pose @ transform_to_numpy(
+            self.get_initial_lander_position()
+        )
+        self.planner = WaypointPlanner(
+            self.initial_pose,
+            trajectory_type=self.config["planning"]["trajectory"],
+            waypoint_reached_threshold=self.config["planning"]["waypoint_reached_threshold_m"],
+        )
 
         # Camera config
         self.cameras = params.CAMERA_CONFIG_INIT
-        self.cameras["FrontLeft"] = {
-            "active": True,
-            "light": 1.0,
-            "width": 1280,
-            "height": 720,
-            "semantic": True,
-        }
-        self.cameras["FrontRight"] = {
-            "active": True,
-            "light": 1.0,
-            "width": 1280,
-            "height": 720,
-            "semantic": True,
-        }
-        self.cameras["Front"] = {
-            "active": True,
-            "light": 1.0,
-            "width": 1280,
-            "height": 720,
-            "semantic": True,
-        }
-        self.cameras["BackLeft"] = {
-            "active": True,
-            "light": 1.0,
-            "width": 1280,
-            "height": 720,
-            "semantic": True,
-        }
-        self.cameras["BackRight"] = {
-            "active": True,
-            "light": 1.0,
-            "width": 1280,
-            "height": 720,
-            "semantic": True,
-        }
-        self.cameras["Back"] = {
-            "active": True,
-            "light": 1.0,
-            "width": 1280,
-            "height": 720,
-            "semantic": True,
-        }
-        self.cameras["Left"] = {
-            "active": True,
-            "light": 1.0,
-            "width": 1280,
-            "height": 720,
-            "semantic": True,
-        }
-        self.cameras["Right"] = {
-            "active": True,
-            "light": 1.0,
-            "width": 1280,
-            "height": 720,
-            "semantic": True,
-        }
+        for cam in self.config["data_collection"]["cameras"]:
+            cam_config = self.config["data_collection"]["cameras"][cam].copy()
+            # Convert string "True"/"False" to boolean
+            if isinstance(cam_config.get("active"), str):
+                cam_config["active"] = cam_config["active"].lower() == "true"
+            if isinstance(cam_config.get("semantic"), str):
+                cam_config["semantic"] = cam_config["semantic"].lower() == "true"
+            self.cameras[cam] = cam_config
+
         agent_name = get_entry_point()
 
         # For dynamics data collection
