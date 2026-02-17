@@ -116,16 +116,42 @@ def _neighbor_offsets(use_eight: bool = True) -> List[Tuple[int, int]]:
     return [(0, -1), (-1, 0), (1, 0), (0, 1)]
 
 
-def world_to_grid(x_m: float, y_m: float, cell_size: float = CELL_WIDTH) -> GridPoint:
-    """Convert world meters to nearest grid index (x, y)."""
-    ix = int(round(x_m / cell_size))
-    iy = int(round(y_m / cell_size))
+def world_to_grid(
+    x_m: float,
+    y_m: float,
+    cell_size: float = CELL_WIDTH,
+    shape: Optional[Tuple[int, int]] = None,
+) -> GridPoint:
+    """Convert world meters to nearest grid index (x, y).
+
+    If shape=(H,W) is provided, world origin (0,0) is treated as map center.
+    Otherwise origin is treated as grid corner (legacy behavior).
+    """
+    if shape is None:
+        ix = int(round(x_m / cell_size))
+        iy = int(round(y_m / cell_size))
+    else:
+        h, w = shape
+        ix = int(round(x_m / cell_size + w / 2.0))
+        iy = int(round(y_m / cell_size + h / 2.0))
     return ix, iy
 
 
-def grid_to_world(ix: int, iy: int, cell_size: float = CELL_WIDTH) -> WorldPoint:
-    """Convert grid index (x, y) to world meters (x_m, y_m)."""
-    return ix * cell_size, iy * cell_size
+def grid_to_world(
+    ix: int,
+    iy: int,
+    cell_size: float = CELL_WIDTH,
+    shape: Optional[Tuple[int, int]] = None,
+) -> WorldPoint:
+    """Convert grid index (x, y) to world meters (x_m, y_m).
+
+    If shape=(H,W) is provided, world origin (0,0) is map center.
+    Otherwise origin is treated as grid corner (legacy behavior).
+    """
+    if shape is None:
+        return ix * cell_size, iy * cell_size
+    h, w = shape
+    return (ix - w / 2.0) * cell_size, (iy - h / 2.0) * cell_size
 
 
 def clamp_grid(p: GridPoint, width: int, height: int) -> GridPoint:
@@ -151,6 +177,22 @@ def apply_lander_keepout(
     buffer_m: float = 1.0,
 ) -> np.ndarray:
     """Add a lander keepout mask using dimensions from lac.params with extra buffer."""
+    keepout = lander_keepout_mask(
+        shape=blocked.shape,
+        cell_size=cell_size,
+        lander_center_xy_m=lander_center_xy_m,
+        buffer_m=buffer_m,
+    )
+    return blocked | keepout
+
+
+def lander_keepout_mask(
+    shape: Tuple[int, int],
+    cell_size: float = CELL_WIDTH,
+    lander_center_xy_m: Tuple[float, float] = (0.0, 0.0),
+    buffer_m: float = 1.0,
+) -> np.ndarray:
+    """Compute the lander keepout mask (True means blocked by keepout)."""
     lander_xy = lac_params.LANDER_GLOBAL[:, :2]
     x_min = float(np.min(lander_xy[:, 0])) - buffer_m
     x_max = float(np.max(lander_xy[:, 0])) + buffer_m
@@ -158,13 +200,11 @@ def apply_lander_keepout(
     y_max = float(np.max(lander_xy[:, 1])) + buffer_m
 
     cx, cy = lander_center_xy_m
-    x_coords = np.arange(blocked.shape[1], dtype=np.float32) * float(cell_size)
-    y_coords = np.arange(blocked.shape[0], dtype=np.float32) * float(cell_size)
+    x_coords = (np.arange(shape[1], dtype=np.float32) - shape[1] / 2.0) * float(cell_size)
+    y_coords = (np.arange(shape[0], dtype=np.float32) - shape[0] / 2.0) * float(cell_size)
     x_world = x_coords[None, :] - float(cx)
     y_world = y_coords[:, None] - float(cy)
-
-    keepout = (x_world >= x_min) & (x_world <= x_max) & (y_world >= y_min) & (y_world <= y_max)
-    return blocked | keepout
+    return (x_world >= x_min) & (x_world <= x_max) & (y_world >= y_min) & (y_world <= y_max)
 
 
 def compute_features(
@@ -455,8 +495,8 @@ def _path_valid_world(path_world: np.ndarray, blocked: np.ndarray, cell_size: fl
     for i in range(len(path_world) - 1):
         x0, y0 = path_world[i]
         x1, y1 = path_world[i + 1]
-        a = clamp_grid(world_to_grid(float(x0), float(y0), cell_size), w, h)
-        b = clamp_grid(world_to_grid(float(x1), float(y1), cell_size), w, h)
+        a = clamp_grid(world_to_grid(float(x0), float(y0), cell_size, shape=blocked.shape), w, h)
+        b = clamp_grid(world_to_grid(float(x1), float(y1), cell_size, shape=blocked.shape), w, h)
         if not line_of_sight(blocked, a, b):
             return False
     return True
@@ -483,7 +523,7 @@ def smooth_path(
         p = simplify_collinear(p)
     if do_shortcut:
         p = shortcut_smooth_path(p, blocked, costmap, iters=shortcut_iters, seed=seed)
-    world = [grid_to_world(x, y, cell_size) for x, y in p]
+    world = [grid_to_world(x, y, cell_size, shape=blocked.shape) for x, y in p]
 
     if do_spline and len(world) >= 3:
         spline_world = _spline_world_path(world, spacing_m=spline_spacing_m, tension=spline_tension)
@@ -504,8 +544,63 @@ def _parse_xy(
     if input_is_grid:
         ix, iy = int(xy[0]), int(xy[1])
     else:
-        ix, iy = world_to_grid(float(xy[0]), float(xy[1]), cell_size)
+        ix, iy = world_to_grid(float(xy[0]), float(xy[1]), cell_size, shape=shape)
     return clamp_grid((ix, iy), w, h)
+
+
+def _parse_xy_unclamped(
+    xy: Sequence[float | int],
+    shape: Tuple[int, int],
+    cell_size: float,
+    input_is_grid: bool,
+) -> GridPoint:
+    if len(xy) != 2:
+        raise ValueError("start/goal must have 2 values")
+    if input_is_grid:
+        return int(xy[0]), int(xy[1])
+    return world_to_grid(float(xy[0]), float(xy[1]), cell_size, shape=shape)
+
+
+def _grid_connected(
+    blocked: np.ndarray, start: GridPoint, goal: GridPoint, connectivity: int = 8
+) -> bool:
+    if start == goal:
+        return True
+    h, w = blocked.shape
+    if connectivity == 8:
+        moves = [
+            (-1, 0),
+            (1, 0),
+            (0, -1),
+            (0, 1),
+            (-1, -1),
+            (-1, 1),
+            (1, -1),
+            (1, 1),
+        ]
+    elif connectivity == 4:
+        moves = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    else:
+        raise ValueError("connectivity must be 4 or 8")
+
+    queue: List[GridPoint] = [start]
+    seen = {start}
+    q_idx = 0
+    while q_idx < len(queue):
+        ux, uy = queue[q_idx]
+        q_idx += 1
+        for dx, dy in moves:
+            vx, vy = ux + dx, uy + dy
+            if vx < 0 or vy < 0 or vx >= w or vy >= h:
+                continue
+            v = (vx, vy)
+            if v in seen or blocked[vy, vx]:
+                continue
+            if v == goal:
+                return True
+            seen.add(v)
+            queue.append(v)
+    return False
 
 
 def plan_path_dem(
@@ -530,16 +625,56 @@ def plan_path_dem(
         use_eight_neighbor_step=cfg.use_eight_neighbor_step,
     )
     costmap, blocked = build_costmap(features, cfg)
+    terrain_blocked = blocked.copy()
+    keepout_mask = np.zeros_like(blocked, dtype=bool)
     if cfg.use_lander_keepout:
-        blocked = apply_lander_keepout(
-            blocked=blocked,
+        keepout_mask = lander_keepout_mask(
+            shape=blocked.shape,
             cell_size=cell_size,
             lander_center_xy_m=cfg.lander_center_xy_m,
             buffer_m=cfg.lander_buffer_m,
         )
+        blocked = blocked | keepout_mask
 
-    start = _parse_xy(start_xy, z2d.shape, cell_size, input_is_grid=input_is_grid)
-    goal = _parse_xy(goal_xy, z2d.shape, cell_size, input_is_grid=input_is_grid)
+    start_unclamped = _parse_xy_unclamped(
+        start_xy, shape=z2d.shape, cell_size=cell_size, input_is_grid=input_is_grid
+    )
+    goal_unclamped = _parse_xy_unclamped(
+        goal_xy, shape=z2d.shape, cell_size=cell_size, input_is_grid=input_is_grid
+    )
+    start = clamp_grid(start_unclamped, w, h)
+    goal = clamp_grid(goal_unclamped, w, h)
+
+    start_reasons: List[str] = []
+    goal_reasons: List[str] = []
+    failure_reasons: List[str] = []
+    if start_unclamped != start:
+        failure_reasons.append(f"start clamped from {start_unclamped} to {start}")
+    if goal_unclamped != goal:
+        failure_reasons.append(f"goal clamped from {goal_unclamped} to {goal}")
+
+    def _collect_block_reasons(cell: GridPoint) -> List[str]:
+        x, y = cell
+        reasons: List[str] = []
+        if cfg.use_lander_keepout and keepout_mask[y, x]:
+            reasons.append("inside lander keepout")
+        if terrain_blocked[y, x]:
+            slope_val = float(features["slope"][y, x])
+            step_val = float(features["step"][y, x])
+            if slope_val > cfg.hard_slope_max:
+                reasons.append(f"slope {slope_val:.3f} > hard_slope_max {cfg.hard_slope_max:.3f}")
+            if step_val > cfg.hard_step_max:
+                reasons.append(f"step {step_val:.3f} > hard_step_max {cfg.hard_step_max:.3f}")
+        if blocked[y, x] and not reasons:
+            reasons.append("blocked")
+        return reasons
+
+    start_reasons = _collect_block_reasons(start)
+    goal_reasons = _collect_block_reasons(goal)
+    if start_reasons:
+        failure_reasons.append("start blocked: " + ", ".join(start_reasons))
+    if goal_reasons:
+        failure_reasons.append("goal blocked: " + ", ".join(goal_reasons))
 
     path_grid, total_cost = astar(
         costmap=costmap,
@@ -550,6 +685,13 @@ def plan_path_dem(
         connectivity=cfg.connectivity,
     )
     if not path_grid:
+        connected = None
+        if not start_reasons and not goal_reasons:
+            connected = _grid_connected(blocked, start, goal, connectivity=cfg.connectivity)
+            if not connected:
+                failure_reasons.append("no free-space connection between start and goal")
+            else:
+                failure_reasons.append("A*/Theta* failed despite connected free space")
         debug = {
             "features": features,
             "costmap": costmap,
@@ -557,6 +699,15 @@ def plan_path_dem(
             "path_grid": [],
             "start_grid": start,
             "goal_grid": goal,
+            "failure_reasons": failure_reasons,
+            "diagnostics": {
+                "start_grid_unclamped": start_unclamped,
+                "goal_grid_unclamped": goal_unclamped,
+                "start_block_reasons": start_reasons,
+                "goal_block_reasons": goal_reasons,
+                "free_space_connected": connected,
+                "keepout_enabled": cfg.use_lander_keepout,
+            },
         }
         return [], float("inf"), debug
 
@@ -575,7 +726,7 @@ def plan_path_dem(
             seed=cfg.seed,
         )
     else:
-        path_world = [grid_to_world(x, y, cell_size) for x, y in path_grid]
+        path_world = [grid_to_world(x, y, cell_size, shape=z2d.shape) for x, y in path_grid]
 
     debug = {
         "features": features,
@@ -584,5 +735,14 @@ def plan_path_dem(
         "path_grid": path_grid,
         "start_grid": start,
         "goal_grid": goal,
+        "failure_reasons": [],
+        "diagnostics": {
+            "start_grid_unclamped": start_unclamped,
+            "goal_grid_unclamped": goal_unclamped,
+            "start_block_reasons": start_reasons,
+            "goal_block_reasons": goal_reasons,
+            "free_space_connected": True,
+            "keepout_enabled": cfg.use_lander_keepout,
+        },
     }
     return path_world, float(total_cost), debug
