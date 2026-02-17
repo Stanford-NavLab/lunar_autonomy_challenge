@@ -68,6 +68,7 @@ class DEMPlannerParams:
 
     connectivity: int = 8
     seed: int = 0
+    initial_heading_window_m: float = 1.0
 
     @classmethod
     def from_any(cls, params: Optional["DEMPlannerParams | Dict[str, Any]"]) -> "DEMPlannerParams":
@@ -168,6 +169,39 @@ def _normalize_dem(z: np.ndarray) -> np.ndarray:
     if z.ndim == 3 and z.shape[2] >= 3:
         return z[:, :, 2].astype(np.float32, copy=False)
     raise ValueError(f"Expected z as (H,W) or (H,W,C>=3), got shape {z.shape}")
+
+
+def yaw_from_pose(initial_pose: np.ndarray) -> float:
+    """Extract yaw [rad] from a 4x4 pose matrix or [x,y,yaw]."""
+    pose = np.asarray(initial_pose)
+    if pose.shape == (4, 4):
+        return float(np.arctan2(pose[1, 0], pose[0, 0]))
+    if pose.ndim == 1 and pose.shape[0] >= 3:
+        return float(pose[2])
+    raise ValueError(f"initial_pose must be 4x4 or [x,y,yaw], got shape {pose.shape}")
+
+
+def _blend_start_heading_world(
+    path_world: Sequence[WorldPoint], initial_heading_rad: float, window_m: float
+) -> List[WorldPoint]:
+    if len(path_world) < 2 or window_m <= 0.0:
+        return [(float(x), float(y)) for x, y in path_world]
+    xy = np.asarray(path_world, dtype=np.float64)
+    seg = np.linalg.norm(xy[1:] - xy[:-1], axis=1)
+    s = np.hstack(([0.0], np.cumsum(seg)))
+    start = xy[0].copy()
+    heading_dir = np.array(
+        [np.cos(initial_heading_rad), np.sin(initial_heading_rad)], dtype=np.float64
+    )
+    out = xy.copy()
+    for i in range(1, len(out)):
+        si = float(s[i])
+        if si >= window_m:
+            break
+        alpha = 1.0 - si / window_m
+        target = start + si * heading_dir
+        out[i] = alpha * target + (1.0 - alpha) * out[i]
+    return [(float(x), float(y)) for x, y in out]
 
 
 def apply_lander_keepout(
@@ -612,6 +646,7 @@ def plan_path_dem(
     use_theta_star: bool = True,
     do_smooth: bool = True,
     input_is_grid: bool = False,
+    initial_pose: Optional[np.ndarray] = None,
 ) -> Tuple[List[WorldPoint], float, Dict[str, Any]]:
     """Plan a path on DEM and return world waypoints, total cost, and debug maps."""
     cfg = DEMPlannerParams.from_any(params)
@@ -711,6 +746,10 @@ def plan_path_dem(
         }
         return [], float("inf"), debug
 
+    initial_yaw_rad: Optional[float] = None
+    if initial_pose is not None:
+        initial_yaw_rad = yaw_from_pose(initial_pose)
+
     if do_smooth:
         path_world = smooth_path(
             path_grid,
@@ -725,6 +764,12 @@ def plan_path_dem(
             spline_tension=cfg.spline_tension,
             seed=cfg.seed,
         )
+        if initial_yaw_rad is not None:
+            path_world = _blend_start_heading_world(
+                path_world=path_world,
+                initial_heading_rad=initial_yaw_rad,
+                window_m=cfg.initial_heading_window_m,
+            )
     else:
         path_world = [grid_to_world(x, y, cell_size, shape=z2d.shape) for x, y in path_grid]
 
@@ -743,6 +788,7 @@ def plan_path_dem(
             "goal_block_reasons": goal_reasons,
             "free_space_connected": True,
             "keepout_enabled": cfg.use_lander_keepout,
+            "initial_yaw_rad": initial_yaw_rad,
         },
     }
     return path_world, float(total_cost), debug

@@ -52,6 +52,8 @@ LANDER_GLOBAL = np.array(
 )
 
 ROVER_RADIUS = 0.75  # [m]
+WHEEL_CENTER_Z_OFFSET = 0.041  # [m] wheel center z offset w.r.t rover origin
+WHEEL_DIAMETER = 0.32  # [m]
 
 CELL_WIDTH = 0.15  # [m] width of each cell in the map
 MAP_EXTENT = 13.5  # [m] extent of the map in x and y directions

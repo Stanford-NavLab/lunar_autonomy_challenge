@@ -59,6 +59,8 @@ class PathSmootherConfig:
     terrain_speed_floor_frac: float = 0.15
     use_spline: bool = True
     spline_bc_type: str = "natural"
+    use_initial_heading: bool = True
+    initial_heading_window_m: float = 1.0
 
 
 def _box_mean(z: np.ndarray, window: int) -> np.ndarray:
@@ -130,6 +132,15 @@ def _bilinear_sample(grid: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarr
     )
 
 
+def _yaw_from_pose(initial_pose: np.ndarray) -> float:
+    pose = np.asarray(initial_pose)
+    if pose.shape == (4, 4):
+        return float(np.arctan2(pose[1, 0], pose[0, 0]))
+    if pose.ndim == 1 and pose.shape[0] >= 3:
+        return float(pose[2])
+    raise ValueError(f"initial_pose must be 4x4 or [x,y,yaw], got shape {pose.shape}")
+
+
 class PathSmoother:
     """Generate a smooth terrain-aware and dynamically feasible trajectory from a 2D path."""
 
@@ -184,6 +195,24 @@ class PathSmoother:
         kappa = (dx_ds * ddy_ds - dy_ds * ddx_ds) / denom
         return theta, kappa
 
+    def _blend_start_orientation(self, xy: np.ndarray, initial_yaw_rad: float) -> np.ndarray:
+        cfg = self.cfg
+        if len(xy) < 2 or cfg.initial_heading_window_m <= 0.0:
+            return xy
+        s = _arc_length(xy)
+        window = float(cfg.initial_heading_window_m)
+        start = xy[0].copy()
+        heading_dir = np.array([np.cos(initial_yaw_rad), np.sin(initial_yaw_rad)], dtype=np.float64)
+        out = xy.copy()
+        for i in range(1, len(out)):
+            si = float(s[i])
+            if si >= window:
+                break
+            alpha = 1.0 - si / window
+            target = start + si * heading_dir
+            out[i] = alpha * target + (1.0 - alpha) * out[i]
+        return out
+
     def _terrain_speed_limit(self, slope: np.ndarray, roughness: np.ndarray) -> np.ndarray:
         cfg = self.cfg
         slope_soft = np.clip(slope / max(cfg.slope_soft_max, 1e-6), 0.0, 1.0)
@@ -220,6 +249,7 @@ class PathSmoother:
         self,
         path: Path2D | np.ndarray | Sequence[Sequence[float]],
         heightmap: np.ndarray,
+        initial_pose: Optional[np.ndarray] = None,
     ) -> Trajectory2D:
         """Build smooth terrain-aware trajectory from an xy path and heightmap.
 
@@ -247,6 +277,9 @@ class PathSmoother:
             return Trajectory2D(t=t, xyt=xyt, v=np.zeros(1), w=np.zeros(1))
 
         xy = self._resample_xy(xy)
+        if initial_pose is not None and self.cfg.use_initial_heading:
+            initial_yaw_rad = _yaw_from_pose(initial_pose)
+            xy = self._blend_start_orientation(xy, initial_yaw_rad=initial_yaw_rad)
         theta, kappa = self._heading_curvature(xy)
 
         terrain = self.compute_terrain_maps(heightmap)
@@ -290,5 +323,6 @@ class PathSmoother:
         self,
         path: Path2D | np.ndarray | Sequence[Sequence[float]],
         heightmap: np.ndarray,
+        initial_pose: Optional[np.ndarray] = None,
     ) -> Trajectory2D:
-        return self.smooth(path, heightmap)
+        return self.smooth(path, heightmap, initial_pose=initial_pose)

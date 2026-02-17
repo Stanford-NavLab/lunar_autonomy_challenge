@@ -32,6 +32,7 @@ class TrajectoryTrackerConfig:
     k_heading: float = 1.8
     k_cross_track: float = 1.2
     k_goal_v: float = 0.8
+    min_tracking_speed: float = 0.05
 
     # Stop behavior at trajectory end
     stop_pos_tol: float = 0.20
@@ -55,12 +56,14 @@ class TrajectoryTracker:
         self._last_v_cmd = 0.0
         self._last_w_cmd = 0.0
         self._last_target_idx = 0
+        self._last_nearest_idx = 0
         self.last_debug: dict[str, Any] = {}
 
     def reset(self) -> None:
         self._last_v_cmd = 0.0
         self._last_w_cmd = 0.0
         self._last_target_idx = 0
+        self._last_nearest_idx = 0
         self.last_debug = {}
 
     def _extract_pose_xyyaw(self, pose: np.ndarray) -> tuple[float, float, float]:
@@ -125,10 +128,8 @@ class TrajectoryTracker:
         if current_time_s is not None:
             idx = int(np.clip(np.searchsorted(t_ref, current_time_s), 0, len(xy_ref) - 1))
         else:
-            start = int(np.clip(self._last_target_idx, 0, len(xy_ref) - 1))
-            local = xy_ref[start:]
-            nearest_local = int(np.argmin(np.linalg.norm(local - pos[None, :], axis=1)))
-            idx = start + nearest_local
+            # Find nearest point globally to avoid false "progress" when stuck or oscillating.
+            idx = int(np.argmin(np.linalg.norm(xy_ref - pos[None, :], axis=1)))
 
         v_ref = float(np.clip(v_ref_arr[idx], 0.0, self.cfg.max_v))
         lookahead = float(
@@ -145,6 +146,7 @@ class TrajectoryTracker:
             ds = float(np.linalg.norm(xy_ref[target_idx + 1] - xy_ref[target_idx]))
             accum += ds
             target_idx += 1
+        self._last_nearest_idx = idx
         self._last_target_idx = target_idx
 
         target_xy = xy_ref[target_idx]
@@ -170,7 +172,8 @@ class TrajectoryTracker:
             v_des = 0.0
             w_des = 0.0
         else:
-            v_des = min(v_ref * np.cos(heading_err), self.cfg.k_goal_v * max(dist_to_goal, 0.0))
+            v_ref_eff = max(v_ref, self.cfg.min_tracking_speed)
+            v_des = min(v_ref_eff * np.cos(heading_err), self.cfg.k_goal_v * max(dist_to_goal, 0.0))
             if not self.cfg.allow_reverse:
                 v_des = max(v_des, 0.0)
             w_ff = float(w_ref_arr[target_idx]) if target_idx < len(w_ref_arr) else 0.0
@@ -179,6 +182,8 @@ class TrajectoryTracker:
                 + self.cfg.k_heading * heading_path_err
                 + self.cfg.k_cross_track * cross_track_err
             )
+        if reached_goal:
+            v_ref_eff = 0.0
 
         v_des = float(
             np.clip(v_des, -self.cfg.max_v if self.cfg.allow_reverse else 0.0, self.cfg.max_v)
@@ -193,21 +198,36 @@ class TrajectoryTracker:
         )
         w_cmd = float(np.clip(w_cmd, -self.cfg.max_w, self.cfg.max_w))
 
+        v_prev_cmd = self._last_v_cmd
+        w_prev_cmd = self._last_w_cmd
         self._last_v_cmd = v_cmd
         self._last_w_cmd = w_cmd
         self.last_debug = {
+            "current_xy": np.array([x, y], dtype=np.float64),
+            "current_yaw_rad": yaw,
             "nearest_idx": idx,
             "target_idx": target_idx,
             "lookahead_m": lookahead,
+            "target_theta_rad": target_theta,
+            "goal_xy": goal_xy,
+            "goal_theta_rad": goal_theta,
+            "heading_to_target_rad": heading_to_target,
             "target_xy": target_xy,
             "dist_to_goal_m": dist_to_goal,
             "heading_err_rad": heading_err,
             "heading_path_err_rad": heading_path_err,
+            "heading_goal_err_rad": heading_goal_err,
             "cross_track_err_m": cross_track_err,
             "reached_goal": reached_goal,
+            "v_ref": v_ref,
+            "v_ref_eff": v_ref_eff,
+            "w_ref": float(w_ref_arr[target_idx]) if target_idx < len(w_ref_arr) else 0.0,
             "v_des": v_des,
             "w_des": w_des,
+            "v_prev_cmd": v_prev_cmd,
+            "w_prev_cmd": w_prev_cmd,
             "v_cmd": v_cmd,
             "w_cmd": w_cmd,
+            "dt_s": dt_s,
         }
         return v_cmd, w_cmd

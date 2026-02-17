@@ -162,6 +162,20 @@ class Rerun:
         )
 
     @staticmethod
+    def log_3d_mesh(mesh: rr.Mesh3D, topic: str = "/world/dem_mesh", static: bool = True) -> None:
+        rr.log(topic, mesh, static=static)
+
+    @staticmethod
+    def log_3d_line_strips(
+        lines: list[list[list[float]]],
+        topic: str = "/world/lines",
+        color: list[int] = [180, 180, 180],
+        radius: float = 0.005,
+        static: bool = True,
+    ) -> None:
+        rr.log(topic, rr.LineStrips3D(lines, colors=color, radii=radius), static=static)
+
+    @staticmethod
     def log_3d_semantic_points(semantic_points: SemanticPointCloud, downsample: int = 10) -> None:
         ground_points = semantic_points.points[
             semantic_points.labels == SemanticClasses.GROUND.value
@@ -282,3 +296,154 @@ class Rerun:
     @staticmethod
     def log_scalar(topic: str, value: float):
         rr.log(topic, rr.Scalar(value))
+
+
+def rerun_dem(
+    dem: np.ndarray,
+    x_grid: np.ndarray | None = None,
+    y_grid: np.ndarray | None = None,
+    crop_percentage: float = 1.0,
+    alpha: int = 70,
+):
+    """Create a Rerun mesh from a DEM.
+
+    Args:
+        dem:
+            - z grid with shape (H, W), or
+            - xyz map with shape (H, W, C>=3) where channels [0,1,2] are x,y,z.
+        x_grid: Optional x coordinates for each DEM cell (H,W) or (W,).
+        y_grid: Optional y coordinates for each DEM cell (H,W) or (H,).
+        crop_percentage: Percentage of the central area to use (0.0, 1.0].
+
+    Returns:
+        rr.Mesh3D object.
+    """
+    if not (0.0 < crop_percentage <= 1.0):
+        raise ValueError("crop_percentage must be in (0.0, 1.0].")
+
+    if dem.ndim == 3 and dem.shape[2] >= 3 and x_grid is None and y_grid is None:
+        x_full = dem[:, :, 0].astype(np.float32, copy=False)
+        y_full = dem[:, :, 1].astype(np.float32, copy=False)
+        z_full = dem[:, :, 2].astype(np.float32, copy=False)
+    elif dem.ndim == 2:
+        z_full = dem.astype(np.float32, copy=False)
+        h, w = z_full.shape
+        if x_grid is None:
+            x_full = np.tile(np.arange(w, dtype=np.float32)[None, :], (h, 1))
+        else:
+            x_arr = np.asarray(x_grid, dtype=np.float32)
+            if x_arr.ndim == 1:
+                if x_arr.shape[0] != w:
+                    raise ValueError("x_grid 1D length must match DEM width.")
+                x_full = np.tile(x_arr[None, :], (h, 1))
+            elif x_arr.ndim == 2 and x_arr.shape == z_full.shape:
+                x_full = x_arr
+            else:
+                raise ValueError("x_grid must be shape (W,) or (H,W).")
+        if y_grid is None:
+            y_full = np.tile(np.arange(h, dtype=np.float32)[:, None], (1, w))
+        else:
+            y_arr = np.asarray(y_grid, dtype=np.float32)
+            if y_arr.ndim == 1:
+                if y_arr.shape[0] != h:
+                    raise ValueError("y_grid 1D length must match DEM height.")
+                y_full = np.tile(y_arr[:, None], (1, w))
+            elif y_arr.ndim == 2 and y_arr.shape == z_full.shape:
+                y_full = y_arr
+            else:
+                raise ValueError("y_grid must be shape (H,) or (H,W).")
+    else:
+        raise ValueError("dem must be shape (H,W) z-grid or (H,W,C>=3) xyz map.")
+
+    h, w = z_full.shape
+    crop_h = max(2, int(round(h * crop_percentage)))
+    crop_w = max(2, int(round(w * crop_percentage)))
+    y0 = max(0, (h - crop_h) // 2)
+    x0 = max(0, (w - crop_w) // 2)
+    y1 = min(h, y0 + crop_h)
+    x1 = min(w, x0 + crop_w)
+
+    x_crop = x_full[y0:y1, x0:x1]
+    y_crop = y_full[y0:y1, x0:x1]
+    z_crop = z_full[y0:y1, x0:x1]
+    h_crop, w_crop = z_crop.shape
+
+    vertices = np.column_stack([x_crop.reshape(-1), y_crop.reshape(-1), z_crop.reshape(-1)])
+
+    indices = []
+    for i in range(h_crop - 1):
+        for j in range(w_crop - 1):
+            # The flat index of the top-left corner (i, j)
+            k_tl = i * w_crop + j
+            k_tr = i * w_crop + j + 1
+            k_bl = (i + 1) * w_crop + j
+            k_br = (i + 1) * w_crop + j + 1
+
+            # Triangle 1: (Top-Left, Bottom-Left, Bottom-Right)
+            indices.append(k_tl)
+            indices.append(k_bl)
+            indices.append(k_br)
+
+            # Triangle 2: (Top-Left, Bottom-Right, Top-Right)
+            indices.append(k_tl)
+            indices.append(k_br)
+            indices.append(k_tr)
+
+    indices_array = np.array(indices, dtype=np.uint32)
+
+    alpha_u8 = int(np.clip(alpha, 0, 255))
+    return rr.Mesh3D(
+        vertex_positions=vertices,
+        triangle_indices=indices_array,
+        albedo_factor=rr.AlbedoFactor([120, 120, 120, alpha_u8]),
+    )
+
+
+def rerun_dem_grid_lines(
+    dem: np.ndarray,
+    x_grid: np.ndarray | None = None,
+    y_grid: np.ndarray | None = None,
+    crop_percentage: float = 1.0,
+    stride: int = 8,
+) -> list[list[list[float]]]:
+    """Create row/column wireframe lines over DEM surface."""
+    if dem.ndim == 3 and dem.shape[2] >= 3 and x_grid is None and y_grid is None:
+        x_full = dem[:, :, 0].astype(np.float32, copy=False)
+        y_full = dem[:, :, 1].astype(np.float32, copy=False)
+        z_full = dem[:, :, 2].astype(np.float32, copy=False)
+    elif dem.ndim == 2:
+        z_full = dem.astype(np.float32, copy=False)
+        h, w = z_full.shape
+        if x_grid is None:
+            x_full = np.tile(np.arange(w, dtype=np.float32)[None, :], (h, 1))
+        else:
+            x_arr = np.asarray(x_grid, dtype=np.float32)
+            x_full = np.tile(x_arr[None, :], (h, 1)) if x_arr.ndim == 1 else x_arr
+        if y_grid is None:
+            y_full = np.tile(np.arange(h, dtype=np.float32)[:, None], (1, w))
+        else:
+            y_arr = np.asarray(y_grid, dtype=np.float32)
+            y_full = np.tile(y_arr[:, None], (1, w)) if y_arr.ndim == 1 else y_arr
+    else:
+        raise ValueError("dem must be shape (H,W) z-grid or (H,W,C>=3) xyz map.")
+
+    h, w = z_full.shape
+    crop_h = max(2, int(round(h * crop_percentage)))
+    crop_w = max(2, int(round(w * crop_percentage)))
+    y0 = max(0, (h - crop_h) // 2)
+    x0 = max(0, (w - crop_w) // 2)
+    y1 = min(h, y0 + crop_h)
+    x1 = min(w, x0 + crop_w)
+    x_crop = x_full[y0:y1, x0:x1]
+    y_crop = y_full[y0:y1, x0:x1]
+    z_crop = z_full[y0:y1, x0:x1]
+
+    step = max(1, int(stride))
+    lines: list[list[list[float]]] = []
+    for i in range(0, z_crop.shape[0], step):
+        pts = np.column_stack([x_crop[i, :], y_crop[i, :], z_crop[i, :]])
+        lines.append(pts.tolist())
+    for j in range(0, z_crop.shape[1], step):
+        pts = np.column_stack([x_crop[:, j], y_crop[:, j], z_crop[:, j]])
+        lines.append(pts.tolist())
+    return lines
