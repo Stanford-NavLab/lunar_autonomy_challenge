@@ -840,7 +840,7 @@ def plot_loop_closures(trajectory, loop_closures: list, fig=None, **kwargs):
 
 
 def plot_lander_2d(fig=None, color="gold"):
-    """Plot the lander as a 3x3 box in 2D."""
+    """Plot the lander as a box in 2D."""
     if fig is None:
         fig = go.Figure()
     fig.add_shape(
@@ -851,6 +851,12 @@ def plot_lander_2d(fig=None, color="gold"):
         y1=LANDER_WIDTH / 2,
         fillcolor=color,
         line=dict(color="darkgoldenrod", width=2),
+    )
+    fig.update_layout(
+        width=900,
+        height=900,
+        xaxis=dict(range=[-MAP_EXTENT, MAP_EXTENT]),
+        yaxis=dict(range=[-MAP_EXTENT, MAP_EXTENT]),
     )
     return fig
 

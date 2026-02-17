@@ -27,6 +27,13 @@
         "width": 1280,
         "height": 720,
         "semantic": "True"
+      },
+      "Right": {
+        "active": "True",
+        "light": 1.0,
+        "width": 1280,
+        "height": 720,
+        "semantic": "True"
       }
     }
   }

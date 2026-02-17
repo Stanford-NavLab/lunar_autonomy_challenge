@@ -32,7 +32,9 @@ TURN_RATE = 0.3
 
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
 
-MODE = "waypoint"  # {"teleop", "waypoint", "dynamics"}
+USE_FIDUCIALS = True
+
+MODE = "teleop"  # {"teleop", "waypoint", "dynamics"}
 DISPLAY_IMAGES = True  # Set to False to disable image display
 
 PRESET = os.environ.get("MISSIONS_SUBSET")
@@ -80,6 +82,7 @@ class DataCollectionAgent(AutonomousAgent):
             if isinstance(cam_config.get("semantic"), str):
                 cam_config["semantic"] = cam_config["semantic"].lower() == "true"
             self.cameras[cam] = cam_config
+        self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
         agent_name = get_entry_point()
 
@@ -100,7 +103,7 @@ class DataCollectionAgent(AutonomousAgent):
         self.mission_complete()
 
     def use_fiducials(self):
-        return False
+        return USE_FIDUCIALS
 
     def sensors(self):
         """In the sensors method, we define the desired resolution of our cameras (remember that the maximum resolution available is 2448 x 2048)
@@ -130,13 +133,16 @@ class DataCollectionAgent(AutonomousAgent):
             self.initialize()
         self.step += 1  # Starts at 0 at init, equal to 1 on the first run_step call
         print("\nStep: ", self.step)
+        print("Current power: ", self.get_current_power())
+        print("Radiator cover angle: ", self.get_radiator_cover_angle())
 
         if self.image_available():
             self.data_logger.log_images(self.step, input_data)
             if DISPLAY_IMAGES:
-                FL_gray = input_data["Grayscale"][carla.SensorPosition.FrontLeft]
-                cv.imshow("Front left", FL_gray)
-                cv.waitKey(1)
+                for cam in self.active_cameras:
+                    gray = input_data["Grayscale"][getattr(carla.SensorPosition, cam)]
+                    cv.imshow(cam, gray)
+                    cv.waitKey(1)
 
         if MODE == "teleop":
             control = carla.VehicleVelocityControl(self.current_v, self.current_w)
@@ -191,6 +197,11 @@ class DataCollectionAgent(AutonomousAgent):
             self.current_w = TURN_RATE
         if key == keyboard.Key.right:
             self.current_w = -TURN_RATE
+
+        if key == keyboard.Key.f1:
+            self.set_radiator_cover_state(carla.RadiatorCoverState.Open)
+        if key == keyboard.Key.f2:
+            self.set_radiator_cover_state(carla.RadiatorCoverState.Close)
 
     def on_release(self, key):
         """This method sets the angular or linear velocity to zero when the arrow key is released. Stopping the robot."""
