@@ -99,7 +99,7 @@ def overlay_tracked_points(image: np.ndarray, tracks: TrackedPoints):
     return overlay
 
 
-def overlay_tag_detections(image_gray, detections):
+def overlay_tag_detections(image_gray, detections, size=5):
     """
     image_gray : np.ndarray (H, W) - grayscale image
     detections : list of apriltag.Detection - AprilTag detections
@@ -108,7 +108,7 @@ def overlay_tag_detections(image_gray, detections):
     overlay = image_rgb.copy()
     for detection in detections:
         for pt in detection.corners:
-            cv2.circle(overlay, tuple(pt.astype(int)), 5, (0, 255, 0), -1)
+            cv2.circle(overlay, tuple(pt.astype(int)), size, (0, 255, 0), -1)
     return overlay
 
 

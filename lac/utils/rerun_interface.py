@@ -502,3 +502,61 @@ def rerun_lander(
         triangle_indices=triangle_indices,
         albedo_factor=rr.AlbedoFactor([255, 215, 0, alpha_u8]),
     )
+
+
+def rerun_box_mesh(
+    center_xyz: tuple[float, float, float],
+    size_xyz: tuple[float, float, float],
+    yaw_rad: float = 0.0,
+    rgba: tuple[int, int, int, int] = (0, 255, 0, 160),
+) -> rr.Mesh3D:
+    """Create a yaw-rotated axis-aligned box mesh in world frame."""
+    cx, cy, cz = float(center_xyz[0]), float(center_xyz[1]), float(center_xyz[2])
+    sx, sy, sz = float(size_xyz[0]), float(size_xyz[1]), float(size_xyz[2])
+    hx, hy, hz = 0.5 * sx, 0.5 * sy, 0.5 * sz
+
+    local = np.array(
+        [
+            [-hx, -hy, -hz],
+            [hx, -hy, -hz],
+            [hx, hy, -hz],
+            [-hx, hy, -hz],
+            [-hx, -hy, hz],
+            [hx, -hy, hz],
+            [hx, hy, hz],
+            [-hx, hy, hz],
+        ],
+        dtype=np.float32,
+    )
+
+    c, s = np.cos(float(yaw_rad)), np.sin(float(yaw_rad))
+    Rz = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32)
+    vertices = (local @ Rz.T) + np.array([cx, cy, cz], dtype=np.float32)
+
+    triangle_indices = np.array(
+        [
+            [0, 2, 1],
+            [0, 3, 2],
+            [4, 5, 6],
+            [4, 6, 7],
+            [0, 1, 5],
+            [0, 5, 4],
+            [1, 2, 6],
+            [1, 6, 5],
+            [2, 3, 7],
+            [2, 7, 6],
+            [3, 0, 4],
+            [3, 4, 7],
+        ],
+        dtype=np.uint32,
+    )
+
+    r = int(np.clip(rgba[0], 0, 255))
+    g = int(np.clip(rgba[1], 0, 255))
+    b = int(np.clip(rgba[2], 0, 255))
+    a = int(np.clip(rgba[3], 0, 255))
+    return rr.Mesh3D(
+        vertex_positions=vertices,
+        triangle_indices=triangle_indices,
+        albedo_factor=rr.AlbedoFactor([r, g, b, a]),
+    )

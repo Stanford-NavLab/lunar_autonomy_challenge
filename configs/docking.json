@@ -1,0 +1,72 @@
+{
+  "navigation": {
+    "goal_xy_m": [0.0, 2.5],
+    "goal_yaw_rad": -1.5707963267948966,
+    "arm_raise_wait_frames": 80,
+    "approach_handoff_idx_buffer": 2,
+    "approach_handoff_timeout_steps": 60,
+    "approach_handoff_fiducial_dist_m": 1.0
+  },
+  "dem": {
+    "map_path": "/home/shared/data_raw/Lunar/LAC/maps/competition/Moon_Map_01_preset_0.dat",
+    "swap_xy": true
+  },
+  "planner": {
+    "use_heading_aware_planner": true,
+    "lander_buffer_m": 0.5,
+    "smoother_ds": 0.12,
+    "v_nominal": 0.2,
+    "v_max": 0.6,
+    "smoother_max_omega": 0.45,
+    "smoother_max_lat_acc": 0.4,
+    "tracker_max_w": 0.45,
+    "tracker_stop_pos_tol": 0.2,
+    "tracker_stop_heading_tol": 0.25
+  },
+  "visualization": {
+    "rerun_enabled": true
+  },
+  "perception": {
+    "docking_estimate_hold_steps": 10
+  },
+  "docking": {
+    "mode": "front_virtual",
+    "debug_print_every_steps": 1,
+    "debug_rerun_scalars": true,
+    "debug_log": {
+      "enabled": true,
+      "path": "logs/docking_debug_{timestamp}.jsonl",
+      "flush_every": 1
+    },
+    "target": {
+      "target_point_lander_m": [0.0, 2.0, 0.0],
+      "tag_point_lander_m": [0.0, 0.662, 0.325],
+      "tag_yaw_lander_rad": 0.0,
+      "target_yaw_lander_rad": 0.0,
+      "psi_des_rad": 0.0
+    },
+    "settle_steps": 20,
+    "settle_on_reacquire": false,
+    "search_point_k_w": 1.2,
+    "search_point_max_w": 0.5,
+    "controller": {
+      "max_v": 0.18,
+      "max_w": 0.5,
+      "yaw_cmd_sign": -1.0,
+      "max_w_yaw_align": 0.2,
+      "max_w_depth_correction": 0.15,
+      "k_w_rot": 1.2,
+      "k_v_x": 0.35,
+      "k_w_y": 0.6,
+      "trim_nudge_v": 0.06,
+      "trim_nudge_period_steps": 10,
+      "allow_reverse": true
+    },
+    "success": {
+      "position_tol_xy_m": 0.5,
+      "angle_tol_deg": 30.0,
+      "hold_frames": 8,
+      "require_power_recovery": false
+    }
+  }
+}
