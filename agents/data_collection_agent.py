@@ -74,8 +74,8 @@ class DataCollectionAgent(AutonomousAgent):
 
         # Camera config
         self.cameras = params.CAMERA_CONFIG_INIT
-        for cam in self.config["data_collection"]["cameras"]:
-            cam_config = self.config["data_collection"]["cameras"][cam].copy()
+        for cam in self.config["cameras"]:
+            cam_config = self.config["cameras"][cam].copy()
             # Convert string "True"/"False" to boolean
             if isinstance(cam_config.get("active"), str):
                 cam_config["active"] = cam_config["active"].lower() == "true"
@@ -135,6 +135,7 @@ class DataCollectionAgent(AutonomousAgent):
         print("\nStep: ", self.step)
         print("Current power: ", self.get_current_power())
         print("Radiator cover angle: ", self.get_radiator_cover_angle())
+        print("Current pose: ", self.get_transform())
 
         if self.image_available():
             self.data_logger.log_images(self.step, input_data)

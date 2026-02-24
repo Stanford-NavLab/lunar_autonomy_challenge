@@ -10,6 +10,7 @@ import rerun as rr
 import rerun.blueprint as rrb
 import math as math
 
+import lac.params as params
 from lac.perception.segmentation import SemanticClasses
 from lac.slam.backend import SemanticPointCloud
 
@@ -447,3 +448,57 @@ def rerun_dem_grid_lines(
         pts = np.column_stack([x_crop[:, j], y_crop[:, j], z_crop[:, j]])
         lines.append(pts.tolist())
     return lines
+
+
+def rerun_lander(
+    center_xy: tuple[float, float] = (0.0, 0.0),
+    base_z: float = 0.0,
+    side_length_m: float | None = None,
+    alpha: int = 255,
+) -> rr.Mesh3D:
+    """Create a simple lander mesh as a gold 3D box."""
+    side = float(params.LANDER_WIDTH if side_length_m is None else side_length_m)
+    cx, cy = float(center_xy[0]), float(center_xy[1])
+    half = 0.5 * side
+    z0 = float(base_z)
+    z1 = z0 + side
+
+    vertices = np.array(
+        [
+            [cx - half, cy - half, z0],  # 0
+            [cx + half, cy - half, z0],  # 1
+            [cx + half, cy + half, z0],  # 2
+            [cx - half, cy + half, z0],  # 3
+            [cx - half, cy - half, z1],  # 4
+            [cx + half, cy - half, z1],  # 5
+            [cx + half, cy + half, z1],  # 6
+            [cx - half, cy + half, z1],  # 7
+        ],
+        dtype=np.float32,
+    )
+
+    # 12 triangles (2 per face), counter-clockwise winding when viewed from outside.
+    triangle_indices = np.array(
+        [
+            [0, 2, 1],
+            [0, 3, 2],  # bottom
+            [4, 5, 6],
+            [4, 6, 7],  # top
+            [0, 1, 5],
+            [0, 5, 4],  # -y face
+            [1, 2, 6],
+            [1, 6, 5],  # +x face
+            [2, 3, 7],
+            [2, 7, 6],  # +y face
+            [3, 0, 4],
+            [3, 4, 7],  # -x face
+        ],
+        dtype=np.uint32,
+    )
+
+    alpha_u8 = int(np.clip(alpha, 0, 255))
+    return rr.Mesh3D(
+        vertex_positions=vertices,
+        triangle_indices=triangle_indices,
+        albedo_factor=rr.AlbedoFactor([255, 215, 0, alpha_u8]),
+    )

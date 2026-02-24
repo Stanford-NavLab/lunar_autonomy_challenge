@@ -61,6 +61,8 @@ class PathSmootherConfig:
     spline_bc_type: str = "natural"
     use_initial_heading: bool = True
     initial_heading_window_m: float = 1.0
+    use_goal_heading: bool = True
+    goal_heading_window_m: float = 1.0
 
 
 def _box_mean(z: np.ndarray, window: int) -> np.ndarray:
@@ -213,6 +215,27 @@ class PathSmoother:
             out[i] = alpha * target + (1.0 - alpha) * out[i]
         return out
 
+    def _blend_end_orientation(self, xy: np.ndarray, goal_yaw_rad: float) -> np.ndarray:
+        cfg = self.cfg
+        if len(xy) < 2 or cfg.goal_heading_window_m <= 0.0:
+            return xy
+        s = _arc_length(xy)
+        total_len = float(s[-1])
+        if total_len <= 1e-9:
+            return xy
+        window = float(cfg.goal_heading_window_m)
+        end = xy[-1].copy()
+        heading_dir = np.array([np.cos(goal_yaw_rad), np.sin(goal_yaw_rad)], dtype=np.float64)
+        out = xy.copy()
+        for i in range(len(out) - 2, -1, -1):
+            d_end = total_len - float(s[i])
+            if d_end >= window:
+                break
+            alpha = 1.0 - d_end / window
+            target = end - d_end * heading_dir
+            out[i] = alpha * target + (1.0 - alpha) * out[i]
+        return out
+
     def _terrain_speed_limit(self, slope: np.ndarray, roughness: np.ndarray) -> np.ndarray:
         cfg = self.cfg
         slope_soft = np.clip(slope / max(cfg.slope_soft_max, 1e-6), 0.0, 1.0)
@@ -250,6 +273,7 @@ class PathSmoother:
         path: Path2D | np.ndarray | Sequence[Sequence[float]],
         heightmap: np.ndarray,
         initial_pose: Optional[np.ndarray] = None,
+        goal_yaw_rad: Optional[float] = None,
     ) -> Trajectory2D:
         """Build smooth terrain-aware trajectory from an xy path and heightmap.
 
@@ -280,11 +304,16 @@ class PathSmoother:
         if initial_pose is not None and self.cfg.use_initial_heading:
             initial_yaw_rad = _yaw_from_pose(initial_pose)
             xy = self._blend_start_orientation(xy, initial_yaw_rad=initial_yaw_rad)
+        if goal_yaw_rad is not None and self.cfg.use_goal_heading:
+            xy = self._blend_end_orientation(xy, goal_yaw_rad=float(goal_yaw_rad))
         theta, kappa = self._heading_curvature(xy)
 
         terrain = self.compute_terrain_maps(heightmap)
-        xg = xy[:, 0] / self.cfg.cell_size
-        yg = xy[:, 1] / self.cfg.cell_size
+        h, w = terrain["z"].shape
+        # Convert world coordinates to DEM grid coordinates in the same
+        # cell-centered frame used by dem_planner.world_to_grid.
+        xg = xy[:, 0] / self.cfg.cell_size + (w - 1) / 2.0
+        yg = xy[:, 1] / self.cfg.cell_size + (h - 1) / 2.0
         slope_s = _bilinear_sample(terrain["slope"], xg, yg)
         rough_s = _bilinear_sample(terrain["roughness"], xg, yg)
 
@@ -324,5 +353,6 @@ class PathSmoother:
         path: Path2D | np.ndarray | Sequence[Sequence[float]],
         heightmap: np.ndarray,
         initial_pose: Optional[np.ndarray] = None,
+        goal_yaw_rad: Optional[float] = None,
     ) -> Trajectory2D:
-        return self.smooth(path, heightmap, initial_pose=initial_pose)
+        return self.smooth(path, heightmap, initial_pose=initial_pose, goal_yaw_rad=goal_yaw_rad)

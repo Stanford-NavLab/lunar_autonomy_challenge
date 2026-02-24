@@ -21,17 +21,20 @@ from rich import print
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.control.controller import TrajectoryTracker, TrajectoryTrackerConfig
-from lac.planning.dem_planner import DEMPlannerParams, plan_path_dem, world_to_grid
+from lac.planning.dem_grid import DEMGrid
+from lac.planning.dem_planner import DEMPlannerParams, plan_path_dem, yaw_from_pose
+from lac.planning.heading_aware_planner import HeadingAwarePlanner, HeadingAwarePlannerParams
 from lac.planning.path_smoother import Path2D, PathSmoother, PathSmootherConfig, Trajectory2D
 from lac.utils.data_logger import DataLogger
-from lac.utils.rerun_interface import Rerun, rerun_dem, rerun_dem_grid_lines
+from lac.utils.rerun_interface import Rerun, rerun_dem, rerun_dem_grid_lines, rerun_lander
 from lac.util import transform_to_numpy
 import lac.params as params
 
 
 # ----------------------------- User constants ----------------------------- #
 # Start is taken from the agent's actual initial pose at runtime.
-GOAL_XY_M = (12.0, 12.0)
+GOAL_XY_M = (0.0, 2.0)
+GOAL_YAW_RAD = 0.0
 
 # Ground-truth DEM map path used by the planner.
 DEM_MAP_PATH = "/home/shared/data_raw/Lunar/LAC/maps/competition/Moon_Map_01_preset_0.dat"
@@ -40,6 +43,8 @@ DEM_MAP_PATH = "/home/shared/data_raw/Lunar/LAC/maps/competition/Moon_Map_01_pre
 ARM_RAISE_WAIT_FRAMES = 80
 RERUN_ENABLED = True
 LOG_DATA = True
+USE_HEADING_AWARE_PLANNER = True
+DEM_SWAP_XY = True
 
 
 def get_entry_point():
@@ -71,17 +76,20 @@ class PathTrackingAgent(AutonomousAgent):
         self.start_xy_m = (float(self.initial_pose[0, 3]), float(self.initial_pose[1, 3]))
 
         self.cameras = params.CAMERA_CONFIG_INIT
-        self.cameras["Front"] = {
-            "active": True,
-            "light": 1.0,
-            "width": 1280,
-            "height": 720,
-            "semantic": False,
-        }
+        for cam in self.config["cameras"]:
+            cam_config = self.config["cameras"][cam].copy()
+            # Convert string "True"/"False" to boolean
+            if isinstance(cam_config.get("active"), str):
+                cam_config["active"] = cam_config["active"].lower() == "true"
+            if isinstance(cam_config.get("semantic"), str):
+                cam_config["semantic"] = cam_config["semantic"].lower() == "true"
+            self.cameras[cam] = cam_config
+        self.active_cameras = [cam for cam, config in self.cameras.items() if config["active"]]
 
         map_arr = np.load(DEM_MAP_PATH, allow_pickle=True)
-        self.dem_map_xyz = map_arr[:, :, :3].astype(np.float32)
-        self.dem_z = map_arr[:, :, 2].astype(np.float32)
+        self.dem = DEMGrid.from_map_array(map_arr, cell_size=params.CELL_WIDTH, swap_xy=DEM_SWAP_XY)
+        self.dem_z = self.dem.z
+        self.dem_x_grid, self.dem_y_grid = self.dem.mesh_grids()
 
         planner_cfg = DEMPlannerParams(
             roughness_window=5,
@@ -94,24 +102,10 @@ class PathTrackingAgent(AutonomousAgent):
             hard_slope_max=0.9,
             hard_step_max=0.22,
             use_lander_keepout=True,
-            lander_buffer_m=1.0,
+            lander_buffer_m=0.1,
             lander_center_xy_m=(0.0, 0.0),
             do_spline=True,
         )
-
-        self.path_world, self.path_cost, self.path_debug = plan_path_dem(
-            self.dem_z,
-            cell_size=params.CELL_WIDTH,
-            start_xy=self.start_xy_m,
-            goal_xy=GOAL_XY_M,
-            params=planner_cfg,
-            use_theta_star=True,
-            do_smooth=True,
-            input_is_grid=False,
-            initial_pose=self.initial_pose,
-        )
-        if len(self.path_world) == 0:
-            raise RuntimeError("DEM planner failed to generate a path.")
 
         smoother_cfg = PathSmootherConfig(
             cell_size=params.CELL_WIDTH,
@@ -120,12 +114,47 @@ class PathTrackingAgent(AutonomousAgent):
             v_max=0.6,
             max_omega=params.MAX_STEER,
         )
-        smoother = PathSmoother(smoother_cfg)
-        self.trajectory: Trajectory2D = smoother.smooth(
-            Path2D(xy=np.asarray(self.path_world), meta=self.path_debug),
-            self.dem_z,
-            initial_pose=self.initial_pose,
-        )
+
+        if USE_HEADING_AWARE_PLANNER:
+            heading_planner = HeadingAwarePlanner(
+                HeadingAwarePlannerParams(
+                    dem_params=planner_cfg,
+                    smoother_config=smoother_cfg,
+                )
+            )
+            heading_result = heading_planner.plan(
+                self.dem_z,
+                start_xy=self.start_xy_m,
+                start_yaw_rad=yaw_from_pose(self.initial_pose),
+                goal_xy=GOAL_XY_M,
+                goal_yaw_rad=GOAL_YAW_RAD,
+                cell_size=params.CELL_WIDTH,
+            )
+            self.path_world = heading_result.path_xy
+            self.path_cost = heading_result.total_cost
+            self.path_debug = heading_result.debug
+            self.trajectory = heading_result.trajectory
+        else:
+            self.path_world, self.path_cost, self.path_debug = plan_path_dem(
+                self.dem_z,
+                cell_size=params.CELL_WIDTH,
+                start_xy=self.start_xy_m,
+                goal_xy=GOAL_XY_M,
+                params=planner_cfg,
+                use_theta_star=True,
+                do_smooth=True,
+                input_is_grid=False,
+                initial_pose=self.initial_pose,
+            )
+            if len(self.path_world) == 0:
+                raise RuntimeError("DEM planner failed to generate a path.")
+            smoother = PathSmoother(smoother_cfg)
+            self.trajectory: Trajectory2D = smoother.smooth(
+                Path2D(xy=np.asarray(self.path_world), meta=self.path_debug),
+                self.dem_z,
+                initial_pose=self.initial_pose,
+                goal_yaw_rad=GOAL_YAW_RAD,
+            )
 
         tracker_cfg = TrajectoryTrackerConfig(
             target_speed=params.TARGET_SPEED,
@@ -177,6 +206,8 @@ class PathTrackingAgent(AutonomousAgent):
             self.data_logger.data["path_planning"] = {
                 "start_world_xy": list(self.start_xy_m),
                 "goal_world_xy": list(GOAL_XY_M),
+                "goal_yaw_rad": float(GOAL_YAW_RAD),
+                "heading_aware_planner": bool(USE_HEADING_AWARE_PLANNER),
                 "start_grid": list(self.path_debug.get("start_grid", (-1, -1))),
                 "goal_grid": list(self.path_debug.get("goal_grid", (-1, -1))),
                 "total_cost": float(self.path_cost),
@@ -187,15 +218,17 @@ class PathTrackingAgent(AutonomousAgent):
                 Rerun.init3d(img_compress=True)
                 dem_mesh = rerun_dem(
                     self.dem_z,
-                    x_grid=self.dem_map_xyz[:, :, 0],
-                    y_grid=self.dem_map_xyz[:, :, 1],
+                    x_grid=self.dem_x_grid,
+                    y_grid=self.dem_y_grid,
                     alpha=60,
                 )
                 Rerun.log_3d_mesh(dem_mesh, topic="/world/dem_mesh", static=True)
+                lander_mesh = rerun_lander()
+                Rerun.log_3d_mesh(lander_mesh, topic="/world/lander_mesh", static=True)
                 dem_lines = rerun_dem_grid_lines(
                     self.dem_z,
-                    x_grid=self.dem_map_xyz[:, :, 0],
-                    y_grid=self.dem_map_xyz[:, :, 1],
+                    x_grid=self.dem_x_grid,
+                    y_grid=self.dem_y_grid,
                     stride=10,
                 )
                 Rerun.log_3d_line_strips(
@@ -236,20 +269,7 @@ class PathTrackingAgent(AutonomousAgent):
 
     def _xy_to_xyz(self, xy: np.ndarray, z_offset_m: float = 0.0) -> np.ndarray:
         """Lift world xy path to xyz using DEM height lookups."""
-        if xy.size == 0:
-            return np.zeros((0, 3), dtype=np.float64)
-        h, w = self.dem_z.shape
-        xyz = np.zeros((len(xy), 3), dtype=np.float64)
-        for i, (x_m, y_m) in enumerate(xy):
-            gx, gy = world_to_grid(
-                float(x_m), float(y_m), params.CELL_WIDTH, shape=self.dem_z.shape
-            )
-            gx = int(np.clip(gx, 0, w - 1))
-            gy = int(np.clip(gy, 0, h - 1))
-            xyz[i, 0] = float(x_m)
-            xyz[i, 1] = float(y_m)
-            xyz[i, 2] = float(self.dem_z[gy, gx]) + float(z_offset_m)
-        return xyz
+        return self.dem.lift_xy_to_xyz(xy, z_offset_m=z_offset_m)
 
     def handle_interrupt(self, signal_received, frame):
         print("\nCtrl+C detected! Exiting mission")
@@ -314,7 +334,7 @@ class PathTrackingAgent(AutonomousAgent):
         dist_to_goal = float(dbg.get("dist_to_goal_m", 0.0))
         print(
             f"[blue]Tracking step={self.step} | progress={progress_pct:5.1f}% "
-            f"(nearest {nearest_idx}, target {target_idx}, N={len(self.trajectory.t)-1}) | "
+            f"(nearest {nearest_idx}, target {target_idx}, N={len(self.trajectory.t) - 1}) | "
             f"dist_to_goal={dist_to_goal:.2f} m | v={self.current_v:.3f} m/s | w={self.current_w:.3f} rad/s"
         )
         print(

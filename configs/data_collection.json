@@ -12,29 +12,27 @@
   "control": {
     "kp_linear": 1.0
   },
-  "data_collection": {
-    "cameras": {
-      "FrontLeft": {
-        "active": "True",
-        "light": 1.0,
-        "width": 1280,
-        "height": 720,
-        "semantic": "True"
-      },
-      "FrontRight": {
-        "active": "True",
-        "light": 1.0,
-        "width": 1280,
-        "height": 720,
-        "semantic": "True"
-      },
-      "Right": {
-        "active": "True",
-        "light": 1.0,
-        "width": 1280,
-        "height": 720,
-        "semantic": "True"
-      }
+  "cameras": {
+    "FrontLeft": {
+      "active": "True",
+      "light": 1.0,
+      "width": 1280,
+      "height": 720,
+      "semantic": "True"
+    },
+    "FrontRight": {
+      "active": "True",
+      "light": 1.0,
+      "width": 1280,
+      "height": 720,
+      "semantic": "True"
+    },
+    "Right": {
+      "active": "True",
+      "light": 1.0,
+      "width": 1280,
+      "height": 720,
+      "semantic": "True"
     }
   }
 }

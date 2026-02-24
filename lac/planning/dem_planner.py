@@ -133,8 +133,10 @@ def world_to_grid(
         iy = int(round(y_m / cell_size))
     else:
         h, w = shape
-        ix = int(round(x_m / cell_size + w / 2.0))
-        iy = int(round(y_m / cell_size + h / 2.0))
+        # DEM coordinates are cell-centered, so map index 0 corresponds to
+        # world coordinate -((size-1)/2)*cell_size.
+        ix = int(round(x_m / cell_size + (w - 1) / 2.0))
+        iy = int(round(y_m / cell_size + (h - 1) / 2.0))
     return ix, iy
 
 
@@ -152,7 +154,9 @@ def grid_to_world(
     if shape is None:
         return ix * cell_size, iy * cell_size
     h, w = shape
-    return (ix - w / 2.0) * cell_size, (iy - h / 2.0) * cell_size
+    # DEM coordinates are cell-centered, so map index 0 corresponds to
+    # world coordinate -((size-1)/2)*cell_size.
+    return (ix - (w - 1) / 2.0) * cell_size, (iy - (h - 1) / 2.0) * cell_size
 
 
 def clamp_grid(p: GridPoint, width: int, height: int) -> GridPoint:
@@ -234,8 +238,8 @@ def lander_keepout_mask(
     y_max = float(np.max(lander_xy[:, 1])) + buffer_m
 
     cx, cy = lander_center_xy_m
-    x_coords = (np.arange(shape[1], dtype=np.float32) - shape[1] / 2.0) * float(cell_size)
-    y_coords = (np.arange(shape[0], dtype=np.float32) - shape[0] / 2.0) * float(cell_size)
+    x_coords = (np.arange(shape[1], dtype=np.float32) - (shape[1] - 1) / 2.0) * float(cell_size)
+    y_coords = (np.arange(shape[0], dtype=np.float32) - (shape[0] - 1) / 2.0) * float(cell_size)
     x_world = x_coords[None, :] - float(cx)
     y_world = y_coords[:, None] - float(cy)
     return (x_world >= x_min) & (x_world <= x_max) & (y_world >= y_min) & (y_world <= y_max)
