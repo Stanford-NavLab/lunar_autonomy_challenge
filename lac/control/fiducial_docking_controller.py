@@ -11,6 +11,11 @@ from typing import Any
 
 import numpy as np
 
+from lac.control.lateral_drift_compensator import (
+    LateralDriftCompensator,
+    LateralDriftCompensatorConfig,
+)
+
 
 def wrap_angle(a: float) -> float:
     return float((a + np.pi) % (2.0 * np.pi) - np.pi)
@@ -58,6 +63,9 @@ class FiducialDockingConfig:
     n_detect: int = 2
     n_gate: int = 3
     alpha_gate: float = np.deg2rad(8.0)
+    # Optional override to enter approach when close even if alpha gate is not met.
+    # Set <= 0 to disable override and enforce strict rotate gating.
+    early_approach_rho_override_m: float = 0.0
     rho_final: float = 0.8
     y_final: float = 0.25
 
@@ -70,6 +78,7 @@ class FiducialDockingConfig:
     v_max_far: float = 0.20
     v_final_max: float = 0.08
     w_max: float = 0.50
+    max_w_approach: float = 0.30
     w_final_max: float = 0.20
     w_search: float = 0.15
     # Sign bridge for angular command convention mismatches.
@@ -78,6 +87,20 @@ class FiducialDockingConfig:
     yaw_cmd_sign: float = 1.0
     k_slow: float = 0.35
     rho_close: float = 1.0
+    # Keep some translation while trimming lateral error near x_des.
+    lateral_engage_m: float = 0.20
+    approach_min_speed: float = 0.04
+    # Near x_des, prefer forward crawl for lateral correction stability.
+    reverse_deadband_m: float = 0.12
+    lateral_crawl_forward_bias: bool = True
+    # Optional slip/lateral-drift compensation (modular helper).
+    use_lateral_drift_comp: bool = False
+    lateral_drift_beta: float = 0.08
+    lateral_drift_max_m: float = 0.35
+    lateral_drift_x_window_m: float = 0.70
+    lateral_drift_min_speed_mps: float = 0.03
+    lateral_drift_gain: float = 0.8
+    lateral_drift_decay: float = 0.98
 
     # Robustness/timing.
     ema_beta: float = 0.30
@@ -92,6 +115,8 @@ class FiducialDockingConfig:
     y_tol: float = 0.50
     psi_tol: float = np.deg2rad(30.0)
     hold_time_s: float = 0.4
+    # If False, controller never self-latches to "done"; external checker decides completion.
+    latch_success: bool = False
 
     # Backward-compatible aliases used by current project config.
     max_v: float = 0.20
@@ -119,6 +144,7 @@ class FiducialDockingController:
 
     def __init__(self, config: FiducialDockingConfig | None = None):
         self.cfg = config or FiducialDockingConfig()
+        self._drift_comp = LateralDriftCompensator()
         self.reset()
 
     def reset(self, initial_phase: str = "search") -> None:
@@ -138,6 +164,7 @@ class FiducialDockingController:
         self.has_filter = False
         self.v_prev = 0.0
         self.w_prev = 0.0
+        self._drift_comp.reset()
 
     def update(
         self,
@@ -155,6 +182,15 @@ class FiducialDockingController:
         """
         cfg = self.cfg if params is None else params
         cfg = self._normalize_cfg(cfg)
+        self._drift_comp.cfg = LateralDriftCompensatorConfig(
+            enabled=bool(cfg.use_lateral_drift_comp),
+            beta=float(cfg.lateral_drift_beta),
+            max_bias_m=float(cfg.lateral_drift_max_m),
+            x_window_m=float(cfg.lateral_drift_x_window_m),
+            min_speed_mps=float(cfg.lateral_drift_min_speed_mps),
+            gain=float(cfg.lateral_drift_gain),
+            decay=float(cfg.lateral_drift_decay),
+        )
         meas_valid, meas = self._extract_measurement(tag_detection, T_base_cam, cfg)
         return self._update_from_measurement(meas_valid, meas, dt, cfg)
 
@@ -302,10 +338,11 @@ class FiducialDockingController:
 
         # Reverse-aware heading error:
         # if target is behind and reverse is allowed, align using the backward axis.
-        alpha_ctrl = self.alpha_f
+        ey_ctrl = self._drift_comp.compensate(self.ey_f)
+        alpha_ctrl = float(np.arctan2(ey_ctrl, self.ex_f))
         if cfg.allow_reverse and self.ex_f < 0.0:
             # When target is behind, steer using backward-axis bearing.
-            alpha_ctrl = float(np.arctan2(self.ey_f, -self.ex_f))
+            alpha_ctrl = float(np.arctan2(ey_ctrl, -self.ex_f))
 
         if self.stage == "search":
             v_des = 0.0
@@ -317,8 +354,11 @@ class FiducialDockingController:
                 self.gate_count += 1
             else:
                 self.gate_count = 0
-            # If very close to target, allow entering approach even without strict gate.
-            if cfg.allow_reverse and self.rho_f < max(cfg.rho_final, 0.8):
+            # Optional close-range override; disabled by default for strict centering first.
+            if (
+                cfg.early_approach_rho_override_m > 0.0
+                and self.rho_f < cfg.early_approach_rho_override_m
+            ):
                 self.gate_count = max(self.gate_count, cfg.n_gate)
             if self.gate_count >= cfg.n_gate:
                 self.stage = "approach"
@@ -327,14 +367,22 @@ class FiducialDockingController:
             heading_gate = clamp(np.cos(alpha_ctrl), 0.0, 1.0)
             v_cap = min(cfg.v_max_far, cfg.k_slow * max(self.rho_f, 0.0))
             v_des = clamp(cfg.k_v * self.ex_f * heading_gate, -v_cap, v_cap)
+            if abs(self.ey_f) > cfg.lateral_engage_m and abs(v_des) < cfg.approach_min_speed:
+                # When close in range but laterally offset, forward crawl tends to reduce
+                # persistent side drift better than reversing on sloped terrain.
+                if cfg.lateral_crawl_forward_bias and abs(self.ex_f) < cfg.reverse_deadband_m:
+                    crawl_sign = 1.0
+                else:
+                    crawl_sign = -1.0 if self.ex_f <= 0.0 else 1.0
+                v_des = clamp(crawl_sign * cfg.approach_min_speed, -v_cap, v_cap)
             yaw_ramp = smoothstep01(1.0 - self.rho_f / max(cfg.rho_close, cfg.eps))
             epsi_term = (
                 (cfg.k_psi * self.epsi_f * yaw_ramp) if cfg.use_yaw_term_in_approach else 0.0
             )
             w_des = clamp(
                 cfg.yaw_cmd_sign * (cfg.k_alpha * alpha_ctrl + epsi_term),
-                -cfg.w_max,
-                cfg.w_max,
+                -min(cfg.w_max, cfg.max_w_approach),
+                min(cfg.w_max, cfg.max_w_approach),
             )
             if self.rho_f < cfg.rho_final and abs(self.ey_f) < cfg.y_final:
                 self.stage = "final_yaw" if cfg.use_final_yaw else "final_hold"
@@ -362,23 +410,35 @@ class FiducialDockingController:
         if not cfg.allow_reverse:
             v_des = max(v_des, 0.0)
 
+        self._drift_comp.update(
+            stage=self.stage,
+            ex_m=self.ex_f,
+            ey_m=self.ey_f,
+            v_ref_mps=v_des,
+            meas_valid=(use_meas is not None),
+        )
+
         v_cmd = self._rate_limit(v_des, self.v_prev, cfg.dv_max, dt)
         w_cmd = self._rate_limit(w_des, self.w_prev, cfg.dw_max, dt)
         self.v_prev, self.w_prev = v_cmd, w_cmd
 
-        success_now = (
-            abs(self.ex_f) < cfg.x_tol
-            and abs(self.ey_f) < cfg.y_tol
-            and (abs(self.epsi_f) < cfg.psi_tol if cfg.use_final_yaw else True)
-        )
-        if success_now:
-            self.success_hold_s += dt
+        if cfg.latch_success:
+            success_now = (
+                abs(self.ex_f) < cfg.x_tol
+                and abs(self.ey_f) < cfg.y_tol
+                and (abs(self.epsi_f) < cfg.psi_tol if cfg.use_final_yaw else True)
+            )
+            if success_now:
+                self.success_hold_s += dt
+            else:
+                self.success_hold_s = 0.0
+            if self.success_hold_s >= cfg.hold_time_s:
+                self.success_latched = True
+                self.stage = "done"
+                v_cmd, w_cmd = 0.0, 0.0
         else:
             self.success_hold_s = 0.0
-        if self.success_hold_s >= cfg.hold_time_s:
-            self.success_latched = True
-            self.stage = "done"
-            v_cmd, w_cmd = 0.0, 0.0
+            self.success_latched = False
 
         dbg = {
             "stage": self.stage,
@@ -388,6 +448,8 @@ class FiducialDockingController:
             "e_psi": float(self.epsi_f),
             "alpha": float(self.alpha_f),
             "alpha_ctrl": float(alpha_ctrl),
+            "ey_ctrl": float(ey_ctrl),
+            "lateral_bias_y_m": float(self._drift_comp.bias_y_m),
             "rho": float(self.rho_f),
             "e_x_raw": float(e_x),
             "e_y_raw": float(e_y),

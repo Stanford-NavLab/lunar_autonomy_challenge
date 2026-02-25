@@ -700,14 +700,7 @@ class DockingAgent(AutonomousAgent):
                 T_base_cam=np.eye(4, dtype=np.float64),
                 dt=params.DT,
             )
-            controller_ready = bool(
-                abs(float(dbg.get("e_x", np.inf))) < float(self.visual_servo.cfg.x_tol)
-                and abs(float(dbg.get("e_y", np.inf))) < float(self.visual_servo.cfg.y_tol)
-            )
-            if bool(self.visual_servo.cfg.use_final_yaw):
-                controller_ready = controller_ready and (
-                    abs(float(dbg.get("e_psi", np.inf))) < float(self.visual_servo.cfg.psi_tol)
-                )
+            controller_ready = False
             # Cross-check: reconstruct tag planar pose in base frame for debugging.
             try:
                 box_x = float(T_base_box[0, 3])
@@ -729,6 +722,11 @@ class DockingAgent(AutonomousAgent):
         self.last_dock_cmd = (v_cmd, w_cmd)
         success, success_dbg = self.success_checker.check(
             control_estimate, current_power_wh=float(self.get_current_power())
+        )
+        # Single source of truth for readiness/success state: success checker.
+        controller_ready = bool(
+            success_dbg.get("reason")
+            in ("waiting_for_charging", "virtual_docking_geometric_success", "charging_detected")
         )
         if success:
             print(f"[bold green]Docking success ({success_dbg.get('reason')}). Mission complete.")
@@ -783,6 +781,13 @@ class DockingAgent(AutonomousAgent):
             except Exception:
                 pass
         if self.phase == "dock":
+            pose_xy_yaw = (
+                float(self.current_pose[0, 3]),
+                float(self.current_pose[1, 3]),
+                float(yaw_from_pose(self.current_pose)),
+            )
+            measured_v = float(self.get_linear_speed())
+            measured_w = float(self.get_angular_speed())
             self._dock_log_tick(
                 ctrl_phase=ctrl_phase,
                 using_stale_estimate=using_stale_estimate,
@@ -792,6 +797,9 @@ class DockingAgent(AutonomousAgent):
                 w_cmd=float(w_cmd),
                 controller_ready=bool(controller_ready),
                 success_reason=success_dbg.get("reason"),
+                pose_xy_yaw=pose_xy_yaw,
+                measured_linear_speed_mps=measured_v,
+                measured_angular_speed_radps=measured_w,
             )
         return carla.VehicleVelocityControl(v_cmd, w_cmd)
 
@@ -829,6 +837,9 @@ class DockingAgent(AutonomousAgent):
         w_cmd: float,
         controller_ready: bool,
         success_reason: str | None,
+        pose_xy_yaw: tuple[float, float, float] | None = None,
+        measured_linear_speed_mps: float | None = None,
+        measured_angular_speed_radps: float | None = None,
     ) -> None:
         if self._dock_debug_log_fp is None:
             return
@@ -847,6 +858,8 @@ class DockingAgent(AutonomousAgent):
             "e_y": float(dbg.get("antenna_y_err_m", dbg.get("e_y", np.nan))),
             "alpha": float(dbg.get("alpha", dbg.get("alpha_meas", np.nan))),
             "alpha_ctrl": float(dbg.get("alpha_ctrl", np.nan)),
+            "ey_ctrl": float(dbg.get("ey_ctrl", np.nan)),
+            "lateral_bias_y_m": float(dbg.get("lateral_bias_y_m", np.nan)),
             "e_psi": float(dbg.get("antenna_rot_err_rad", dbg.get("e_psi", np.nan))),
             "rho": float(dbg.get("rho", dbg.get("rho_meas", np.nan))),
             "v_cmd": float(v_cmd),
@@ -859,7 +872,19 @@ class DockingAgent(AutonomousAgent):
             "box_x_base_m": float(dbg.get("box_x_base_m", np.nan)),
             "box_y_base_m": float(dbg.get("box_y_base_m", np.nan)),
             "box_yaw_base_rad": float(dbg.get("box_yaw_base_rad", np.nan)),
+            "cmd_v_mps": float(v_cmd),
+            "cmd_w_radps": float(w_cmd),
+            "meas_v_mps": float(
+                np.nan if measured_linear_speed_mps is None else measured_linear_speed_mps
+            ),
+            "meas_w_radps": float(
+                np.nan if measured_angular_speed_radps is None else measured_angular_speed_radps
+            ),
         }
+        if pose_xy_yaw is not None:
+            row["pose_x_m"] = float(pose_xy_yaw[0])
+            row["pose_y_m"] = float(pose_xy_yaw[1])
+            row["pose_yaw_rad"] = float(pose_xy_yaw[2])
         self._dock_debug_log_fp.write(json.dumps(self._to_jsonable(row)) + "\n")
         self._dock_debug_log_write_count += 1
         if self._dock_debug_log_write_count % self.dock_debug_log_flush_every == 0:

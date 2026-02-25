@@ -1,0 +1,48 @@
+{
+  "navigation": {
+    "goal_xy_m": [0.0, 2.5],
+    "goal_yaw_rad": -1.5707963267948966,
+    "arm_raise_wait_frames": 80,
+    "approach_handoff_idx_buffer": 2,
+    "approach_handoff_timeout_steps": 60
+  },
+  "dem": {
+    "map_path": "/home/shared/data_raw/Lunar/LAC/maps/competition/Moon_Map_01_preset_0.dat",
+    "swap_xy": true
+  },
+  "planner": {
+    "use_heading_aware_planner": true,
+    "lander_buffer_m": 0.5,
+    "smoother_ds": 0.12,
+    "v_nominal": 0.2,
+    "v_max": 0.6,
+    "smoother_max_omega": 0.45,
+    "smoother_max_lat_acc": 0.4,
+    "tracker_max_w": 0.45,
+    "tracker_stop_pos_tol": 0.2,
+    "tracker_stop_heading_tol": 0.25
+  },
+  "visualization": {
+    "rerun_enabled": true
+  },
+  "alignment": {
+    "target_point_lander_m": [0.0, 2.0, 0.0],
+    "target_yaw_lander_rad": 0.0,
+    "controller": {
+      "k_rho": 0.8,
+      "k_alpha": 1.2,
+      "k_theta": 0.6,
+      "k_theta_final": 1.2,
+      "k_rho_final": 0.0,
+      "v_max": 0.3,
+      "w_max": 0.6,
+      "forward_only": false,
+      "rho_final": 0.2,
+      "dv_max": 0.8,
+      "dw_max": 1.5,
+      "r_tol": 0.08,
+      "theta_tol": 0.12,
+      "hold_frames": 12
+    }
+  }
+}
