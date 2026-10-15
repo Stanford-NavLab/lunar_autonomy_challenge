@@ -102,6 +102,9 @@ class Backend:
 
         # NOTE: should we run IMU odometry during arm raise and initialize with that pose instead?
         self.values.insert(X(0), gtsam.Pose3(initial_pose))
+        # Cached per-frame trajectory (get_trajectory). Existing poses change only when optimize() replaces
+        # the values, so the cache is cleared there and otherwise only extended with the new frames.
+        self.trajectory_cache = []
         self.graph.add(gtsam.NonlinearEqualityPose3(X(0), gtsam.Pose3(initial_pose)))
         self.pose_idx = 1  # Index for the next pose
 
@@ -316,10 +319,12 @@ class Backend:
 
         # Update the values with the optimized result
         self.values = result
+        self.trajectory_cache = []
 
     def get_trajectory(self):
         """Get the trajectory as a list of poses"""
-        return [self.get_pose(i) for i in range(self.pose_idx)]
+        self.trajectory_cache.extend(self.get_pose(i) for i in range(len(self.trajectory_cache), self.pose_idx))
+        return list(self.trajectory_cache)
 
     def project_point_map(self) -> SemanticPointCloud:
         """Project the point map into world coordinates"""
