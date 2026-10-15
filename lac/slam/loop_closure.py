@@ -54,10 +54,14 @@ def keyframe_estimate_loop_closure_pose(
     left_img2: np.ndarray,
     min_score: float = MIN_SCORE,
     min_matches: int = MIN_MATCHES,
+    count_stereo_only: bool = False,
 ) -> np.ndarray | None:
     """Estimate the loop closure pose using stereo images.
 
     Returns None if not enough points/matches or PnP fails.
+
+    count_stereo_only : if True, the min_matches test counts only the matches whose keyframe feature has
+        stereo depth (the 2D-3D set passed to PnP); if False (paper), all matches above min_score.
 
     """
     feats_left1, feats_right1, stereo_matches1, depths1 = keyframe_data
@@ -68,11 +72,6 @@ def keyframe_estimate_loop_closure_pose(
     points_local1 = tracker.project_stereo(np.eye(4), matched_pts_left1, depths1)
 
     matches12_left = tracker.match_feats(feats_left1, feats_left2, min_score=min_score)
-    num_matches = len(matches12_left)
-
-    if num_matches < min_matches:
-        print("Not enough matches for loop closure")
-        return None, num_matches
 
     stereo_indices = stereo_matches1[:, 0]
     frame_indices = matches12_left[:, 0]
@@ -81,6 +80,11 @@ def keyframe_estimate_loop_closure_pose(
         list(set(stereo_indices.cpu().numpy()) & set(frame_indices.cpu().numpy()))
     ).cuda()
     frame_common = matches12_left[torch.isin(frame_indices, common_indices)]
+
+    num_matches = len(frame_common) if count_stereo_only else len(matches12_left)
+    if num_matches < min_matches:
+        print("Not enough matches for loop closure")
+        return None, num_matches
 
     points3D = points_local1[torch.isin(stereo_indices, common_indices).cpu().numpy()]
     points2D = feats_left2["keypoints"][0][frame_common[:, 1]].cpu().numpy()
