@@ -30,19 +30,33 @@ class SemanticPointCloud:
         return cls(points=data["points"], labels=data["labels"])
 
 
-# Backend options (revision experiments). The defaults reproduce the paper backend (2322a81).
+# Pose graph structure (default since the journal revision; the paper backend, 2322a81, had one node per
+# image frame):
+# - Graph variables are the keyframe poses only (plus the fixed initial pose X(0)).
+# - Between consecutive keyframes, one between-factor carries the VO (or IMU) odometry composed over the n
+#   frames of the segment, T = T_1 @ T_2 @ ... @ T_n. Its noise is diagonal with the per-axis variances of the
+#   n per-frame odometry noises summed (sigma * sqrt(n) for n equal VO frames), i.e. the frames are treated
+#   as independent and the composition Jacobians are ignored.
+# - Loop closures connect keyframe nodes.
+# - Every frame keeps its pose relative to the last keyframe node before it (the chained odometry since that
+#   keyframe). Its pose is always that node's current estimate composed with the relative pose, so after each
+#   optimization the full per-frame trajectory (and the point map anchored on it) follows the optimized
+#   keyframes, and the newest frame is the latest optimized keyframe pose chained with VO.
+# Offline replay of the stored run: same RMSE as the per-frame graph (0.035-0.043 m) with about an order of
+# magnitude less optimization time (13 ms vs ~150 ms mean per optimize).
+
+# Backend options (revision experiments). Defaults are the revision backend; the opt-in flags reproduce the
+# paper backend or test alternatives.
 BACKEND_OPTION_DEFAULTS = {
+    # One graph node per image frame with the per-frame odometry factors, as in the paper backend (2322a81).
+    # Only for reproducing the paper's offline replays (analysis/replay_backend.py, replay_full.py).
+    "reproduce_paper_per_frame_graph": False,
     # Proximity gate against the latest optimized pose of each stored keyframe (paper: the pose
     # recorded when the keyframe was created, never updated)
     "gate_on_optimized_keyframes": False,
     # min_matches counts only matches with stereo depth, the 2D-3D set used by PnP (paper: all
     # LightGlue matches above min_score)
     "count_stereo_matches_only": False,
-    # Pose graph over keyframes only: one node per keyframe, between-factor = composed odometry since
-    # the previous keyframe with per-component variances summed over the segment (sigma * sqrt(n) for
-    # n VO frames). Non-keyframe poses are the optimized keyframe pose chained with VO.
-    # (paper: one node per image frame)
-    "keyframe_graph": False,
     # Robust loss on loop-closure factors: None (paper), "huber" or "cauchy"; k in whitened units
     "lc_robust_loss": None,
     "lc_robust_k": None,
@@ -71,7 +85,7 @@ class Backend:
             unknown = set(options) - set(BACKEND_OPTION_DEFAULTS)
             assert not unknown, f"Unknown backend options: {unknown}"
             self.options.update(options)
-        self.keyframe_graph = self.options["keyframe_graph"]
+        self.node_every_frame = self.options["reproduce_paper_per_frame_graph"]
         self.lc_noise = LOOP_CLOSURE_NOISE
         if self.options["lc_robust_loss"] is not None:
             estimator = {
@@ -91,8 +105,8 @@ class Backend:
         self.graph.add(gtsam.NonlinearEqualityPose3(X(0), gtsam.Pose3(initial_pose)))
         self.pose_idx = 1  # Index for the next pose
 
-        # Keyframe graph state: node n <-> pose index node_pose_idx[n]; each pose index maps to
-        # (node, pose relative to that node)
+        # Graph state: node n <-> pose index node_pose_idx[n]; each pose index maps to (node, pose relative
+        # to that node). Odometry composed since the last node and its summed per-axis variances.
         self.node_pose_idx = [0]
         self.pose_node = {0: (0, np.eye(4))}
         self.segment_odometry = np.eye(4)
@@ -119,19 +133,19 @@ class Backend:
         self.loop_closures_gate = []  # (keyframe pose idx, pose idx, d2, accepted) for the Mahalanobis gate
 
     def key(self, pose_idx: int):
-        """Graph key of a pose index (keyframe graph: only keyframes and pose 0 have keys)"""
-        if self.keyframe_graph:
-            node, rel = self.pose_node[pose_idx]
-            assert np.array_equal(rel, np.eye(4)), "only keyframes are graph nodes"
-            return X(node)
-        return X(pose_idx)
+        """Graph key of a pose index (only keyframes and pose 0 are graph nodes)"""
+        node, rel = self.pose_node[pose_idx]
+        assert np.array_equal(rel, np.eye(4)), "only keyframes are graph nodes"
+        return X(node)
 
     def get_pose(self, pose_idx: int) -> np.ndarray:
-        """Current estimate of a pose"""
-        if self.keyframe_graph:
-            node, rel = self.pose_node[pose_idx]
-            return self.values.atPose3(X(node)).matrix() @ rel
-        return self.values.atPose3(X(pose_idx)).matrix()
+        """Current estimate of a pose: its node's estimate chained with the odometry since that node"""
+        node, rel = self.pose_node[pose_idx]
+        return self.values.atPose3(X(node)).matrix() @ rel
+
+    def get_current_pose(self) -> np.ndarray:
+        """Current estimate of the newest pose (equals get_trajectory()[-1])"""
+        return self.get_pose(self.pose_idx - 1)
 
     def update(self, data: dict):
         """Update the backend with new data
@@ -150,43 +164,28 @@ class Backend:
         elif data["odometry_source"] == "IMU":
             odometry_noise = IMU_ODOMETRY_NOISE
 
-        if self.keyframe_graph:
-            # Accumulate odometry since the last keyframe node
-            node = len(self.node_pose_idx) - 1
-            self.segment_odometry = self.segment_odometry @ data["odometry"]
-            self.segment_variance = self.segment_variance + odometry_noise.sigmas() ** 2
-            new_pose = self.values.atPose3(X(node)).matrix() @ self.segment_odometry
-            self.pose_node[self.pose_idx] = (node, self.segment_odometry.copy())
-            if data["keyframe"]:
-                new_node = node + 1
-                self.values.insert(X(new_node), gtsam.Pose3(new_pose))
-                self.graph.add(
-                    gtsam.BetweenFactorPose3(
-                        X(node),
-                        X(new_node),
-                        gtsam.Pose3(self.segment_odometry),
-                        gtsam.noiseModel.Diagonal.Sigmas(np.sqrt(self.segment_variance)),
-                    )
-                )
-                self.node_pose_idx.append(self.pose_idx)
-                self.pose_node[self.pose_idx] = (new_node, np.eye(4))
-                self.segment_odometry = np.eye(4)
-                self.segment_variance = np.zeros(6)
-        else:
-            # Add new pose
-            last_pose = self.values.atPose3(X(self.pose_idx - 1)).matrix()
-            new_pose = last_pose @ data["odometry"]  # New pose initialization from odometry
-            self.values.insert(X(self.pose_idx), gtsam.Pose3(new_pose))
-
-            # Add odometry factor
+        # Chain the odometry since the last node, from that node's latest (optimized) estimate
+        node = len(self.node_pose_idx) - 1
+        self.segment_odometry = self.segment_odometry @ data["odometry"]
+        self.segment_variance = self.segment_variance + odometry_noise.sigmas() ** 2
+        new_pose = self.values.atPose3(X(node)).matrix() @ self.segment_odometry
+        self.pose_node[self.pose_idx] = (node, self.segment_odometry.copy())
+        if data["keyframe"] or self.node_every_frame:
+            # New node with one between-factor for the segment (see the module comment on the noise)
+            if self.node_every_frame:
+                factor_odometry, factor_noise = data["odometry"], odometry_noise
+            else:
+                factor_odometry = self.segment_odometry
+                factor_noise = gtsam.noiseModel.Diagonal.Sigmas(np.sqrt(self.segment_variance))
+            new_node = node + 1
+            self.values.insert(X(new_node), gtsam.Pose3(new_pose))
             self.graph.add(
-                gtsam.BetweenFactorPose3(
-                    X(self.pose_idx - 1),
-                    X(self.pose_idx),
-                    gtsam.Pose3(data["odometry"]),
-                    odometry_noise,
-                )
+                gtsam.BetweenFactorPose3(X(node), X(new_node), gtsam.Pose3(factor_odometry), factor_noise)
             )
+            self.node_pose_idx.append(self.pose_idx)
+            self.pose_node[self.pose_idx] = (new_node, np.eye(4))
+            self.segment_odometry = np.eye(4)
+            self.segment_variance = np.zeros(6)
 
         # NOTE: logging
         self.odometry.append(data["odometry"])
