@@ -10,6 +10,8 @@ Full agent
 
 import carla
 import os
+import cv2
+import torch
 import numpy as np
 import signal
 import json
@@ -68,6 +70,13 @@ class NavAgent(AutonomousAgent):
     def setup(self, path_to_conf_file):
         """Load config params"""
         self.config = json.load(open(path_to_conf_file))
+
+        """CPU threads: torch and OpenCV pools default to one thread per core, which spin and contend
+        when several runs share a machine. One thread gives bit-identical results and no slower frames
+        (output/LAC_Revision/thread_probe). BLAS/OpenMP pools follow OMP_NUM_THREADS, set at launch."""
+        n_threads = int(os.environ.get("OMP_NUM_THREADS", "1"))
+        torch.set_num_threads(n_threads)
+        cv2.setNumThreads(n_threads)
 
         """Control variables"""
         self.current_v = 0
