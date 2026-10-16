@@ -134,7 +134,7 @@ class VizAgent(AutonomousAgent):
             trajectory_type=self.config["planning"]["trajectory"],
             waypoint_reached_threshold=self.config["planning"]["waypoint_reached_threshold_m"],
         )
-        self.arc_planner = ArcPlanner()
+        self.arc_planner = ArcPlanner(self.lander_pose)
         self.arcs = self.arc_planner.np_candidate_arcs
 
         """ State variables """

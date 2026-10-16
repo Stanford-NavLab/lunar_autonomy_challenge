@@ -42,6 +42,9 @@ SCENE_BBOX = np.array(
 # Lander dimensions
 LANDER_WIDTH = 3.0  # [m]  (approximate)
 LANDER_HEIGHT = 3.0  # [m]  (approximate)
+# Footprint corners in the lander frame (z = 0 at the lander origin). ArcPlanner places them with
+# the lander pose; at z = 0 in the world frame they sat ~1.4 m (Map 1) to ~2.6 m (Map 2) below the
+# lander, which shifted the box in the frame of a tilted rover.
 LANDER_GLOBAL = np.array(
     [
         [-LANDER_WIDTH / 2, LANDER_WIDTH / 2, 0.0],  # top left

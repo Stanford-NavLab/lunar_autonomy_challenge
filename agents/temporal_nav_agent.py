@@ -127,7 +127,10 @@ class TemporalNavAgent(AutonomousAgent):
             )
         else:
             self.arc_planner = ArcPlanner(
-                arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
+                self.lander_pose,
+                arc_config=arc_config_val,
+                arc_duration=arc_duration_val,
+                max_omega=max_omega,
             )
         self.arcs = self.arc_planner.np_candidate_arcs
 

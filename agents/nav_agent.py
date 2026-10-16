@@ -22,9 +22,10 @@ from rich import print
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
 
 from lac.util import transform_to_numpy
+from lac.utils.frames import invert_transform_mat
 from lac.perception.segmentation import SemanticClasses
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker
-from lac.slam.frontend import Frontend
+from lac.slam.frontend import Frontend, gravity_aligned_pose
 from lac.slam.backend import Backend
 from lac.planning.arc_planner import ArcPlanner
 from lac.planning.waypoint_planner import WaypointPlanner
@@ -45,6 +46,9 @@ BACK_CAMERAS = True
 
 USE_GROUND_TRUTH_NAV = False  # Whether to use ground truth pose for navigation
 ARM_RAISE_WAIT_FRAMES = 80  # Number of frames to wait for the arms to raise
+# The rover settles while the arms raise (attitude changes by up to 7-8 deg on Map 2): the SLAM
+# initial pose takes roll and pitch from the accelerometer averaged over the last arm-raise frames
+ATTITUDE_AVERAGE_FRAMES = 40
 MISSION_TIMEOUT = 30000  # Number of frames to end mission after
 
 LOG_DATA = True  # Whether to log data
@@ -87,6 +91,7 @@ class NavAgent(AutonomousAgent):
 
         """ Initialize a counter for backup maneuvers. """
         self.backup_counter = 0
+        self.backup_speed = -0.2  # [m/s] linear speed of the current backup maneuver
 
         """ Initialize a counter for how long the rover below a velocity threshold. """
         self.stuck_counter = 0
@@ -139,13 +144,14 @@ class NavAgent(AutonomousAgent):
             trajectory_type=self.config["planning"]["trajectory"],
             waypoint_reached_threshold=self.config["planning"]["waypoint_reached_threshold_m"],
         )
-        self.arc_planner = ArcPlanner()
+        self.arc_planner = ArcPlanner(self.lander_pose)
         self.arcs = self.arc_planner.np_candidate_arcs
 
         """ State variables """
         self.current_pose = self.initial_pose
         self.current_velocity = np.zeros(3)
         self.imu_measurements = deque(maxlen=2)  # IMU measurements since last image
+        self.arm_raise_accel = []  # Accelerometer readings at the end of the arm raise
 
         """ SLAM """
         feature_tracker = SemanticFeatureTracker(self.cameras)
@@ -217,9 +223,19 @@ class NavAgent(AutonomousAgent):
         BACKUP_TIME = 5.0  # [s]
         ROTATE_TIME = 2.0  # [s]
         DRIVE_TIME = 2.0  # [s]
+        if self.backup_counter == 1:
+            # Near the lander, back up only if the lander is ahead. Otherwise reversing drives into
+            # it (a rover trapped against the lander kept backing into it): drive forward instead.
+            lander_rover = invert_transform_mat(self.current_pose) @ np.append(
+                self.lander_pose[:3, 3], 1.0
+            )
+            near_lander = np.linalg.norm(lander_rover[:2]) < (
+                params.LANDER_WIDTH / 2 + params.ROVER_RADIUS + 0.5
+            )
+            self.backup_speed = 0.2 if near_lander and lander_rover[0] <= 0.0 else -0.2
         if self.backup_counter <= params.FRAME_RATE * BACKUP_TIME:
-            print("   [orange1]Backing up")
-            control = carla.VehicleVelocityControl(-0.2, 0.0)
+            print("   [orange1]" + ("Backing up" if self.backup_speed < 0 else "Moving forward"))
+            control = carla.VehicleVelocityControl(self.backup_speed, 0.0)
         elif self.backup_counter <= params.FRAME_RATE * (BACKUP_TIME + ROTATE_TIME):
             print("   [orange1]Rotating")
             control = carla.VehicleVelocityControl(0.0, np.pi / 4)
@@ -293,7 +309,10 @@ class NavAgent(AutonomousAgent):
                 Rerun.log_2d_seq_scalar("/scores/rocks", self.step, rocks_score)
                 Rerun.log_scalar("/metrics/rocks_score", rocks_score)
 
-        self.imu_measurements.append(self.get_imu_data())
+        imu_data = self.get_imu_data()
+        self.imu_measurements.append(imu_data)
+        if ARM_RAISE_WAIT_FRAMES - ATTITUDE_AVERAGE_FRAMES < self.step <= ARM_RAISE_WAIT_FRAMES:
+            self.arm_raise_accel.append(imu_data[:3])
         control = (0.0, 0.0)
 
         """ Image processing """
@@ -305,6 +324,9 @@ class NavAgent(AutonomousAgent):
             # Stereo VO
             if self.step >= ARM_RAISE_WAIT_FRAMES:
                 if self.step == ARM_RAISE_WAIT_FRAMES:
+                    # Settled attitude from gravity; setup yaw and position kept
+                    accel = np.mean(self.arm_raise_accel, axis=0)
+                    self.backend.set_initial_pose(gravity_aligned_pose(self.initial_pose, accel))
                     self.frontend.initialize(images_gray)
                 else:
                     images_gray["step"] = self.step

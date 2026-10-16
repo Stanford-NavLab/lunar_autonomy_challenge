@@ -101,7 +101,7 @@ class SlamAgent(AutonomousAgent):
         self.planner = WaypointPlanner(
             self.initial_pose, spiral_min=3.0, spiral_max=7.0, spiral_step=0.25, repeat=0
         )
-        self.arc_planner = ArcPlanner()
+        self.arc_planner = ArcPlanner(self.lander_pose)
 
         """ SLAM """
         feature_tracker = SemanticFeatureTracker(self.cameras)

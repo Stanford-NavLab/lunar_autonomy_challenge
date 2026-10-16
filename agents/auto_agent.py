@@ -90,7 +90,7 @@ class AutoAgent(AutonomousAgent):
         self.planner = WaypointPlanner(self.initial_pose)
 
         """ Path planner """
-        self.arc_planner = ArcPlanner()
+        self.arc_planner = ArcPlanner(self.lander_pose)
 
         """ Data logging """
         if LOG_DATA:

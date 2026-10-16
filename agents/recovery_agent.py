@@ -118,7 +118,10 @@ class RecoveryAgent(AutonomousAgent):
         arc_duration_val = 12.0
         max_omega = 0.6
         self.arc_planner = ArcPlanner(
-            arc_config=arc_config_val, arc_duration=arc_duration_val, max_omega=max_omega
+            self.lander_pose,
+            arc_config=arc_config_val,
+            arc_duration=arc_duration_val,
+            max_omega=max_omega,
         )
         self.path_planner_statistics = {}
         self.path_planner_statistics["collision detections"] = []  # frame number and current pose

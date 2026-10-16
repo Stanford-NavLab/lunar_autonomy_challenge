@@ -14,6 +14,10 @@ from lac.util import rotation_matrix_error
 LOOP_CLOSURE_EXCLUDE = 10  # Exclude the last N keyframes
 LOOP_CLOSURE_DIST_THRESHOLD = 1.0  # meters
 LOOP_CLOSURE_ANGLE_THRESHOLD = 5.0  # degrees
+# Loop-closure candidates per keyframe: the closest ones (xy distance) inside the proximity gate.
+# Each candidate costs a LightGlue match + PnP. Good Map 1 runs peak at 22; a rover stuck in one
+# spot grows the count without bound (Map 2 p13).
+LOOP_CLOSURE_MAX_CANDIDATES = 30
 
 
 @dataclass
@@ -96,17 +100,10 @@ class Backend:
                 estimator.Create(self.options["lc_robust_k"]), LOOP_CLOSURE_NOISE
             )
 
-        self.graph = gtsam.NonlinearFactorGraph()
-        self.values = gtsam.Values()
         self.opt_params = gtsam.LevenbergMarquardtParams()
 
-        # NOTE: should we run IMU odometry during arm raise and initialize with that pose instead?
-        self.values.insert(X(0), gtsam.Pose3(initial_pose))
-        # Cached per-frame trajectory (get_trajectory). Existing poses change only when optimize() replaces
-        # the values, so the cache is cleared there and otherwise only extended with the new frames.
-        self.trajectory_cache = []
-        self.graph.add(gtsam.NonlinearEqualityPose3(X(0), gtsam.Pose3(initial_pose)))
         self.pose_idx = 1  # Index for the next pose
+        self.set_initial_pose(initial_pose)
 
         # Graph state: node n <-> pose index node_pose_idx[n]; each pose index maps to (node, pose relative
         # to that node). Odometry composed since the last node and its summed per-axis variances.
@@ -134,6 +131,18 @@ class Backend:
         self.loop_closures_poses = []
         self.loop_closures_matches = []
         self.loop_closures_gate = []  # (keyframe pose idx, pose idx, d2, accepted) for the Mahalanobis gate
+
+    def set_initial_pose(self, initial_pose: np.ndarray):
+        """Set the fixed initial pose X(0), only before the first update (nav_agent resets it to
+        the gravity-aligned attitude at the end of the arm raise)"""
+        assert self.pose_idx == 1, "the initial pose can only be set before the first update"
+        self.graph = gtsam.NonlinearFactorGraph()
+        self.values = gtsam.Values()
+        self.values.insert(X(0), gtsam.Pose3(initial_pose))
+        self.graph.add(gtsam.NonlinearEqualityPose3(X(0), gtsam.Pose3(initial_pose)))
+        # Cached per-frame trajectory (get_trajectory). Existing poses change only when optimize()
+        # replaces the values, so the cache is cleared there and otherwise only extended.
+        self.trajectory_cache = []
 
     def key(self, pose_idx: int):
         """Graph key of a pose index (only keyframes and pose 0 are graph nodes)"""
@@ -257,6 +266,9 @@ class Backend:
                     < self.LC_ANGLE_THRESHOLD
                 ):
                     loop_closure_idxs.append(idx)
+            # Keep the closest candidates (ties broken by keyframe index), in keyframe order
+            closest = sorted(loop_closure_idxs, key=lambda idx: (dists[idx], idx))
+            loop_closure_idxs = sorted(closest[:LOOP_CLOSURE_MAX_CANDIDATES])
         return loop_closure_idxs
 
     def loop_closure_mahalanobis(self, marginals, pose_idx: int, relative_pose: np.ndarray) -> float:

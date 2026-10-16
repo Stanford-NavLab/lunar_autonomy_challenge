@@ -30,6 +30,7 @@ class ArcPlanner:
 
     def __init__(
         self,
+        lander_pose: np.ndarray,
         arc_config: int | tuple[int, int] = 41,
         arc_duration: float | tuple[float, float] = 8.0,
         max_omega: float | tuple[float, float] = 0.8,
@@ -38,6 +39,8 @@ class ArcPlanner:
 
         Parameters
         ----------
+        lander_pose : np.ndarray (4, 4)
+            Lander pose in the world frame
         arc_config : int | tuple[int, int]
             Number of omega values to sample for the first and second arcs
             (if is_branch is True)
@@ -58,6 +61,8 @@ class ArcPlanner:
         self.root_vw = []
         self.vw = []
         self.scale = 0.5
+        self.lander_corners = apply_transform(lander_pose, params.LANDER_GLOBAL)  # world frame
+        self.lander_position = lander_pose[:3, 3]
 
         if isinstance(arc_config, int):
             self.is_branch = False
@@ -110,8 +115,9 @@ class ArcPlanner:
         pose_inv = invert_transform_mat(current_pose)
         waypoint_local = pose_inv @ np.array([waypoint_global[0], waypoint_global[1], 0.0, 1.0])
 
-        # Transform lander global position to rover local frame
-        lander_local = apply_transform(pose_inv, params.LANDER_GLOBAL)
+        # Transform lander corners and center to rover local frame
+        lander_local = apply_transform(pose_inv, self.lander_corners)
+        lander_center_local = (pose_inv @ np.append(self.lander_position, 1.0))[:2]
 
         # Obtain bounding box of lander
         # TODO: check against oriented lander box (instead of axis-aligned overbounding box)
@@ -121,6 +127,11 @@ class ArcPlanner:
         max_y = np.max(lander_local[:, 1])
 
         lander_bbox = np.array([min_x, max_x, min_y, max_y])
+        # Rover inside the box (pushed in, or its pose estimate drifted in): every arc starts
+        # inside, so the box test would reject them all. Accept instead only the arcs that end
+        # farther from the lander than the rover is now.
+        in_lander_bbox = min_x <= 0.0 <= max_x and min_y <= 0.0 <= max_y
+        lander_dist = np.linalg.norm(lander_center_local)
 
         # Distance to waypoint cost
         path_costs = np.linalg.norm(
@@ -131,11 +142,14 @@ class ArcPlanner:
         for i in sorted_indices:
             arc = self.np_candidate_arcs[i]
             valid = True
+            if in_lander_bbox and np.linalg.norm(arc[-1][:2] - lander_center_local) <= lander_dist:
+                continue
             for j in range(len(arc)):
-                # Check in arc is inside lander's bounding box
+                # Check in arc is inside lander's bounding box (unless the rover already is)
                 if (
+                    not in_lander_bbox
                     # X bounds
-                    arc[j][0] >= lander_bbox[0]
+                    and arc[j][0] >= lander_bbox[0]
                     and arc[j][0] <= lander_bbox[1]
                     # Y bounds
                     and arc[j][1] >= lander_bbox[2]
