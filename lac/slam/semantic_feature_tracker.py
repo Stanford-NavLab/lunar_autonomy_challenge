@@ -39,11 +39,18 @@ class TrackedPoints:
 
 class SemanticFeatureTracker(FeatureTracker):
     def __init__(
-        self, cam_config: dict, max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS, cam: str = "FrontLeft"
+        self,
+        cam_config: dict,
+        max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS,
+        cam: str = "FrontLeft",
+        feature_type: str = "superpoint_lightglue",
     ):
-        """Initialize the semantic feature tracker"""
-        super().__init__(cam_config=cam_config, max_keypoints=max_keypoints)
+        """Initialize the semantic feature tracker (feature_type: see feature_tracker.FEATURE_TYPES)"""
+        super().__init__(cam_config=cam_config, max_keypoints=max_keypoints, feature_type=feature_type)
         self.tracked_points = None
+        # Counts of the last track_pnp call: stereo matches kept (after the depth filter), frame-to-frame
+        # matches, PnP RANSAC inliers, PnP success
+        self.last_track_stats = None
         self.max_id = 0
         self.cam = cam
 
@@ -141,7 +148,13 @@ class SemanticFeatureTracker(FeatureTracker):
         # Estimate odometry with PnP
         points3D = self.tracked_points.points_local[matches_frame[:, 0]]
         points2D = feats_left["keypoints"][0][matches_frame[:, 1]].cpu().numpy()
-        odometry = solve_vision_pnp(points3D, points2D)
+        odometry, num_inliers = solve_vision_pnp(points3D, points2D, return_inliers=True)
+        self.last_track_stats = {
+            "stereo_matches": len(depths),
+            "frame_matches": len(matches_frame),
+            "pnp_inliers": num_inliers,
+            "pnp_success": odometry is not None,
+        }
 
         # Update tracks (limit based on number and depth)
         self.update_tracks(feats_left, depths, matches_frame, left_semantic_pred)

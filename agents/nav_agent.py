@@ -154,9 +154,14 @@ class NavAgent(AutonomousAgent):
         self.arm_raise_accel = []  # Accelerometer readings at the end of the arm raise
 
         """ SLAM """
-        feature_tracker = SemanticFeatureTracker(self.cameras)
+        # Optional config key frontend.feature_type (feature_tracker.FEATURE_TYPES); the deployed agent and
+        # all configs use SuperPoint + LightGlue
+        feature_type = self.config.get("frontend", {}).get("feature_type", "superpoint_lightglue")
+        feature_tracker = SemanticFeatureTracker(self.cameras, feature_type=feature_type)
         if BACK_CAMERAS:
-            back_feature_tracker = SemanticFeatureTracker(self.cameras, cam="BackLeft")
+            back_feature_tracker = SemanticFeatureTracker(
+                self.cameras, cam="BackLeft", feature_type=feature_type
+            )
             self.frontend = Frontend(feature_tracker, back_feature_tracker, self.initial_pose)
         else:
             self.frontend = Frontend(feature_tracker, initial_pose=self.initial_pose)

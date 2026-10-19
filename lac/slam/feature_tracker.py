@@ -10,6 +10,8 @@ NOTE: features and matches from LightGlue come with a batch dimension. We keep t
 
 """
 
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 import cv2
 import torch
@@ -28,6 +30,18 @@ EXTRACTOR_MAX_KEYPOINTS = 512
 MAX_TRACKED_POINTS = 100
 MAX_STEREO_MATCHES = 100
 MIN_SCORE = 0.01
+
+# Feature detector/descriptor/matcher used for stereo matching, frame-to-frame tracking and loop closure.
+# "superpoint_lightglue" is the deployed frontend. "orb" and "sift" (OpenCV) are classical alternatives for
+# the journal-revision feature ablation; everything downstream (stereo depth, PnP, tracks, loop closure) is
+# unchanged. Classical features use the same feature dict layout as SuperPoint (keypoints [1, N, 2],
+# keypoint_scores [1, N], descriptors [1, N, D], image_size [1, 2], on the GPU) so that the downstream code
+# is shared. Classical matching is brute force (Hamming for ORB, L2 for SIFT) with Lowe's ratio test; a
+# match's score is 1 - d1/d2 (nearest over second-nearest descriptor distance) and only ranks matches when
+# max_matches truncates. min_score is a LightGlue match confidence and is not applied to classical matches:
+# the ratio test is their acceptance test.
+FEATURE_TYPES = ("superpoint_lightglue", "orb", "sift")
+CLASSICAL_RATIO_TEST = 0.8
 
 
 def prune_features(feats: dict, indices: np.ndarray) -> dict:
@@ -53,10 +67,29 @@ def highest_score_matches(matches: dict, N: int) -> np.ndarray:
 
 
 class FeatureTracker:
-    def __init__(self, cam_config: dict, max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS):
+    def __init__(
+        self,
+        cam_config: dict,
+        max_keypoints: int = EXTRACTOR_MAX_KEYPOINTS,
+        feature_type: str = "superpoint_lightglue",
+    ):
+        assert feature_type in FEATURE_TYPES, f"Unknown feature type {feature_type}"
         self.cam_config = cam_config
-        self.extractor = SuperPoint(max_num_keypoints=max_keypoints).eval().cuda()
-        self.matcher = LightGlue(features="superpoint").eval().cuda()
+        self.feature_type = feature_type
+        if feature_type == "superpoint_lightglue":
+            self.extractor = SuperPoint(max_num_keypoints=max_keypoints).eval().cuda()
+            self.matcher = LightGlue(features="superpoint").eval().cuda()
+        elif feature_type == "orb":
+            # Second detector instance for the right image of a stereo pair (extracted concurrently)
+            self.extractor, self.extractor_right = (cv2.ORB_create(nfeatures=max_keypoints) for _ in range(2))
+            self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+            self.descriptor_dim, self.descriptor_dtype = 32, np.uint8
+        elif feature_type == "sift":
+            self.extractor, self.extractor_right = (cv2.SIFT_create(nfeatures=max_keypoints) for _ in range(2))
+            self.matcher = cv2.BFMatcher(cv2.NORM_L2)
+            self.descriptor_dim, self.descriptor_dtype = 128, np.float32
+        if feature_type != "superpoint_lightglue":
+            self.thread_pool = ThreadPoolExecutor(max_workers=1)
 
         # Currently default parameters
         self.lk_params = dict(
@@ -79,13 +112,54 @@ class FeatureTracker:
     ) -> dict:
         """Extract features from image"""
         # TODO: handle min_score and max_keypoints
+        if self.feature_type != "superpoint_lightglue":
+            return self.extract_classical_feats(image)
         feats = self.extractor.extract(grayscale_to_3ch_tensor(image).cuda())
         return feats
+
+    def extract_classical_feats(self, image: np.ndarray, extractor=None) -> dict:
+        """ORB or SIFT features of a grayscale uint8 image, in the SuperPoint feature dict layout"""
+        extractor = self.extractor if extractor is None else extractor
+        keypoints, descriptors = extractor.detectAndCompute(image, None)
+        if descriptors is None:  # no keypoints
+            descriptors = np.zeros((0, self.descriptor_dim), dtype=self.descriptor_dtype)
+        pts = np.array([kp.pt for kp in keypoints], dtype=np.float32).reshape(-1, 2)
+        scores = np.array([kp.response for kp in keypoints], dtype=np.float32)
+        height, width = image.shape[:2]
+        return {
+            "keypoints": torch.from_numpy(pts).unsqueeze(0).cuda(),
+            "keypoint_scores": torch.from_numpy(scores).unsqueeze(0).cuda(),
+            "descriptors": torch.from_numpy(descriptors).unsqueeze(0).cuda(),
+            "image_size": torch.tensor([[width, height]], dtype=torch.float32).cuda(),
+        }
+
+    def match_classical_feats(self, feats1: dict, feats2: dict) -> dict:
+        """Brute-force matching with the ratio test, in the LightGlue output layout (matches [M, 2], scores [M])"""
+        desc1 = feats1["descriptors"][0].cpu().numpy()
+        desc2 = feats2["descriptors"][0].cpu().numpy()
+        pairs = []
+        if len(desc1) > 0 and len(desc2) >= 2:
+            for knn in self.matcher.knnMatch(desc1, desc2, k=2):
+                best, second = knn
+                if best.distance < CLASSICAL_RATIO_TEST * second.distance:
+                    # second.distance > 0 here since best.distance >= 0
+                    pairs.append((best.queryIdx, best.trainIdx, 1.0 - best.distance / second.distance))
+        pairs = np.array(pairs, dtype=np.float64).reshape(-1, 3)
+        device = feats1["keypoints"].device
+        return {
+            "matches": torch.from_numpy(pairs[:, :2].astype(np.int64)).to(device),
+            "scores": torch.from_numpy(pairs[:, 2].astype(np.float32)).to(device),
+        }
 
     def match_feats(
         self, feats1: dict, feats2: dict, max_matches: int = None, min_score: float = None
     ) -> torch.Tensor:
         """Match features between two images"""
+        if self.feature_type != "superpoint_lightglue":
+            matches = self.match_classical_feats(feats1, feats2)
+            if max_matches is not None:
+                return highest_score_matches(matches, max_matches)
+            return matches["matches"]
         matches = rbd(self.matcher({"image0": feats1, "image1": feats2}))
         if min_score is not None:
             mask = matches["scores"] > min_score
@@ -105,8 +179,17 @@ class FeatureTracker:
         return_matched_feats: bool = False,
     ) -> tuple[dict, dict, torch.Tensor, torch.Tensor]:
         """Process stereo pair to get features and depths"""
-        feats_left = self.extract_feats(left_image)
-        feats_right = self.extract_feats(right_image)
+        if self.feature_type == "superpoint_lightglue":
+            feats_left = self.extract_feats(left_image)
+            feats_right = self.extract_feats(right_image)
+        else:
+            # OpenCV detection is CPU-bound and releases the GIL: the right image is extracted in a worker
+            # thread (own detector instance) while the left one is extracted here
+            future_right = self.thread_pool.submit(
+                self.extract_classical_feats, right_image, self.extractor_right
+            )
+            feats_left = self.extract_classical_feats(left_image)
+            feats_right = future_right.result()
         matches = self.match_feats(feats_left, feats_right, max_matches, min_score)
         matched_kps_left = feats_left["keypoints"][0][matches[:, 0]]
         matched_kps_right = feats_right["keypoints"][0][matches[:, 1]]

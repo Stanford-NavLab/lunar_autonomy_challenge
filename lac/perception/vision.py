@@ -106,6 +106,7 @@ def solve_vision_pnp(
     points2D: np.ndarray,
     K: np.ndarray = CAMERA_INTRINSICS,
     cam_name: str = "FrontLeft",
+    return_inliers: bool = False,
 ) -> np.ndarray | None:
     """
     Solve the PnP problem to estimate the camera pose from 3D-2D point correspondences.
@@ -118,10 +119,11 @@ def solve_vision_pnp(
 
     Returns:
     np.ndarray (4, 4) - Estimated rover pose in world/local frame
+    If return_inliers, also the number of RANSAC inliers (0 when PnP fails)
     """
     if len(points3D) < 4:
         print("[red]Not enough points to solve PnP.")
-        return None
+        return (None, 0) if return_inliers else None
     success, rvec, tvec, inliers = cv2.solvePnPRansac(
         objectPoints=points3D,
         imagePoints=points2D,
@@ -137,10 +139,10 @@ def solve_vision_pnp(
         w_T_c = invert_transform_mat(make_transform_mat(R, tvec))
         w_T_c[:3, :3] = w_T_c[:3, :3] @ OPENCV_TO_CAMERA_PASSIVE
         rover_pose = w_T_c @ invert_transform_mat(get_cam_pose_rover(cam_name))
-        return rover_pose
+        return (rover_pose, len(inliers)) if return_inliers else rover_pose
     else:
         print("[red]PnP solve failed.")
-        return None
+        return (None, 0) if return_inliers else None
 
 
 class FiducialLocalizer:
