@@ -11,7 +11,6 @@ from lac.perception.depth import (
     compute_rock_coords_rover_frame,
     compute_rock_radii,
 )
-from lac.localization.imu_recovery import ImuEstimator
 from lac.params import STEREO_BASELINE, FL_X, DT
 from lac.util import rotation_matrix_error
 
@@ -36,6 +35,29 @@ def vo_step_valid(odometry: np.ndarray) -> bool:
         np.linalg.norm(odometry[:3, 3]) <= VO_MAX_STEP_TRANSLATION
         and rotation_matrix_error(odometry[:3, :3], np.eye(3)) <= VO_MAX_STEP_ROTATION
     )
+
+
+def wheel_gyro_odometry(
+    wheel_speeds: np.ndarray, gyro_world: np.ndarray, prev_rotation: np.ndarray, dt: float = DT
+) -> np.ndarray:
+    """Dead-reckoned body-frame odometry over the sim steps since the last image.
+
+    wheel_speeds : (n,) IPEx wheel-odometry linear speed per sim step [m/s] (get_linear_speed)
+    gyro_world : (n, 3) IMU angular rate per sim step [rad/s]. The simulator reports it in the WORLD frame
+        (least-squares fit to the GT rates: world A ~ I, R^2 0.84-0.97; body R^2 0.21-0.88), unlike the
+        accelerometer, which is in the body frame.
+    prev_rotation : (3, 3) attitude estimate at the previous image (world_R_body), to rotate the rates
+        into the body frame.
+    Translation is the wheel speed along body x (no lateral or vertical slip modelled).
+    """
+    T = np.eye(4)
+    for v, w in zip(wheel_speeds, gyro_world):
+        w_body = (prev_rotation @ T[:3, :3]).T @ w
+        step = np.eye(4)
+        step[:3, :3] = Rotation.from_rotvec(w_body * dt).as_matrix()
+        step[0, 3] = v * dt
+        T = T @ step
+    return T
 
 
 def is_keyframe(step: int, motion: np.ndarray) -> bool:
@@ -74,7 +96,6 @@ class Frontend:
         self.feature_tracker = feature_tracker
         self.segmentation = UnetSegmentation()
         self.back_feature_tracker = back_feature_tracker
-        self.imu_estimator = ImuEstimator(initial_pose)
 
         # State variables
         self.current_velocity = np.zeros(3)
@@ -98,7 +119,8 @@ class Frontend:
             - step : int - step number
             - FrontLeft : np.ndarray (H, W, 3) - front left image
             - FrontRight : np.ndarray (H, W, 3) - front right image
-            - imu : np.ndarray (6,) - IMU measurement
+            - wheel_speeds : np.ndarray (n,) - wheel linear speed per sim step since the last image
+            - gyro : np.ndarray (n, 3) - IMU angular rate (world frame) per sim step since the last image
 
         """
         # Segmentation
@@ -124,21 +146,15 @@ class Frontend:
             print("[bold orange]VO step rejected by the sanity gate")
             odometry = None
 
-        # If VO failed or was rejected, use IMU odometry instead
+        # If VO failed or was rejected, dead-reckon with wheel odometry and the gyro. The previous
+        # fallback was identity odometry: every motion while VO was down (backups, 90 deg recovery
+        # turns) was lost, and the heading error it left (50-140 deg) made the campaign outliers.
         if odometry is None:
-            print("[bold orange]Using IMU odometry")
-            for measurement in data["imu_measurements"]:
-                self.imu_estimator.update(measurement, exact=False)
-            odometry = np.linalg.inv(data["prev_pose"]) @ self.imu_estimator.get_pose()
-            # NOTE: Above estimation seems to blow up occasionally, use identity for now
-            odometry = np.eye(4)
-            data["odometry_source"] = "IMU"
-        else:
-            # Update IMU estimator with the odometry
-            new_pose = data["prev_pose"] @ odometry
-            self.imu_estimator.update_pose_from_vo(new_pose)
+            print("[bold orange]Using wheel/gyro odometry")
+            odometry = wheel_gyro_odometry(data["wheel_speeds"], data["gyro"], data["prev_pose"][:3, :3])
+            data["odometry_source"] = "WHEEL"
 
-        self.current_velocity = odometry[:3, 3] / (2 * DT)
+        self.current_velocity = odometry[:3, 3] / (len(data["wheel_speeds"]) * DT)
 
         # Back camera feature tracking
         if self.back_feature_tracker is not None:

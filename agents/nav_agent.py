@@ -151,6 +151,8 @@ class NavAgent(AutonomousAgent):
         self.current_pose = self.initial_pose
         self.current_velocity = np.zeros(3)
         self.imu_measurements = deque(maxlen=2)  # IMU measurements since last image
+        self.wheel_speeds = deque(maxlen=2)  # wheel-odometry linear speed per sim step since last image
+        self.vo_lost_frames = 0  # consecutive image frames on the wheel/gyro fallback
         self.arm_raise_accel = []  # Accelerometer readings at the end of the arm raise
 
         """ SLAM """
@@ -256,6 +258,12 @@ class NavAgent(AutonomousAgent):
         # Agent is stuck if the velocity is less than 0.1 m/s
         if self.step < ARM_RAISE_WAIT_FRAMES + 10:
             return False
+        # VO lost for 1 s (in the campaign: front stereo sees no ground within 15 m once the rover pitches
+        # nose-up past ~20 deg on a rock or slope). The velocity is wheel speed then, so the speed test
+        # below no longer fires on VO loss; back off the obstacle with the usual maneuver instead.
+        if self.vo_lost_frames >= params.FRAME_RATE // 2:
+            self.vo_lost_frames = 0
+            return True
         is_stuck = np.linalg.norm(self.current_velocity) < 0.25 * params.TARGET_SPEED
         if is_stuck and self.stuck_timer == 0:
             self.stuck_counter += 1
@@ -316,6 +324,7 @@ class NavAgent(AutonomousAgent):
 
         imu_data = self.get_imu_data()
         self.imu_measurements.append(imu_data)
+        self.wheel_speeds.append(self.get_linear_speed())
         if ARM_RAISE_WAIT_FRAMES - ATTITUDE_AVERAGE_FRAMES < self.step <= ARM_RAISE_WAIT_FRAMES:
             self.arm_raise_accel.append(imu_data[:3])
         control = (0.0, 0.0)
@@ -336,10 +345,13 @@ class NavAgent(AutonomousAgent):
                 else:
                     images_gray["step"] = self.step
                     images_gray["imu_measurements"] = self.imu_measurements
+                    images_gray["wheel_speeds"] = np.array(self.wheel_speeds)
+                    images_gray["gyro"] = np.array(self.imu_measurements)[:, 3:]
                     images_gray["prev_pose"] = self.current_pose
 
                     data = self.frontend.process_frame(images_gray)
                     self.backend.update(data)
+                    self.vo_lost_frames = self.vo_lost_frames + 1 if data["odometry_source"] != "VO" else 0
 
                     if LOG_DATA:
                         self.slam_eval_poses.append(ground_truth_pose)

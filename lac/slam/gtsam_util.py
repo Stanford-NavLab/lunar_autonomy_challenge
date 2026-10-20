@@ -25,7 +25,9 @@ VO_ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
 # IMU_ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
 #     np.array([0.004, 0.0015, 0.0015, 0.004, 0.004, 0.001])
 # )
-IMU_ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(0.1 * np.ones(6))
+# Wheel/gyro dead reckoning per image step (0.1 s): rotation from the gyro (rms 0.009-0.036 rad/s vs GT on
+# the yaw axis), translation from the wheel speed along body x (rms 0.04-0.11 m/s vs GT, slips on rocks)
+WHEEL_ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.004, 0.004, 0.004, 0.012, 0.012, 0.012]))
 LOOP_CLOSURE_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
     np.array([0.00087, 0.00087, 0.00087, 0.005, 0.005, 0.005])
 )

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from lac.slam.semantic_feature_tracker import SemanticFeatureTracker, TrackedPoints
 from lac.slam.loop_closure import keyframe_estimate_loop_closure_pose
-from lac.slam.gtsam_util import VO_ODOMETRY_NOISE, IMU_ODOMETRY_NOISE, LOOP_CLOSURE_NOISE
+from lac.slam.gtsam_util import VO_ODOMETRY_NOISE, WHEEL_ODOMETRY_NOISE, LOOP_CLOSURE_NOISE
 from lac.utils.frames import apply_transform
 from lac.util import rotation_matrix_error
 
@@ -171,10 +171,7 @@ class Backend:
             - keyframe : bool - whether this is a keyframe
 
         """
-        if data["odometry_source"] == "VO":
-            odometry_noise = VO_ODOMETRY_NOISE
-        elif data["odometry_source"] == "IMU":
-            odometry_noise = IMU_ODOMETRY_NOISE
+        odometry_noise = {"VO": VO_ODOMETRY_NOISE, "WHEEL": WHEEL_ODOMETRY_NOISE}[data["odometry_source"]]
 
         # Chain the odometry since the last node, from that node's latest (optimized) estimate
         node = len(self.node_pose_idx) - 1
