@@ -5,7 +5,7 @@ import gtsam
 from gtsam.symbol_shorthand import X
 from dataclasses import dataclass
 
-from lac.slam.semantic_feature_tracker import SemanticFeatureTracker, TrackedPoints
+from lac.slam.semantic_feature_tracker import SemanticFeatureTracker, TrackedPoints, MAX_DEPTH
 from lac.slam.loop_closure import keyframe_estimate_loop_closure_pose
 from lac.slam.gtsam_util import VO_ODOMETRY_NOISE, WHEEL_ODOMETRY_NOISE, LOOP_CLOSURE_NOISE
 from lac.utils.frames import apply_transform
@@ -55,9 +55,6 @@ BACKEND_OPTION_DEFAULTS = {
     # One graph node per image frame with the per-frame odometry factors, as in the paper backend (2322a81).
     # Only for reproducing the paper's offline replays (analysis/replay_backend.py, replay_full.py).
     "reproduce_paper_per_frame_graph": False,
-    # Proximity gate against the latest optimized pose of each stored keyframe (paper: the pose
-    # recorded when the keyframe was created, never updated)
-    "gate_on_optimized_keyframes": False,
     # min_matches counts only matches with stereo depth, the 2D-3D set used by PnP (paper: all
     # LightGlue matches above min_score)
     "count_stereo_matches_only": False,
@@ -114,8 +111,6 @@ class Backend:
 
         self.point_map = {}  # anchor_pose_idx -> (local points, labels)
         self.keyframe_data = {}  # store data at keyframes (for loop closure)
-        self.keyframe_traj_list = []
-        self.keyframe_traj = None
         self.loop_closures = []
 
         # Config parameters
@@ -229,11 +224,12 @@ class Backend:
 
         # Handle keyframe
         if data["keyframe"]:
+            # Loop-closure stereo with the tracking depth limit (15 m), not the process_stereo default
+            # (params.MAX_DEPTH, 56.5 m): beyond 15 m one keypoint quantum of disparity (1.25 px) is more than 2 m
+            # of depth
             self.keyframe_data[self.pose_idx] = self.feature_tracker.process_stereo(
-                data["FrontLeft"], data["FrontRight"]
+                data["FrontLeft"], data["FrontRight"], max_depth=MAX_DEPTH
             )
-            self.keyframe_traj_list.append(new_pose)
-            self.keyframe_traj = np.array(self.keyframe_traj_list)
 
             # Check for loop closures
             loop_closure_idxs = self.detect_loop_closures(new_pose)
@@ -246,11 +242,13 @@ class Backend:
     def detect_loop_closures(self, new_pose: np.ndarray):
         """Check if the new pose is close to any existing keyframes"""
         loop_closure_idxs = []
-        if self.keyframe_traj is not None and len(self.keyframe_traj) > LOOP_CLOSURE_EXCLUDE:
-            if self.options["gate_on_optimized_keyframes"]:
-                keyframe_poses = np.array([self.get_pose(i) for i in self.keyframe_data])
-            else:
-                keyframe_poses = self.keyframe_traj
+        if len(self.keyframe_data) > LOOP_CLOSURE_EXCLUDE:
+            # Gate against the current (optimized) estimate of each keyframe, the same estimate as new_pose. The
+            # paper gate used the pose stored when the keyframe was created, never updated after optimizations:
+            # its keyframe-to-current distance error vs GT was larger (median 2.2 vs 0.27 cm on Map 1 preset 2,
+            # 1.1 vs 0.24 cm and 1.0 vs 0.43 cm on two more runs; analysis/bugfix_replay.py) and grows with every
+            # loop-closure correction.
+            keyframe_poses = np.array([self.get_pose(i) for i in self.keyframe_data])
             # Exclude the most recent N keyframes
             # Only check 2D (xy) distance
             dists = np.linalg.norm(

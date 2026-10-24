@@ -278,9 +278,11 @@ class NavAgent(AutonomousAgent):
                 self.stuck_timer = 0
                 return True
         elif self.stuck_timer >= params.FRAME_RATE * 3:  # more than 3 seconds
-            if (self.stuck_counter / self.stuck_timer) < 0.5:
-                self.stuck_counter = 0
-                self.stuck_timer = 0
+            # The window closed without firing: always reset. Resetting only when the ratio was below 0.5
+            # left the timer running forever at a ratio of exactly 0.5 (30 of 60 steps), and the detector
+            # never fired again (analysis/bugfix_stuck_detector.py: 63/2000 random sequences)
+            self.stuck_counter = 0
+            self.stuck_timer = 0
         return False
 
     def run_step(self, input_data):

@@ -30,6 +30,13 @@ EXTRACTOR_MAX_KEYPOINTS = 512
 MAX_TRACKED_POINTS = 100
 MAX_STEREO_MATCHES = 100
 MIN_SCORE = 0.01
+# Stereo matches must lie on the same image row: the front pair is rectified (same intrinsics and orientation,
+# horizontal baseline; docs/geometry.json), and the measured row differences are symmetric about 0. SuperPoint
+# keypoints come from the image resized to 1024 px wide, so coordinates are multiples of 1.25 px. Of the stereo
+# matches verified against GT terrain (near points within 5 cm of the GT height map, 3.1M matches, 4 runs,
+# analysis/bugfix_stereo_gt_height.py), 99.91% have |row difference| <= 3.75 px; matches at >= 5 px are at least 6x more
+# often off the terrain by > 0.2 m than matches at 0 px.
+STEREO_MAX_ROW_DIFF = 4.0  # [px]
 
 # Feature detector/descriptor/matcher used for stereo matching, frame-to-frame tracking and loop closure.
 # "superpoint_lightglue" is the deployed frontend. "orb" and "sift" (OpenCV) are classical alternatives for
@@ -196,8 +203,10 @@ class FeatureTracker:
         disparities = matched_kps_left[:, 0] - matched_kps_right[:, 0]
         depths = FL_X * STEREO_BASELINE / (disparities + 1e-8)  # Avoid division by zero
 
-        # Filter out depths that are too large
-        outliers = depths > max_depth
+        # Keep depths in (0, max_depth]. A disparity <= 0 (right keypoint not left of the left one) is a mismatch
+        # and gives a negative (or, at 0, a huge) depth. Drop matches off the epipolar line (same row).
+        row_diffs = torch.abs(matched_kps_left[:, 1] - matched_kps_right[:, 1])
+        outliers = (depths <= 0) | (depths > max_depth) | (row_diffs > STEREO_MAX_ROW_DIFF)
         if torch.sum(outliers) > 0:
             matches = matches[~outliers]
             depths = depths[~outliers]

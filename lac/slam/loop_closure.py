@@ -8,6 +8,13 @@ from lac.perception.vision import solve_vision_pnp
 
 MIN_MATCHES = 120
 MIN_SCORE = 0.25
+# A loop closure is accepted only if its PnP has at least this many RANSAC inliers. The match count alone accepted
+# relative poses off by up to tens of cm (5 mm loop-closure noise). Offline replays of 4 stored runs
+# (analysis/bugfix_replay.py --probe, 3608 candidates, translation error vs the GT relative pose; candidates with
+# >= 60 inliers stay below 3.4 cm): error > 5 cm in 0.1% of candidates with >= 30 inliers, 1-2% with 20-29, 8% with
+# 15-19, 10% with 10-14, 39% below 10. The gate rejects 78 of the 80 match-count-accepted candidates with > 5 cm
+# (and 1101 of 3037 accepted candidates in all).
+MIN_INLIERS = 30
 
 
 def estimate_loop_closure_pose(
@@ -58,7 +65,7 @@ def keyframe_estimate_loop_closure_pose(
 ) -> np.ndarray | None:
     """Estimate the loop closure pose using stereo images.
 
-    Returns None if not enough points/matches or PnP fails.
+    Returns None if not enough points/matches, PnP fails or has fewer than MIN_INLIERS inliers.
 
     count_stereo_only : if True, the min_matches test counts only the matches whose keyframe feature has
         stereo depth (the 2D-3D set passed to PnP); if False (paper), all matches above min_score.
@@ -90,6 +97,9 @@ def keyframe_estimate_loop_closure_pose(
     points2D = feats_left2["keypoints"][0][frame_common[:, 1]].cpu().numpy()
 
     # relative pose from frame 1 to frame 2, i.e. pose2 = pose1 @ rel_pose
-    rel_pose = solve_vision_pnp(points3D, points2D)
+    rel_pose, num_inliers = solve_vision_pnp(points3D, points2D, return_inliers=True)
+    if num_inliers < MIN_INLIERS:
+        print("Not enough PnP inliers for loop closure")
+        return None, num_matches
 
     return rel_pose, num_matches
