@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "goal_xy_m": [0.0, 2.5],
+    "goal_xy_m": [0.0, 5.0],
     "goal_yaw_rad": -1.5707963267948966,
     "arm_raise_wait_frames": 80,
     "approach_handoff_idx_buffer": 2,
@@ -26,23 +26,35 @@
     "rerun_enabled": true
   },
   "alignment": {
-    "target_point_lander_m": [0.0, 2.0, 0.0],
-    "target_yaw_lander_rad": 0.0,
-    "controller": {
-      "k_rho": 0.8,
-      "k_alpha": 1.2,
-      "k_theta": 0.6,
-      "k_theta_final": 1.2,
-      "k_rho_final": 0.0,
-      "v_max": 0.3,
-      "w_max": 0.6,
-      "forward_only": false,
-      "rho_final": 0.2,
-      "dv_max": 0.8,
-      "dw_max": 1.5,
+    "target_visible_assumed": true,
+    "allow_reverse_for_docking": true,
+    "debug_log": {
+      "enabled": true,
+      "path": "logs/alignment_debug_{timestamp}.jsonl",
+      "flush_every": 1
+    },
+    "docking_outer": {
+      "rotate_enter_rad": 0.3,
+      "rotate_exit_rad": 0.12,
+      "final_align_radius_m": 0.2,
       "r_tol": 0.08,
       "theta_tol": 0.12,
-      "hold_frames": 12
+      "hold_frames": 12,
+      "carrot_dist_m": 0.35,
+      "slowdown_radius_m": 1.0,
+      "v_approach_max": 0.22,
+      "v_approach_min": 0.08,
+      "search_w_ref": 0.2,
+      "stagnation_timeout_s": 2.5,
+      "stagnation_progress_eps_m": 0.015,
+      "recovery_reverse_dist_m": 0.25,
+      "recovery_duration_s": 1.2,
+      "v_cmd_max": 0.22,
+      "w_cmd_max": 0.45,
+      "min_v_effective": 0.06,
+      "min_w_effective": 0.1,
+      "dv_max": 0.35,
+      "dw_max": 0.7
     }
   }
 }

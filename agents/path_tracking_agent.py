@@ -45,6 +45,7 @@ RERUN_ENABLED = True
 LOG_DATA = True
 USE_HEADING_AWARE_PLANNER = True
 DEM_SWAP_XY = True
+USE_SMOOTHER_DEM_AWARE = True
 
 
 def get_entry_point():
@@ -69,7 +70,12 @@ class PathTrackingAgent(AutonomousAgent):
         self.rerun_enabled = RERUN_ENABLED
         self.rerun_rover_positions: list[np.ndarray] = []
         self.rover_trajectory_world: list[np.ndarray] = []
+        self.tracking_position_errors_m: list[float] = []
+        self.tracking_error_stats_printed = False
         self.path_vis_z_offset_m = 0.5 * params.WHEEL_DIAMETER + params.WHEEL_CENTER_Z_OFFSET
+        self.smoother_dem_aware = bool(
+            self.config.get("smoother_dem_aware", USE_SMOOTHER_DEM_AWARE)
+        )
 
         self.initial_pose = transform_to_numpy(self.get_initial_position())
         self.current_pose = self.initial_pose.copy()
@@ -90,6 +96,11 @@ class PathTrackingAgent(AutonomousAgent):
         self.dem = DEMGrid.from_map_array(map_arr, cell_size=params.CELL_WIDTH, swap_xy=DEM_SWAP_XY)
         self.dem_z = self.dem.z
         self.dem_x_grid, self.dem_y_grid = self.dem.mesh_grids()
+        if self.smoother_dem_aware:
+            self.smoother_heightmap = self.dem_z
+        else:
+            z0 = float(np.nanmean(self.dem_z))
+            self.smoother_heightmap = np.full_like(self.dem_z, z0, dtype=np.float32)
 
         planner_cfg = DEMPlannerParams(
             roughness_window=5,
@@ -129,6 +140,7 @@ class PathTrackingAgent(AutonomousAgent):
                 goal_xy=GOAL_XY_M,
                 goal_yaw_rad=GOAL_YAW_RAD,
                 cell_size=params.CELL_WIDTH,
+                smoother_heightmap=self.smoother_heightmap,
             )
             self.path_world = heading_result.path_xy
             self.path_cost = heading_result.total_cost
@@ -151,7 +163,7 @@ class PathTrackingAgent(AutonomousAgent):
             smoother = PathSmoother(smoother_cfg)
             self.trajectory: Trajectory2D = smoother.smooth(
                 Path2D(xy=np.asarray(self.path_world), meta=self.path_debug),
-                self.dem_z,
+                self.smoother_heightmap,
                 initial_pose=self.initial_pose,
                 goal_yaw_rad=GOAL_YAW_RAD,
             )
@@ -179,6 +191,10 @@ class PathTrackingAgent(AutonomousAgent):
         print(
             f"[green]Start/goal grid: {self.path_debug['start_grid']} -> {self.path_debug['goal_grid']}; "
             f"cost={self.path_cost:.3f}"
+        )
+        print(
+            f"[green]Path smoother terrain-aware: {self.smoother_dem_aware} "
+            f"(DEM used for speed profiling={self.smoother_dem_aware})"
         )
         print(f"[cyan]Planned world path points:\n{np.asarray(self.path_world)}")
         print(f"[cyan]Tracker config: {tracker_cfg}")
@@ -208,6 +224,7 @@ class PathTrackingAgent(AutonomousAgent):
                 "goal_world_xy": list(GOAL_XY_M),
                 "goal_yaw_rad": float(GOAL_YAW_RAD),
                 "heading_aware_planner": bool(USE_HEADING_AWARE_PLANNER),
+                "smoother_dem_aware": bool(self.smoother_dem_aware),
                 "start_grid": list(self.path_debug.get("start_grid", (-1, -1))),
                 "goal_grid": list(self.path_debug.get("goal_grid", (-1, -1))),
                 "total_cost": float(self.path_cost),
@@ -275,6 +292,23 @@ class PathTrackingAgent(AutonomousAgent):
         print("\nCtrl+C detected! Exiting mission")
         self.mission_complete()
 
+    def _print_tracking_error_stats(self) -> None:
+        if self.tracking_error_stats_printed:
+            return
+        self.tracking_error_stats_printed = True
+
+        if len(self.tracking_position_errors_m) == 0:
+            print("[yellow]Tracking error stats unavailable (no post-wait tracking samples).")
+            return
+
+        err = np.asarray(self.tracking_position_errors_m, dtype=np.float64)
+        print(
+            "[bold cyan]Tracking error summary (2D position vs nearest trajectory sample): "
+            f"N={len(err)} | mean={err.mean():.3f} m | rmse={np.sqrt(np.mean(err * err)):.3f} m | "
+            f"min={err.min():.3f} m | max={err.max():.3f} m | p95={np.percentile(err, 95):.3f} m | "
+            f"final={err[-1]:.3f} m"
+        )
+
     def initialize(self):
         self.set_front_arm_angle(params.FRONT_ARM_ANGLE_STATIC_RAD)
         self.set_back_arm_angle(params.ARM_ANGLE_STATIC_RAD)
@@ -330,12 +364,17 @@ class PathTrackingAgent(AutonomousAgent):
         dbg = self.tracker.last_debug
         nearest_idx = int(dbg.get("nearest_idx", 0))
         target_idx = int(dbg.get("target_idx", 0))
+        current_xy = np.asarray(self.current_pose[:2, 3], dtype=np.float64)
+        ref_xy = np.asarray(self.trajectory.xyt[nearest_idx, :2], dtype=np.float64)
+        tracking_err_m = float(np.linalg.norm(current_xy - ref_xy))
+        self.tracking_position_errors_m.append(tracking_err_m)
         progress_pct = 100.0 * nearest_idx / max(len(self.trajectory.t) - 1, 1)
         dist_to_goal = float(dbg.get("dist_to_goal_m", 0.0))
         print(
             f"[blue]Tracking step={self.step} | progress={progress_pct:5.1f}% "
             f"(nearest {nearest_idx}, target {target_idx}, N={len(self.trajectory.t) - 1}) | "
-            f"dist_to_goal={dist_to_goal:.2f} m | v={self.current_v:.3f} m/s | w={self.current_w:.3f} rad/s"
+            f"dist_to_goal={dist_to_goal:.2f} m | e2d={tracking_err_m:.3f} m | "
+            f"v={self.current_v:.3f} m/s | w={self.current_w:.3f} rad/s"
         )
         print(
             f"[magenta]  pose=({dbg.get('current_xy', np.array([np.nan, np.nan]))[0]:.2f}, "
@@ -362,12 +401,14 @@ class PathTrackingAgent(AutonomousAgent):
 
         if self.tracker.last_debug.get("reached_goal", False):
             print("[bold green]Reached trajectory goal. Mission complete.")
+            self._print_tracking_error_stats()
             control = carla.VehicleVelocityControl(0.0, 0.0)
             if LOG_DATA:
                 self.data_logger.log_data(self.step, control, est_pose=self.current_pose)
                 self.data_logger.data["rover_trajectory_world_xyz"] = np.asarray(
                     self.rover_trajectory_world
                 ).tolist()
+                self.data_logger.data["tracking_error_2d_m"] = list(self.tracking_position_errors_m)
             self.mission_complete()
             return control
 
@@ -387,5 +428,7 @@ class PathTrackingAgent(AutonomousAgent):
             self.data_logger.data["rover_trajectory_world_xyz"] = np.asarray(
                 self.rover_trajectory_world
             ).tolist()
+            self.data_logger.data["tracking_error_2d_m"] = list(self.tracking_position_errors_m)
             self.data_logger.save_log()
+        self._print_tracking_error_stats()
         print("[blue]PathTrackingAgent finalize")

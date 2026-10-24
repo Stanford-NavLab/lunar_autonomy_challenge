@@ -45,6 +45,7 @@ class HeadingAwarePlanner:
         goal_xy: Sequence[float],
         goal_yaw_rad: float,
         cell_size: float = CELL_WIDTH,
+        smoother_heightmap: Optional[np.ndarray] = None,
     ) -> HeadingAwarePlanResult:
         """Plan heading-aware path by composing DEM planner and smoother."""
         if not np.isclose(cell_size, CELL_WIDTH):
@@ -76,9 +77,10 @@ class HeadingAwarePlanner:
             )
 
         smoother = PathSmoother(cfg.smoother_config)
+        z_smoother = z2d if smoother_heightmap is None else np.asarray(smoother_heightmap, dtype=np.float32)
         traj = smoother.smooth(
             Path2D(xy=np.asarray(path_world, dtype=np.float64), meta=dem_debug),
-            z2d,
+            z_smoother,
             initial_pose=initial_pose,
             goal_yaw_rad=float(goal_yaw_rad),
         )

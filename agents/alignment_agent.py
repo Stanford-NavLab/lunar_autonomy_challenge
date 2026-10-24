@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 import signal
 from dataclasses import asdict
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import carla
@@ -16,8 +18,8 @@ from rich import print
 
 import lac.params as params
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent
-from lac.control.alignment_controller import AlignmentController, AlignmentControllerConfig
 from lac.control.controller import TrajectoryTracker, TrajectoryTrackerConfig
+from lac.control.docking_outer_controller import DockingOuterController, DockingOuterControllerConfig
 from lac.planning.dem_grid import DEMGrid
 from lac.planning.dem_planner import DEMPlannerParams, plan_path_dem, yaw_from_pose
 from lac.planning.heading_aware_planner import HeadingAwarePlanner, HeadingAwarePlannerParams
@@ -29,7 +31,7 @@ from lac.utils.rerun_interface import (
     rerun_dem_grid_lines,
     rerun_lander,
 )
-from lac.util import transform_to_numpy, wrap_angle
+from lac.util import transform_to_numpy
 
 
 DEFAULT_GOAL_XY_M = (0.0, 2.5)
@@ -73,6 +75,15 @@ class AlignmentAgent(AutonomousAgent):
         self.approach_handoff_idx_buffer = int(nav_cfg.get("approach_handoff_idx_buffer", 2))
         self.approach_handoff_timeout_steps = int(nav_cfg.get("approach_handoff_timeout_steps", 60))
         self.rerun_enabled = bool(vis_cfg.get("rerun_enabled", DEFAULT_RERUN_ENABLED))
+        self.target_visible_assumed = bool(align_cfg.get("target_visible_assumed", True))
+        debug_log_cfg = align_cfg.get("debug_log", {})
+        self.align_debug_log_enabled = bool(debug_log_cfg.get("enabled", False))
+        self.align_debug_log_flush_every = max(1, int(debug_log_cfg.get("flush_every", 1)))
+        self.align_debug_log_path_cfg = str(
+            debug_log_cfg.get("path", "logs/alignment_debug_{timestamp}.jsonl")
+        )
+        self._align_debug_log_fp = None
+        self._align_debug_log_write_count = 0
 
         self.step = 0
         self.phase = "nav"
@@ -176,22 +187,15 @@ class AlignmentAgent(AutonomousAgent):
             k_goal_v=0.8,
             stop_pos_tol=float(planner_cfg_json.get("tracker_stop_pos_tol", 0.2)),
             stop_heading_tol=float(planner_cfg_json.get("tracker_stop_heading_tol", 0.2)),
+            allow_reverse=bool(align_cfg.get("allow_reverse_for_docking", True)),
             default_dt=params.DT,
         )
         self.tracker = TrajectoryTracker(tracker_cfg)
 
-        # Build global target pose from lander frame target.
-        target_point_lander = np.asarray(
-            align_cfg.get("target_point_lander_m", [0.0, 2.0, 0.0]), dtype=np.float64
-        )
-        target_yaw_lander = float(align_cfg.get("target_yaw_lander_rad", 0.0))
-        lander_R_world = self.initial_lander_pose_world[:3, :3]
-        lander_t_world = self.initial_lander_pose_world[:3, 3]
-        p_target_world = lander_R_world @ target_point_lander + lander_t_world
-        yaw_lander_world = float(yaw_from_pose(self.initial_lander_pose_world))
-        yaw_target_world = float(wrap_angle(yaw_lander_world + target_yaw_lander))
+        # Single source of truth for both nav and final alignment target.
         self.target_pose_xyt = np.array(
-            [float(p_target_world[0]), float(p_target_world[1]), yaw_target_world], dtype=np.float64
+            [float(self.goal_xy_m[0]), float(self.goal_xy_m[1]), float(self.goal_yaw_rad)],
+            dtype=np.float64,
         )
         wheel_xy = np.asarray(params.WHEEL_RIG_POINTS, dtype=np.float64)[:, :2]
         wheel_base_len = float(np.max(wheel_xy[:, 0]) - np.min(wheel_xy[:, 0]))
@@ -208,9 +212,13 @@ class AlignmentAgent(AutonomousAgent):
             dtype=np.float64,
         )
 
-        ctrl_cfg_dict = asdict(AlignmentControllerConfig())
-        ctrl_cfg_dict.update(align_cfg.get("controller", {}))
-        self.alignment_controller = AlignmentController(AlignmentControllerConfig(**ctrl_cfg_dict))
+        outer_cfg_dict = asdict(DockingOuterControllerConfig())
+        user_outer_cfg = align_cfg.get("docking_outer", {})
+        outer_cfg_dict.update({k: v for k, v in user_outer_cfg.items() if k in outer_cfg_dict})
+        self.docking_outer_controller = DockingOuterController(
+            DockingOuterControllerConfig(**outer_cfg_dict)
+        )
+        self._outer_cfg_for_log = dict(outer_cfg_dict)
 
         print(
             f"[green]AlignmentAgent planned nav path with {len(self.path_world)} waypoints, "
@@ -220,6 +228,26 @@ class AlignmentAgent(AutonomousAgent):
             f"[green]Alignment target world pose: x={self.target_pose_xyt[0]:.3f}, "
             f"y={self.target_pose_xyt[1]:.3f}, yaw={self.target_pose_xyt[2]:.3f} rad"
         )
+        if self.align_debug_log_enabled:
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            log_path_str = self.align_debug_log_path_cfg.replace("{timestamp}", ts)
+            log_path = Path(log_path_str).expanduser()
+            if not log_path.is_absolute():
+                log_path = Path.cwd() / log_path
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._align_debug_log_fp = log_path.open("a", encoding="utf-8")
+            self._align_log_event(
+                event="log_start",
+                payload={
+                    "path": str(log_path),
+                    "goal_xy_m": list(self.goal_xy_m),
+                    "goal_yaw_rad": float(self.goal_yaw_rad),
+                    "target_visible_assumed": bool(self.target_visible_assumed),
+                    "tracker_cfg": asdict(tracker_cfg),
+                    "docking_outer_cfg": self._outer_cfg_for_log,
+                },
+            )
+            print(f"[cyan]Alignment debug log enabled:[/] {log_path}")
         if self.rerun_enabled:
             try:
                 Rerun.init3d(img_compress=True)
@@ -304,15 +332,24 @@ class AlignmentAgent(AutonomousAgent):
     def _switch_to_alignment_phase(self):
         if self.phase == "align":
             return
+        self._align_log_event(event="phase_switch", payload={"from": self.phase, "to": "align"})
         self.phase = "align"
-        self.alignment_controller.reset()
-        print("[yellow]Switching to alignment phase (GT pose controller).")
+        self.docking_outer_controller.reset()
+        self.tracker.reset()
+        print("[yellow]Switching to docking alignment phase (outer loop + trajectory tracker).")
 
     def run_step(self, input_data):
         if self.step == 0:
             self.initialize()
         self.step += 1
         self.current_pose = transform_to_numpy(self.get_transform())
+        pose_xy_yaw = (
+            float(self.current_pose[0, 3]),
+            float(self.current_pose[1, 3]),
+            float(yaw_from_pose(self.current_pose)),
+        )
+        measured_v = float(self.get_linear_speed()) if hasattr(self, "get_linear_speed") else np.nan
+        measured_w = float(self.get_angular_speed()) if hasattr(self, "get_angular_speed") else np.nan
         if self.rerun_enabled:
             self.rerun_rover_positions.append(self.current_pose[:3, 3].copy())
             rr.set_time_sequence("frame_id", self.step)
@@ -337,6 +374,17 @@ class AlignmentAgent(AutonomousAgent):
 
         if self.phase == "nav":
             if self.step < self.arm_raise_wait_frames:
+                self._align_log_tick(
+                    state="NAV_WAIT",
+                    v_cmd=0.0,
+                    w_cmd=0.0,
+                    pose_xy_yaw=pose_xy_yaw,
+                    measured_linear_speed_mps=measured_v,
+                    measured_angular_speed_radps=measured_w,
+                    tracker_dbg={},
+                    outer_dbg={},
+                    local_ref=None,
+                )
                 return carla.VehicleVelocityControl(0.0, 0.0)
 
             v_cmd, w_cmd = self.tracker.compute_command(
@@ -357,28 +405,180 @@ class AlignmentAgent(AutonomousAgent):
 
             if self.approach_terminal_wait_steps >= self.approach_handoff_timeout_steps:
                 self._switch_to_alignment_phase()
+                self._align_log_tick(
+                    state="NAV_TO_ALIGN_HOLD",
+                    v_cmd=0.0,
+                    w_cmd=0.0,
+                    pose_xy_yaw=pose_xy_yaw,
+                    measured_linear_speed_mps=measured_v,
+                    measured_angular_speed_radps=measured_w,
+                    tracker_dbg=dict(self.tracker.last_debug),
+                    outer_dbg={},
+                    local_ref=None,
+                )
                 return carla.VehicleVelocityControl(0.0, 0.0)
 
+            self._align_log_tick(
+                state="NAV_TRACK",
+                v_cmd=v_cmd,
+                w_cmd=w_cmd,
+                pose_xy_yaw=pose_xy_yaw,
+                measured_linear_speed_mps=measured_v,
+                measured_angular_speed_radps=measured_w,
+                tracker_dbg=dict(self.tracker.last_debug),
+                outer_dbg={},
+                local_ref=None,
+            )
             return carla.VehicleVelocityControl(v_cmd, w_cmd)
 
-        # Alignment phase (uses GT pose).
+        # Alignment phase (outer-loop docking + inner trajectory tracker).
         x, y = float(self.current_pose[0, 3]), float(self.current_pose[1, 3])
         yaw = float(yaw_from_pose(self.current_pose))
-        v_cmd, w_cmd, aligned, dbg = self.alignment_controller.step(
+        outer = self.docking_outer_controller.step(
             current_xyt=(x, y, yaw),
             target_xyt=self.target_pose_xyt,
             dt=params.DT,
+            target_visible=self.target_visible_assumed,
         )
-        print(
-            f"[bold cyan]align phase[/] step={self.step} "
-            f"| rho={dbg['rho']:.3f} | alpha={dbg['alpha']:.3f} | e_theta={dbg['e_theta']:.3f} "
-            f"| good={dbg['good_count']} | aligned={aligned} | v={v_cmd:.3f} w={w_cmd:.3f}"
-        )
+        aligned = bool(outer["success"])
         if aligned:
+            self._align_log_tick(
+                state="SUCCESS",
+                v_cmd=0.0,
+                w_cmd=0.0,
+                pose_xy_yaw=pose_xy_yaw,
+                measured_linear_speed_mps=measured_v,
+                measured_angular_speed_radps=measured_w,
+                tracker_dbg={},
+                outer_dbg=outer,
+                local_ref=None,
+            )
             print("[bold green]Alignment success. Mission complete.")
             self.mission_complete()
             return carla.VehicleVelocityControl(0.0, 0.0)
+
+        local_ref = outer["reference"]
+        v_track, w_track = self.tracker.compute_command(
+            reference=local_ref,
+            current_pose=self.current_pose,
+            dt=params.DT,
+        )
+        v_cmd, w_cmd = self.docking_outer_controller.shape_command(v_track, w_track, dt=params.DT)
+        print(
+            f"[bold cyan]align phase[/] step={self.step} | state={outer['phase']} "
+            f"| rho={outer['rho']:.3f} | bearing_err={outer['bearing_err']:.3f} "
+            f"| e_theta={outer['e_theta']:.3f} | hold={outer['hold_count']} "
+            f"| stagnating={int(outer['stagnating'])} | recovering={int(outer['recovering'])} "
+            f"| v_trk={v_track:.3f} w_trk={w_track:.3f} | v={v_cmd:.3f} w={w_cmd:.3f}"
+        )
+        self._align_log_tick(
+            state=str(outer["phase"]),
+            v_cmd=v_cmd,
+            w_cmd=w_cmd,
+            pose_xy_yaw=pose_xy_yaw,
+            measured_linear_speed_mps=measured_v,
+            measured_angular_speed_radps=measured_w,
+            tracker_dbg=dict(self.tracker.last_debug),
+            outer_dbg=outer,
+            local_ref=local_ref,
+            v_track=v_track,
+            w_track=w_track,
+        )
         return carla.VehicleVelocityControl(v_cmd, w_cmd)
 
     def finalize(self):
+        if self._align_debug_log_fp is not None:
+            self._align_log_event(event="log_end", payload={"step": int(self.step)})
+            self._align_debug_log_fp.close()
+            self._align_debug_log_fp = None
         print("[blue]AlignmentAgent finalize")
+
+    def _align_log_event(self, event: str, payload: dict[str, Any] | None = None) -> None:
+        if self._align_debug_log_fp is None:
+            return
+        row: dict[str, Any] = {
+            "type": "event",
+            "event": event,
+            "wall_time_utc": datetime.now(timezone.utc).isoformat(),
+            "step": int(self.step),
+            "phase": str(self.phase),
+        }
+        if payload:
+            row.update(payload)
+        self._align_debug_log_fp.write(json.dumps(self._to_jsonable(row)) + "\n")
+        self._align_debug_log_write_count += 1
+        if self._align_debug_log_write_count % self.align_debug_log_flush_every == 0:
+            self._align_debug_log_fp.flush()
+
+    def _align_log_tick(
+        self,
+        state: str,
+        v_cmd: float,
+        w_cmd: float,
+        pose_xy_yaw: tuple[float, float, float],
+        measured_linear_speed_mps: float,
+        measured_angular_speed_radps: float,
+        tracker_dbg: dict[str, Any],
+        outer_dbg: dict[str, Any],
+        local_ref: dict[str, Any] | None,
+        v_track: float | None = None,
+        w_track: float | None = None,
+    ) -> None:
+        if self._align_debug_log_fp is None:
+            return
+        row: dict[str, Any] = {
+            "type": "tick",
+            "wall_time_utc": datetime.now(timezone.utc).isoformat(),
+            "step": int(self.step),
+            "phase": str(self.phase),
+            "state": str(state),
+            "target_visible_assumed": bool(self.target_visible_assumed),
+            "goal_x_m": float(self.target_pose_xyt[0]),
+            "goal_y_m": float(self.target_pose_xyt[1]),
+            "goal_yaw_rad": float(self.target_pose_xyt[2]),
+            "pose_x_m": float(pose_xy_yaw[0]),
+            "pose_y_m": float(pose_xy_yaw[1]),
+            "pose_yaw_rad": float(pose_xy_yaw[2]),
+            "meas_v_mps": float(measured_linear_speed_mps),
+            "meas_w_radps": float(measured_angular_speed_radps),
+            "cmd_v_mps": float(v_cmd),
+            "cmd_w_radps": float(w_cmd),
+            "v_track_mps": float(np.nan if v_track is None else v_track),
+            "w_track_radps": float(np.nan if w_track is None else w_track),
+            "rho_m": float(outer_dbg.get("rho", np.nan)),
+            "bearing_err_rad": float(outer_dbg.get("bearing_err", np.nan)),
+            "e_theta_rad": float(outer_dbg.get("e_theta", np.nan)),
+            "outer_hold_count": int(outer_dbg.get("hold_count", 0)),
+            "outer_stagnating": bool(outer_dbg.get("stagnating", False)),
+            "outer_recovering": bool(outer_dbg.get("recovering", False)),
+            "tracker_nearest_idx": int(tracker_dbg.get("nearest_idx", -1)),
+            "tracker_target_idx": int(tracker_dbg.get("target_idx", -1)),
+            "tracker_dist_to_goal_m": float(tracker_dbg.get("dist_to_goal_m", np.nan)),
+            "tracker_heading_err_rad": float(tracker_dbg.get("heading_err_rad", np.nan)),
+            "tracker_heading_path_err_rad": float(tracker_dbg.get("heading_path_err_rad", np.nan)),
+            "tracker_cross_track_err_m": float(tracker_dbg.get("cross_track_err_m", np.nan)),
+            "tracker_v_des_mps": float(tracker_dbg.get("v_des", np.nan)),
+            "tracker_w_des_radps": float(tracker_dbg.get("w_des", np.nan)),
+            "tracker_reached_goal": bool(tracker_dbg.get("reached_goal", False)),
+            "local_ref_xyt": None if local_ref is None else local_ref.get("xyt"),
+            "local_ref_t": None if local_ref is None else local_ref.get("t"),
+            "local_ref_v": None if local_ref is None else local_ref.get("v"),
+            "local_ref_w": None if local_ref is None else local_ref.get("w"),
+            "outer_dbg": outer_dbg,
+            "tracker_dbg": tracker_dbg,
+        }
+        self._align_debug_log_fp.write(json.dumps(self._to_jsonable(row)) + "\n")
+        self._align_debug_log_write_count += 1
+        if self._align_debug_log_write_count % self.align_debug_log_flush_every == 0:
+            self._align_debug_log_fp.flush()
+
+    def _to_jsonable(self, obj: Any) -> Any:
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, (np.floating, np.integer)):
+            return obj.item()
+        if isinstance(obj, dict):
+            return {k: self._to_jsonable(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [self._to_jsonable(v) for v in obj]
+        return obj
