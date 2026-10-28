@@ -15,7 +15,7 @@ from lac.params import FL_X, FL_Y, IMG_HEIGHT, IMG_WIDTH
 
 
 # Constants and parameters
-K = gtsam.Cal3_S2(FL_X, FL_Y, 0.0, IMG_WIDTH / 2, IMG_HEIGHT / 2)
+K = gtsam.Cal3_S2(FL_X, FL_Y, 0.0, (IMG_WIDTH - 1) / 2, (IMG_HEIGHT - 1) / 2)
 
 # rotation [rad], translation [m]
 VO_ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(

@@ -170,7 +170,9 @@ IMG_WIDTH = 1280
 IMG_HEIGHT = 720
 FL_X = IMG_WIDTH / (2 * np.tan(IMG_FOV_RAD / 2))  # Horizontal focal length
 FL_Y = FL_X  # Vertical focal length  (same as horizontal because square pixels)
-CAMERA_INTRINSICS = np.array([[FL_X, 0, IMG_WIDTH / 2], [0, FL_Y, IMG_HEIGHT / 2], [0, 0, 1]])
+# Principal point in the OpenCV pixel-centre convention: the renderer samples pixel i at i + 0.5, so the optical
+# axis (continuous W/2) is at pixel coordinate (W - 1) / 2.
+CAMERA_INTRINSICS = np.array([[FL_X, 0, (IMG_WIDTH - 1) / 2], [0, FL_Y, (IMG_HEIGHT - 1) / 2], [0, 0, 1]])
 
 # Controller parameters
 KP_STEER = 0.3

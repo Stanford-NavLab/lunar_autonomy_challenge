@@ -23,7 +23,7 @@ ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
 POINT_NOISE = gtsam.noiseModel.Isotropic.Sigma(3, 1e-2)  # for landmarks
 
 # Camera intrinsics
-K = gtsam.Cal3_S2(FL_X, FL_Y, 0.0, IMG_WIDTH / 2, IMG_HEIGHT / 2)
+K = gtsam.Cal3_S2(FL_X, FL_Y, 0.0, (IMG_WIDTH - 1) / 2, (IMG_HEIGHT - 1) / 2)
 
 # Rover to camera transform
 rover_T_cam_FL = get_cam_pose_rover("FrontLeft")

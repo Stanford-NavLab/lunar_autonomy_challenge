@@ -58,7 +58,7 @@ class FactorGraph:
         self.values["reproj_sigma"] = 2.0
         self.values["camera_cal"] = sf.LinearCameraCal(
             focal_length=(FL_X, FL_Y),
-            principal_point=(IMG_WIDTH / 2, IMG_HEIGHT / 2),
+            principal_point=((IMG_WIDTH - 1) / 2, (IMG_HEIGHT - 1) / 2),
         )
 
         self.num_poses = 0

@@ -53,8 +53,8 @@ def calc_camera_intrinsics(w: int, h: int):
     """
     fx = w / (2 * np.tan(IMG_FOV_RAD / 2))
     fy = fx  # Assuming square pixels
-    cx = w / 2
-    cy = h / 2
+    cx = (w - 1) / 2  # OpenCV pixel-centre convention, see params.CAMERA_INTRINSICS
+    cy = (h - 1) / 2
     return np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
 
 

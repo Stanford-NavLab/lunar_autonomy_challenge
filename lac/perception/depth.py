@@ -320,8 +320,8 @@ def render_o3d(meshes, renderer, material, pose, d_light):
         IMG_HEIGHT,
         FL_X,
         FL_Y,
-        IMG_WIDTH / 2,
-        IMG_HEIGHT / 2,
+        (IMG_WIDTH - 1) / 2,
+        (IMG_HEIGHT - 1) / 2,
     )
     renderer.setup_camera(cam.intrinsic, cam.extrinsic)
     img = np.asarray(renderer.render_to_image())
